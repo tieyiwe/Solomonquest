@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { Link } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import { useGetMyCourses } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -17,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  ArrowLeft,
   FolderOpen,
   Upload,
   Link2,
@@ -183,6 +185,14 @@ export default function TeacherResources() {
 
   return (
     <TeacherLayout>
+      <div className="px-6 pt-4 pb-0">
+        <Link href="/dashboard/teacher">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
+      </div>
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Resources</h1>

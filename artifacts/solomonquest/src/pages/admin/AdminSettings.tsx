@@ -31,6 +31,7 @@ import {
   Info,
   BookCheck,
   User,
+  ArrowLeft,
 } from "lucide-react";
 import {
   Select,
@@ -39,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -852,6 +854,14 @@ export default function AdminSettings() {
 
   return (
     <AdminLayout>
+      <div className="px-6 pt-4 pb-0">
+        <Link href="/dashboard/admin">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
+      </div>
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">Settings</h1>

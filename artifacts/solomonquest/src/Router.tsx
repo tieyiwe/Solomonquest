@@ -47,6 +47,7 @@ const MessagesPage = lazy(() => import("@/pages/messages/MessagesPage"));
 const SuperAdminDashboard = lazy(() => import("@/pages/super-admin/SuperAdminDashboard"));
 const AdminDangerZone = lazy(() => import("@/pages/admin/AdminDangerZone"));
 const AcceptInvitePage = lazy(() => import("@/pages/auth/AcceptInvitePage"));
+const ResetPassword = lazy(() => import("@/pages/auth/ResetPassword"));
 const HelpPage = lazy(() => import("@/pages/HelpPage"));
 
 
@@ -83,6 +84,7 @@ export function Router() {
         <Route path="/" component={Home} />
         <Route path="/auth/login" component={Login} />
         <Route path="/auth/register" component={Register} />
+        <Route path="/auth/reset-password"><ResetPassword /></Route>
 
         <Route path="/onboarding/setup">
           <ProtectedRoute><OnboardingSetup /></ProtectedRoute>

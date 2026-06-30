@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { Link } from "wouter";
+import { ArrowLeft } from "lucide-react";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import { useGetMyCourses } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -129,6 +131,14 @@ export default function TeacherAttendance() {
 
   return (
     <TeacherLayout>
+      <div className="px-6 pt-4 pb-0">
+        <Link href="/dashboard/teacher">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
+      </div>
       <div className="p-6 space-y-6 max-w-5xl mx-auto">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Attendance</h1>

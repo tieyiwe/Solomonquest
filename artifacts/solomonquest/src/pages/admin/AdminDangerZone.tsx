@@ -16,7 +16,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, CheckCircle2, XCircle, Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, XCircle, Loader2, Trash2 } from "lucide-react";
+import { Link } from "wouter";
 import { toast } from "sonner";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -226,6 +227,14 @@ export default function AdminDangerZone() {
   if (schoolLoading || statusLoading) {
     return (
       <AdminLayout>
+        <div className="px-6 pt-4 pb-0">
+          <Link href="/dashboard/admin">
+            <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </button>
+          </Link>
+        </div>
         <div className="space-y-4 max-w-2xl">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-64 w-full rounded-xl" />
@@ -236,6 +245,14 @@ export default function AdminDangerZone() {
 
   return (
     <AdminLayout>
+      <div className="px-6 pt-4 pb-0">
+        <Link href="/dashboard/admin">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
+      </div>
       <div className="space-y-6 max-w-2xl">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">Danger Zone</h1>

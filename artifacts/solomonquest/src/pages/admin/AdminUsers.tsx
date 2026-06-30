@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import {
   useListUsers,
@@ -48,6 +49,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  ArrowLeft,
   Search,
   UserPlus,
   KeyRound,
@@ -243,13 +245,20 @@ function UserTable({
   );
 }
 
-function InvitationsTab() {
-  const [inviteOpen, setInviteOpen] = useState(false);
+function InviteButton({
+  role,
+  onSent,
+}: {
+  role: "teacher" | "staff";
+  onSent: (entry: { email: string; role: string; sentAt: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const [pendingInvites, setPendingInvites] = useState<Array<{ email: string; sentAt: string }>>([]);
+  const roleLabel = role === "teacher" ? "Teacher" : "Staff Member";
+  const placeholder = role === "teacher" ? "teacher@school.edu" : "staff@school.edu";
 
-  const handleInvite = async () => {
+  const handleSend = async () => {
     if (!email.trim()) return;
     setLoading(true);
     try {
@@ -260,19 +269,16 @@ function InvitationsTab() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ email: email.trim(), role: "teacher" }),
+        body: JSON.stringify({ email: email.trim(), role }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to send invitation");
+        throw new Error(err.error || err.message || "Failed to send invitation");
       }
-      setPendingInvites((prev) => [
-        { email: email.trim(), sentAt: new Date().toISOString() },
-        ...prev,
-      ]);
-      toast.success(`Invitation sent to ${email}`);
+      onSent({ email: email.trim(), role, sentAt: new Date().toISOString() });
+      toast.success(`Invitation sent to ${email.trim()}`);
       setEmail("");
-      setInviteOpen(false);
+      setOpen(false);
     } catch (err: any) {
       toast.error(err.message || "Failed to send invitation");
     } finally {
@@ -281,57 +287,54 @@ function InvitationsTab() {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between p-4 border-b">
-        <p className="text-sm text-muted-foreground">
-          Invite teachers by email. They'll receive a link to set up their account.
-        </p>
-        <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <UserPlus className="mr-2 h-4 w-4" />
-              Invite Teacher
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Invite Teacher</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 mt-2">
-              <div className="space-y-1.5">
-                <Label>Email Address</Label>
-                <Input
-                  type="email"
-                  placeholder="teacher@school.edu"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleInvite()}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                The invited person will receive an email to join your school as a teacher.
-              </p>
-              <Button
-                className="w-full"
-                onClick={handleInvite}
-                disabled={loading || !email.trim()}
-              >
-                {loading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="mr-2 h-4 w-4" />
-                )}
-                Send Invitation
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <UserPlus className="mr-2 h-4 w-4" />
+          Invite {roleLabel}
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Invite {roleLabel}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div className="space-y-1.5">
+            <Label>Email Address</Label>
+            <Input
+              type="email"
+              placeholder={placeholder}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              autoFocus
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            They'll receive an email to create their account and join your school as a{" "}
+            {roleLabel.toLowerCase()}.
+          </p>
+          <Button className="w-full" onClick={handleSend} disabled={loading || !email.trim()}>
+            {loading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
+            Send Invitation
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-      {pendingInvites.length === 0 ? (
+function InvitationsTab({ invites }: { invites: Array<{ email: string; role: string; sentAt: string }> }) {
+  return (
+    <div>
+      {invites.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <Mail className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No pending invitations. Invite a teacher to get started.</p>
+          <p className="text-sm">No invitations sent yet. Use the Invite buttons in the Teachers or Staff tabs.</p>
         </div>
       ) : (
         <Table>
@@ -344,11 +347,15 @@ function InvitationsTab() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {pendingInvites.map((inv, i) => (
+            {invites.map((inv, i) => (
               <TableRow key={i}>
                 <TableCell className="font-medium text-sm">{inv.email}</TableCell>
                 <TableCell>
-                  <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Teacher</Badge>
+                  {inv.role === "teacher" ? (
+                    <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Teacher</Badge>
+                  ) : (
+                    <Badge className="bg-orange-100 text-orange-700 border-orange-200 border">Staff</Badge>
+                  )}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {new Date(inv.sentAt).toLocaleDateString()}
@@ -370,9 +377,21 @@ function InvitationsTab() {
 export default function AdminUsers() {
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("teachers");
+  const [sentInvites, setSentInvites] = useState<Array<{ email: string; role: string; sentAt: string }>>([]);
+
+  const addInvite = (entry: { email: string; role: string; sentAt: string }) =>
+    setSentInvites((prev) => [entry, ...prev]);
 
   return (
     <AdminLayout>
+      <div className="px-6 pt-4 pb-0">
+        <Link href="/dashboard/admin">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
+      </div>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -420,6 +439,10 @@ export default function AdminUsers() {
 
           <TabsContent value="teachers" className="mt-0">
             <Card className="border-0 shadow-sm">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <p className="text-sm text-muted-foreground">Teachers enrolled in your school.</p>
+                <InviteButton role="teacher" onSent={addInvite} />
+              </div>
               <CardContent className="p-0">
                 <UserTable role="teacher" search={search} />
               </CardContent>
@@ -436,6 +459,10 @@ export default function AdminUsers() {
 
           <TabsContent value="staff" className="mt-0">
             <Card className="border-0 shadow-sm">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <p className="text-sm text-muted-foreground">Staff members associated with your school.</p>
+                <InviteButton role="staff" onSent={addInvite} />
+              </div>
               <CardContent className="p-0">
                 <UserTable role="staff" search={search} />
               </CardContent>
@@ -445,7 +472,7 @@ export default function AdminUsers() {
           <TabsContent value="invitations" className="mt-0">
             <Card className="border-0 shadow-sm">
               <CardContent className="p-0">
-                <InvitationsTab />
+                <InvitationsTab invites={sentInvites} />
               </CardContent>
             </Card>
           </TabsContent>

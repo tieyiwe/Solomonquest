@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import {
   useGetMyCourses,
@@ -66,6 +67,7 @@ import {
   CheckCircle2,
   Video,
   Lock,
+  ArrowLeft,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -673,6 +675,14 @@ export default function TeacherAssignments() {
 
   return (
     <TeacherLayout>
+      <div className="px-6 pt-4 pb-0">
+        <Link href="/dashboard/teacher">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
+      </div>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

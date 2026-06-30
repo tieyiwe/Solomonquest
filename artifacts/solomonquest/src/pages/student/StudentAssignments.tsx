@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { StudentLayout } from "@/components/layout/StudentLayout";
 import { RequiredVideoPlayer } from "@/components/video/RequiredVideoPlayer";
 import {
@@ -31,6 +32,7 @@ import {
   CheckSquare,
   FileText,
   Loader2,
+  ArrowLeft,
   ArrowRight,
   BookOpen,
   Star,
@@ -476,6 +478,14 @@ export default function StudentAssignments() {
 
   return (
     <StudentLayout>
+      <div className="px-6 pt-4 pb-0">
+        <Link href="/dashboard/student">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
+      </div>
       <div className="space-y-6 max-w-5xl mx-auto">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">My Assignments</h1>

@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   FileQuestion,
   Award,
+  ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -310,6 +311,14 @@ export default function StudentQuizTake() {
   if (loading) {
     return (
       <StudentLayout>
+        <div className="px-6 pt-4 pb-0">
+          <Link href="/dashboard/student">
+            <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </button>
+          </Link>
+        </div>
         <div className="max-w-3xl mx-auto space-y-6">
           <Skeleton className="h-10 w-2/3" />
           <Skeleton className="h-48 w-full rounded-xl" />
@@ -321,6 +330,14 @@ export default function StudentQuizTake() {
   if (!quiz) {
     return (
       <StudentLayout>
+        <div className="px-6 pt-4 pb-0">
+          <Link href="/dashboard/student">
+            <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </button>
+          </Link>
+        </div>
         <div className="max-w-3xl mx-auto py-20 text-center">
           <FileQuestion className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h2 className="text-xl font-semibold">Quiz not found</h2>
@@ -348,6 +365,14 @@ export default function StudentQuizTake() {
 
     return (
       <StudentLayout>
+        <div className="px-6 pt-4 pb-0">
+          <Link href="/dashboard/student">
+            <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </button>
+          </Link>
+        </div>
         <div className="max-w-3xl mx-auto space-y-6">
           <div className="text-center py-8">
             <div
@@ -514,6 +539,14 @@ export default function StudentQuizTake() {
   if (!started) {
     return (
       <StudentLayout>
+        <div className="px-6 pt-4 pb-0">
+          <Link href="/dashboard/student">
+            <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </button>
+          </Link>
+        </div>
         <div className="max-w-2xl mx-auto space-y-6 py-8">
           <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground">
             <Link href="/dashboard/student">
@@ -610,6 +643,14 @@ export default function StudentQuizTake() {
 
   return (
     <StudentLayout>
+      <div className="px-6 pt-4 pb-0">
+        <Link href="/dashboard/student">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
+      </div>
       <div className="max-w-3xl mx-auto space-y-4">
         <div className="flex items-center justify-between gap-4 py-2">
           <div className="flex-1 min-w-0">

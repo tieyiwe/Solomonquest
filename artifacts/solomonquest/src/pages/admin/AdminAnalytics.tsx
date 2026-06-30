@@ -11,6 +11,7 @@ import {
   FolderOpen,
   MessageSquare,
   MessageCircle,
+  ArrowLeft,
   BarChart2,
   Settings,
   LogOut,
@@ -414,6 +415,14 @@ export default function AdminAnalytics() {
         </header>
 
         <main className="flex-1 overflow-y-auto">
+          <div className="px-6 pt-4 pb-0">
+            <Link href="/dashboard/admin">
+              <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <ArrowLeft className="h-4 w-4" />
+                Back to Dashboard
+              </button>
+            </Link>
+          </div>
           <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-8">
 
             <div>

@@ -14,7 +14,9 @@ import {
   CheckCircle2,
   Clock,
   TrendingUp,
+  ArrowLeft,
 } from "lucide-react";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -239,6 +241,14 @@ export default function StudentTranscript() {
 
   return (
     <StudentLayout>
+      <div className="px-6 pt-4 pb-0">
+        <Link href="/dashboard/student">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
+      </div>
       <div className="space-y-6 print:space-y-4">
         {/* Header — hidden when printing */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
