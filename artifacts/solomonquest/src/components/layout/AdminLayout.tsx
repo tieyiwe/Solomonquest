@@ -20,6 +20,7 @@ import {
   Bell,
   AlertTriangle,
   MessageSquare,
+  Paintbrush,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
@@ -33,6 +34,7 @@ const adminLinks = [
   { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
   { href: "/dashboard/admin/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/dashboard/admin/reminders", label: "Reminders", icon: Bell },
+  { href: "/dashboard/admin/branding", label: "Branding", icon: Paintbrush },
   { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
   { href: "/dashboard/admin/danger-zone", label: "Danger Zone", icon: AlertTriangle },
   { href: "/chat", label: "Chat", icon: MessageSquare },
