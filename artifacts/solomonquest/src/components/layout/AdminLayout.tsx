@@ -89,22 +89,26 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
 
       {/* Settings group — always last, sub-items expand downward */}
       <div>
-        <button
-          onClick={() => setSettingsOpen((v) => !v)}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 ${
-            isInSettings
-              ? "bg-white/15 text-white font-semibold border-l-2 border-white pl-[10px]"
-              : "text-slate-300 font-medium hover:bg-white/8 hover:text-white"
-          }`}
-        >
-          <Settings className={`h-4 w-4 shrink-0 ${isInSettings ? "text-white" : "text-slate-400"}`} />
-          <span>Settings</span>
-          <span className="ml-auto">
-            {settingsOpen
-              ? <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-              : <ChevronRight className="h-3.5 w-3.5 opacity-60" />}
-          </span>
-        </button>
+        <Link href="/dashboard/admin/settings">
+          <button
+            onClick={() => { setSettingsOpen(true); onClose?.(); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 ${
+              location === "/dashboard/admin/settings"
+                ? "bg-white/15 text-white font-semibold border-l-2 border-white pl-[10px]"
+                : isInSettings
+                ? "bg-white/10 text-white font-medium"
+                : "text-slate-300 font-medium hover:bg-white/8 hover:text-white"
+            }`}
+          >
+            <Settings className={`h-4 w-4 shrink-0 ${isInSettings ? "text-white" : "text-slate-400"}`} />
+            <span>Settings</span>
+            <span className="ml-auto">
+              {settingsOpen
+                ? <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                : <ChevronRight className="h-3.5 w-3.5 opacity-60" />}
+            </span>
+          </button>
+        </Link>
 
         {settingsOpen && (
           <div className="mt-0.5 ml-3 pl-3 border-l border-white/10 flex flex-col gap-0.5">
