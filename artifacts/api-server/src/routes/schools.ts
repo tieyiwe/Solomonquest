@@ -170,7 +170,7 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
   }
 
   const body = req.body as Record<string, unknown>;
-  const { slug, logo_url, tagline, primary_color, secondary_color, custom_css } = body;
+  const { slug, logo_url, tagline, primary_color, secondary_color } = body;
 
   // Validate slug if provided
   if (slug !== undefined) {
@@ -190,74 +190,33 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
     }
   }
 
-  // Map all branding fields to their dedicated DB columns (only columns confirmed in schema)
-  const columnUpdates: Record<string, unknown> = {};
-  if (slug !== undefined) columnUpdates.slug = slug;
-  if (logo_url !== undefined) columnUpdates.logo_url = logo_url;
-  if (tagline !== undefined) columnUpdates.tagline = tagline;
-  if (primary_color !== undefined) columnUpdates.primary_color = primary_color;
-  if (secondary_color !== undefined) columnUpdates.secondary_color = secondary_color;
-  // custom_css column does not exist in schema — stored in branding JSONB only
+  // Only update columns guaranteed to exist in the base schema
+  const coreUpdates: Record<string, unknown> = {};
+  if (slug !== undefined) coreUpdates.slug = slug;
+  if (logo_url !== undefined) coreUpdates.logo_url = logo_url;
+  if (tagline !== undefined) coreUpdates.tagline = tagline;
+  if (primary_color !== undefined) coreUpdates.primary_color = primary_color;
+  if (secondary_color !== undefined) coreUpdates.secondary_color = secondary_color;
 
-  const {
-    accent_color, heading_text_color, heading_font, body_font, border_radius,
-    banner_slides, hero_settings, stats_visible, stats, features,
-    testimonials, social_facebook, social_twitter, social_instagram,
-    social_linkedin, social_youtube, social_website,
-    show_announcement, announcement_text, announcement_bg_color,
-  } = body;
-
-  if (accent_color !== undefined) columnUpdates.accent_color = accent_color;
-  if (heading_text_color !== undefined) columnUpdates.heading_color = heading_text_color;
-  if (heading_font !== undefined) columnUpdates.heading_font = heading_font;
-  if (body_font !== undefined) columnUpdates.body_font = body_font;
-  if (border_radius !== undefined) columnUpdates.border_radius = border_radius;
-  if (banner_slides !== undefined) columnUpdates.banner_slides = banner_slides;
-  if (hero_settings !== undefined) columnUpdates.hero_animation = (hero_settings as Record<string, unknown>)?.animation;
-  if (stats_visible !== undefined) columnUpdates.stats_visible = stats_visible;
-  if (stats !== undefined) columnUpdates.stats = stats;
-  if (features !== undefined) columnUpdates.features_section = features;
-  if (testimonials !== undefined) columnUpdates.testimonials = testimonials;
-  if (show_announcement !== undefined) columnUpdates.show_announcement = show_announcement;
-  if (announcement_text !== undefined) columnUpdates.announcement_banner = announcement_text;
-  if (announcement_bg_color !== undefined) columnUpdates.announcement_color = announcement_bg_color;
-
-  // Merge social links into the social_links jsonb column
-  const socialUpdate: Record<string, unknown> = {};
-  if (social_facebook !== undefined) socialUpdate.facebook = social_facebook;
-  if (social_twitter !== undefined) socialUpdate.twitter = social_twitter;
-  if (social_instagram !== undefined) socialUpdate.instagram = social_instagram;
-  if (social_linkedin !== undefined) socialUpdate.linkedin = social_linkedin;
-  if (social_youtube !== undefined) socialUpdate.youtube = social_youtube;
-  if (social_website !== undefined) socialUpdate.website = social_website;
-  if (Object.keys(socialUpdate).length > 0) {
-    const { data: existing } = await supabaseAdmin
-      .from("schools").select("social_links").eq("id", id).single();
-    columnUpdates.social_links = { ...((existing?.social_links as object) ?? {}), ...socialUpdate };
-  }
-
-  // Also save to branding JSONB if column exists (best-effort)
-  const { data: currentBranding } = await supabaseAdmin
-    .from("schools").select("branding").eq("id", id).single()
-    .then((r) => (r.error ? { data: null } : r));
-  const mergedBranding = { ...((currentBranding?.branding as object) ?? {}), ...body };
-  const updatePayload = Object.keys(mergedBranding).length > 0
-    ? { ...columnUpdates, branding: mergedBranding }
-    : columnUpdates;
+  // Fetch existing branding JSONB and merge full body into it
+  const { data: existing } = await supabaseAdmin
+    .from("schools").select("branding").eq("id", id).single();
+  const existingBranding = (existing?.branding as Record<string, unknown>) ?? {};
+  const mergedBranding = { ...existingBranding, ...body };
 
   let { data, error } = await supabaseAdmin
     .from("schools")
-    .update(updatePayload)
+    .update({ ...coreUpdates, branding: mergedBranding })
     .eq("id", id)
     .select()
     .single();
 
   if (error) {
-    // branding column may not exist yet — retry with individual columns only
-    logger.warn({ error }, "branding JSONB update failed, retrying with individual columns only");
+    // Fall back to core columns only if branding JSONB write fails
+    logger.warn({ error }, "branding update failed, retrying with core columns only");
     const fallback = await supabaseAdmin
       .from("schools")
-      .update(columnUpdates)
+      .update(coreUpdates)
       .eq("id", id)
       .select()
       .single();
