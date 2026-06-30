@@ -239,7 +239,7 @@ router.get("/analytics/admin", requireAuth, async (req: AuthenticatedRequest, re
       }
 
       teacher_performance = teacherList.map((t: any) => {
-        const name = t.full_name ?? `${t.first_name ?? ""} ${t.last_name ?? ""}`.trim() || "Unknown";
+        const name = t.full_name ?? (`${t.first_name ?? ""} ${t.last_name ?? ""}`.trim() || "Unknown");
         const grades = gradesByTeacher[t.id] ?? [];
         const avg = grades.length > 0 ? Math.round((grades.reduce((a, b) => a + b, 0) / grades.length) * 10) / 10 : null;
         return {
@@ -484,7 +484,7 @@ router.get("/analytics/teacher", requireAuth, async (req: AuthenticatedRequest, 
 
         recent_submissions = (rSubs ?? []).map((s: any) => {
           const profile = Array.isArray(s.profiles) ? s.profiles[0] : s.profiles;
-          const name = profile?.full_name ?? `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "Unknown";
+          const name = profile?.full_name ?? (`${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "Unknown");
           return {
             student_name: name,
             assignment_title: assignIdToTitle[s.assignment_id] ?? "Unknown",
