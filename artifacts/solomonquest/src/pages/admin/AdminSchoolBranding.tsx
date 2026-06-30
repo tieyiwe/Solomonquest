@@ -380,7 +380,17 @@ export default function AdminSchoolBranding() {
       .then((r) => r.json())
       .then((data) => {
         if (data) {
-          setBranding((prev) => ({ ...prev, ...data }));
+          const b = (data.branding && typeof data.branding === "object") ? data.branding as Record<string, unknown> : {};
+          setBranding((prev) => ({
+            ...prev,
+            ...b,
+            school_name: (data.name as string) ?? prev.school_name,
+            slug: (b.slug as string) ?? (data.slug as string) ?? prev.slug,
+            logo_url: (b.logo_url as string) ?? (data.logoUrl as string) ?? prev.logo_url,
+            tagline: (b.tagline as string) ?? (data.tagline as string) ?? prev.tagline,
+            primary_color: (b.primary_color as string) ?? (data.primaryColor as string) ?? prev.primary_color,
+            secondary_color: (b.secondary_color as string) ?? (data.secondaryColor as string) ?? prev.secondary_color,
+          }));
         }
       })
       .catch(() => {})

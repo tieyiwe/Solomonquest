@@ -80,12 +80,17 @@ interface School {
   name: string;
   slug: string;
   logo_url?: string;
+  logoUrl?: string;
   tagline?: string;
   primary_color?: string;
+  primaryColor?: string;
   secondary_color?: string;
+  secondaryColor?: string;
   accent_color?: string;
   heading_color?: string;
+  headingColor?: string;
   heading_font?: string;
+  headingFont?: string;
   body_font?: string;
   border_radius?: "sharp" | "rounded" | "pill";
   hero_animation?: "fade" | "slide" | "zoom" | "none";
@@ -94,13 +99,24 @@ interface School {
   stats_visible?: boolean;
   stats?: Stat[];
   features_section?: Feature[];
+  features?: Feature[];
   testimonials?: Testimonial[];
   social_links?: SocialLinks;
   announcement_banner?: string;
+  announcement_text?: string;
   show_announcement?: boolean;
   announcement_color?: string;
+  announcement_bg_color?: string;
   custom_css?: string;
+  customCss?: string;
   courses?: Course[];
+  branding?: Record<string, unknown>;
+  social_facebook?: string;
+  social_instagram?: string;
+  social_linkedin?: string;
+  social_youtube?: string;
+  social_twitter?: string;
+  social_website?: string;
 }
 
 // ─── useScrollReveal hook ────────────────────────────────────────────────────
@@ -401,23 +417,39 @@ export default function SchoolPublicPage() {
       .finally(() => setLoading(false));
   }, [slug]);
 
-  // Derived values
-  const primaryColor = school?.primary_color ?? "#6366f1";
-  const secondaryColor = school?.secondary_color ?? "#8b5cf6";
-  const accentColor = school?.accent_color ?? "#f59e0b";
-  const headingFont = school?.heading_font;
+  // Derived values — prefer branding JSONB for rich fields, fall back to individual columns
+  const b = school?.branding ?? {};
+  const primaryColor = (b.primary_color as string) ?? school?.primary_color ?? school?.primaryColor ?? "#6366f1";
+  const secondaryColor = (b.secondary_color as string) ?? school?.secondary_color ?? school?.secondaryColor ?? "#8b5cf6";
+  const accentColor = (b.accent_color as string) ?? "#f59e0b";
+  const headingFont = (b.heading_font as string) ?? school?.heading_font ?? school?.headingFont;
+  const headingColor = (b.heading_text_color as string) ?? school?.heading_color ?? school?.headingColor;
+  const bodyFont = (b.body_font as string) ?? school?.body_font;
+  const borderRadius = (b.border_radius as string) ?? school?.border_radius ?? "rounded";
   const borderRadiusClass =
-    school?.border_radius === "sharp"
-      ? "rounded-none"
-      : school?.border_radius === "pill"
-      ? "rounded-3xl"
-      : "rounded-xl";
+    borderRadius === "sharp" ? "rounded-none" : borderRadius === "pill" ? "rounded-3xl" : "rounded-xl";
+  const heroAnimation = ((b.hero_settings as Record<string, unknown>)?.animation as string) ?? school?.hero_animation ?? "fade";
+  const heroIntervalSeconds = ((b.hero_settings as Record<string, unknown>)?.interval_seconds as number) ?? 5;
+  const logoUrl = (b.logo_url as string) ?? school?.logo_url ?? school?.logoUrl;
+  const tagline = (b.tagline as string) ?? school?.tagline;
+  const customCss = (b.custom_css as string) ?? school?.custom_css ?? school?.customCss;
+  const showAnnouncement = (b.show_announcement as boolean) ?? school?.show_announcement ?? false;
+  const announcementText = (b.announcement_text as string) ?? school?.announcement_banner ?? "";
+  const announcementBgColor = (b.announcement_bg_color as string) ?? school?.announcement_color ?? primaryColor;
 
-  const bannerSlides: BannerSlide[] = school?.banner_slides ?? [];
-  const stats: Stat[] = school?.stats ?? [];
-  const features: Feature[] = school?.features_section ?? [];
-  const testimonials: Testimonial[] = school?.testimonials ?? [];
-  const socialLinks: SocialLinks = school?.social_links ?? {};
+  const bannerSlides: BannerSlide[] = (b.banner_slides as BannerSlide[]) ?? school?.banner_slides ?? [];
+  const statsVisible = (b.stats_visible as boolean) ?? school?.stats_visible ?? true;
+  const stats: Stat[] = (b.stats as Stat[]) ?? school?.stats ?? [];
+  const features: Feature[] = (b.features as Feature[]) ?? school?.features ?? school?.features_section ?? [];
+  const testimonials: Testimonial[] = (b.testimonials as Testimonial[]) ?? school?.testimonials ?? [];
+  const socialLinks: SocialLinks = {
+    facebook: (b.social_facebook as string) || school?.social_facebook || (school?.social_links as SocialLinks)?.facebook,
+    instagram: (b.social_instagram as string) || school?.social_instagram || (school?.social_links as SocialLinks)?.instagram,
+    linkedin: (b.social_linkedin as string) || school?.social_linkedin || (school?.social_links as SocialLinks)?.linkedin,
+    youtube: (b.social_youtube as string) || school?.social_youtube || (school?.social_links as SocialLinks)?.youtube,
+    twitter: (b.social_twitter as string) || school?.social_twitter || (school?.social_links as SocialLinks)?.twitter,
+    website: (b.social_website as string) || school?.social_website || (school?.social_links as SocialLinks)?.website,
+  };
 
   const handleApply = () => {
     if (user) {
@@ -477,8 +509,8 @@ export default function SchoolPublicPage() {
           "--school-primary": primaryColor,
           "--school-secondary": secondaryColor,
           "--school-accent": accentColor,
-          "--school-heading-color": school.heading_color,
-          fontFamily: school.body_font,
+          "--school-heading-color": headingColor,
+          fontFamily: bodyFont,
         } as React.CSSProperties
       }
     >
@@ -507,15 +539,15 @@ export default function SchoolPublicPage() {
       `}</style>
 
       {/* Custom school CSS */}
-      {school.custom_css && <style>{school.custom_css}</style>}
+      {customCss && <style>{customCss}</style>}
 
       {/* 1. Announcement Bar */}
-      {school.show_announcement && school.announcement_banner && (
+      {showAnnouncement && announcementText && (
         <div
           className="text-white text-center py-2 px-4 text-sm font-medium"
-          style={{ background: school.announcement_color ?? primaryColor }}
+          style={{ background: announcementBgColor }}
         >
-          {school.announcement_banner}
+          {announcementText}
         </div>
       )}
 
@@ -525,8 +557,8 @@ export default function SchoolPublicPage() {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
-            {school.logo_url ? (
-              <img src={school.logo_url} alt={school.name} className="h-9 w-auto object-contain" />
+            {logoUrl ? (
+              <img src={logoUrl} alt={school.name} className="h-9 w-auto object-contain" />
             ) : (
               <span
                 className="text-xl font-bold"
@@ -605,8 +637,8 @@ export default function SchoolPublicPage() {
       {bannerSlides.length > 0 ? (
         <HeroCarousel
           slides={bannerSlides}
-          animation={school.hero_animation ?? "fade"}
-          intervalSeconds={school.hero_settings?.interval_seconds ?? 5}
+          animation={heroAnimation}
+          intervalSeconds={heroIntervalSeconds}
           headingFont={headingFont}
           primaryColor={primaryColor}
           secondaryColor={secondaryColor}
@@ -619,9 +651,9 @@ export default function SchoolPublicPage() {
             background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
           }}
         >
-          {school.logo_url && (
+          {logoUrl && (
             <img
-              src={school.logo_url}
+              src={logoUrl}
               alt={school.name}
               className="h-20 w-auto mb-6 object-contain drop-shadow-xl"
             />
@@ -632,8 +664,8 @@ export default function SchoolPublicPage() {
           >
             {school.name}
           </h1>
-          {school.tagline && (
-            <p className="text-xl md:text-2xl text-white/80 mb-8 max-w-2xl">{school.tagline}</p>
+          {tagline && (
+            <p className="text-xl md:text-2xl text-white/80 mb-8 max-w-2xl">{tagline}</p>
           )}
           <button
             onClick={handleApply}
@@ -646,7 +678,7 @@ export default function SchoolPublicPage() {
       )}
 
       {/* 4. Stats Row */}
-      {school.stats_visible && stats.length > 0 && (
+      {statsVisible && stats.length > 0 && (
         <section className="py-16 bg-gray-50">
           <div ref={statsRef} className="max-w-6xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-4">
             {stats.map((stat, i) => (
@@ -661,7 +693,7 @@ export default function SchoolPublicPage() {
         <div ref={coursesRef} className="max-w-7xl mx-auto px-4">
           <h2
             className="text-3xl font-bold mb-10 text-center reveal-el"
-            style={{ fontFamily: headingFont, color: school.heading_color ?? primaryColor }}
+            style={{ fontFamily: headingFont, color: headingColor ?? primaryColor }}
           >
             Available Courses
           </h2>
@@ -696,7 +728,7 @@ export default function SchoolPublicPage() {
                     </div>
                     <h3
                       className="text-lg font-bold leading-snug"
-                      style={{ fontFamily: headingFont, color: school.heading_color ?? primaryColor }}
+                      style={{ fontFamily: headingFont, color: headingColor ?? primaryColor }}
                     >
                       {course.title}
                     </h3>
@@ -750,7 +782,7 @@ export default function SchoolPublicPage() {
           <div ref={featuresRef} className="max-w-6xl mx-auto px-4">
             <h2
               className="text-3xl font-bold mb-10 text-center reveal-el"
-              style={{ fontFamily: headingFont, color: school.heading_color ?? primaryColor }}
+              style={{ fontFamily: headingFont, color: headingColor ?? primaryColor }}
             >
               Why Choose Us
             </h2>
@@ -779,7 +811,7 @@ export default function SchoolPublicPage() {
                     </div>
                     <h3
                       className="text-lg font-bold mb-2"
-                      style={{ fontFamily: headingFont, color: school.heading_color ?? primaryColor }}
+                      style={{ fontFamily: headingFont, color: headingColor ?? primaryColor }}
                     >
                       {feature.title}
                     </h3>
@@ -798,7 +830,7 @@ export default function SchoolPublicPage() {
           <div ref={testimonialsRef} className="max-w-6xl mx-auto px-4">
             <h2
               className="text-3xl font-bold mb-10 text-center reveal-el"
-              style={{ fontFamily: headingFont, color: school.heading_color ?? primaryColor }}
+              style={{ fontFamily: headingFont, color: headingColor ?? primaryColor }}
             >
               What Our Students Say
             </h2>
@@ -888,15 +920,15 @@ export default function SchoolPublicPage() {
       <footer className="bg-gray-900 text-gray-300 py-12">
         <div className="max-w-6xl mx-auto px-4 flex flex-col items-center gap-6">
           <div className="flex flex-col items-center gap-2">
-            {school.logo_url ? (
-              <img src={school.logo_url} alt={school.name} className="h-10 w-auto object-contain brightness-0 invert opacity-80" />
+            {logoUrl ? (
+              <img src={logoUrl} alt={school.name} className="h-10 w-auto object-contain brightness-0 invert opacity-80" />
             ) : (
               <span className="text-xl font-bold text-white" style={{ fontFamily: headingFont }}>
                 {school.name}
               </span>
             )}
-            {school.tagline && (
-              <p className="text-gray-400 text-sm text-center max-w-sm">{school.tagline}</p>
+            {tagline && (
+              <p className="text-gray-400 text-sm text-center max-w-sm">{tagline}</p>
             )}
           </div>
 

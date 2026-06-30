@@ -162,96 +162,65 @@ router.get("/schools/slug/:slug", async (req, res): Promise<void> => {
 router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
-  // Only admin/super_admin of this school may update branding
   if (req.userRole !== "super_admin") {
     if (req.userRole !== "admin" || req.schoolId !== id) {
       res.status(403).json({ error: "Not authorized to update this school's branding" });
       return;
     }
   }
-  const {
-    logo_url,
-    slug,
-    primary_color,
-    secondary_color,
-    heading_font,
-    heading_color,
-    tagline,
-    banner_url,
-    custom_css,
-  } = req.body;
 
-  // Validate slug format if provided
+  const body = req.body as Record<string, unknown>;
+  const { slug, logo_url, tagline, primary_color, secondary_color, custom_css } = body;
+
+  // Validate slug if provided
   if (slug !== undefined) {
-    if (!/^[a-z0-9-]+$/.test(slug)) {
+    if (typeof slug !== "string" || !/^[a-z0-9-]+$/.test(slug)) {
       res.status(400).json({ error: "Slug must be lowercase alphanumeric with hyphens only" });
       return;
     }
-
-    // Check slug uniqueness
     const { data: existing } = await supabaseAdmin
       .from("schools")
       .select("id")
       .eq("slug", slug)
       .neq("id", id)
       .maybeSingle();
-
     if (existing) {
       res.status(409).json({ error: "Slug is already taken" });
       return;
     }
   }
 
-  const {
-    banner_slides,
-    hero_animation,
-    accent_color,
-    body_font,
-    border_radius,
-    stats_visible,
-    stats,
-    features_section,
-    testimonials,
-    social_links,
-    announcement_banner,
-    announcement_color,
-    show_announcement,
-  } = req.body;
+  // Save known individual columns for backward compat + full-text search
+  const columnUpdates: Record<string, unknown> = {};
+  if (logo_url !== undefined) columnUpdates.logo_url = logo_url;
+  if (slug !== undefined) columnUpdates.slug = slug;
+  if (tagline !== undefined) columnUpdates.tagline = tagline;
+  if (primary_color !== undefined) columnUpdates.primary_color = primary_color;
+  if (secondary_color !== undefined) columnUpdates.secondary_color = secondary_color;
+  if (custom_css !== undefined) columnUpdates.custom_css = custom_css;
 
-  const updates: Record<string, unknown> = {};
-  if (logo_url !== undefined) updates.logo_url = logo_url;
-  if (slug !== undefined) updates.slug = slug;
-  if (primary_color !== undefined) updates.primary_color = primary_color;
-  if (secondary_color !== undefined) updates.secondary_color = secondary_color;
-  if (heading_font !== undefined) updates.heading_font = heading_font;
-  if (heading_color !== undefined) updates.heading_color = heading_color;
-  if (tagline !== undefined) updates.tagline = tagline;
-  if (banner_url !== undefined) updates.banner_url = banner_url;
-  if (custom_css !== undefined) updates.custom_css = custom_css;
-  if (banner_slides !== undefined) updates.banner_slides = banner_slides;
-  if (hero_animation !== undefined) updates.hero_animation = hero_animation;
-  if (accent_color !== undefined) updates.accent_color = accent_color;
-  if (body_font !== undefined) updates.body_font = body_font;
-  if (border_radius !== undefined) updates.border_radius = border_radius;
-  if (stats_visible !== undefined) updates.stats_visible = stats_visible;
-  if (stats !== undefined) updates.stats = stats;
-  if (features_section !== undefined) updates.features_section = features_section;
-  if (testimonials !== undefined) updates.testimonials = testimonials;
-  if (social_links !== undefined) updates.social_links = social_links;
-  if (announcement_banner !== undefined) updates.announcement_banner = announcement_banner;
-  if (announcement_color !== undefined) updates.announcement_color = announcement_color;
-  if (show_announcement !== undefined) updates.show_announcement = show_announcement;
+  // Fetch existing branding JSONB to merge
+  const { data: current } = await supabaseAdmin
+    .from("schools")
+    .select("branding")
+    .eq("id", id)
+    .single();
+
+  const existingBranding = (current?.branding as Record<string, unknown>) ?? {};
+
+  // Merge entire body into branding JSONB (frontend sends full branding object)
+  const mergedBranding = { ...existingBranding, ...body };
 
   const { data, error } = await supabaseAdmin
     .from("schools")
-    .update(updates)
+    .update({ ...columnUpdates, branding: mergedBranding })
     .eq("id", id)
     .select()
     .single();
 
   if (error || !data) {
     logger.error({ error }, "Error updating school branding");
-    res.status(404).json({ error: "School not found or update failed" });
+    res.status(500).json({ error: error?.message ?? "Update failed" });
     return;
   }
 
@@ -451,6 +420,7 @@ function mapSchool(s: Record<string, unknown>) {
     createdAt: s.created_at,
     applicationsOpen: s.applications_open ?? false,
     assignment_routing: s.assignment_routing ?? null,
+    branding: (s.branding as Record<string, unknown>) ?? {},
   };
 }
 
