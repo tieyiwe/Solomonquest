@@ -160,6 +160,7 @@ router.get("/schools/slug/:slug", async (req, res): Promise<void> => {
 
 // Update school branding (admin only)
 router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  try {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
   if (req.userRole !== "super_admin") {
@@ -178,13 +179,13 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
       res.status(400).json({ error: "Slug must be lowercase alphanumeric with hyphens only" });
       return;
     }
-    const { data: existing } = await supabaseAdmin
+    const { data: slugConflict } = await supabaseAdmin
       .from("schools")
       .select("id")
       .eq("slug", slug)
       .neq("id", id)
       .maybeSingle();
-    if (existing) {
+    if (slugConflict) {
       res.status(409).json({ error: "Slug is already taken" });
       return;
     }
@@ -199,11 +200,12 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
   if (secondary_color !== undefined) coreUpdates.secondary_color = secondary_color;
 
   // Fetch existing branding JSONB and merge full body into it
-  const { data: existing } = await supabaseAdmin
+  const { data: currentRow } = await supabaseAdmin
     .from("schools").select("branding").eq("id", id).single();
-  const existingBranding = (existing?.branding as Record<string, unknown>) ?? {};
+  const existingBranding = (currentRow?.branding as Record<string, unknown>) ?? {};
   const mergedBranding = { ...existingBranding, ...body };
 
+  // Try saving with branding JSONB; fall back to core columns only if branding column missing
   let { data, error } = await supabaseAdmin
     .from("schools")
     .update({ ...coreUpdates, branding: mergedBranding })
@@ -212,7 +214,6 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
     .single();
 
   if (error) {
-    // Fall back to core columns only if branding JSONB write fails
     logger.warn({ error }, "branding update failed, retrying with core columns only");
     const fallback = await supabaseAdmin
       .from("schools")
@@ -231,6 +232,10 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
   }
 
   res.json(mapSchool(data));
+  } catch (err: any) {
+    logger.error({ err }, "Unhandled error in PUT /schools/:id/branding");
+    res.status(500).json({ error: err?.message ?? "Internal server error" });
+  }
 });
 
 // Update school
