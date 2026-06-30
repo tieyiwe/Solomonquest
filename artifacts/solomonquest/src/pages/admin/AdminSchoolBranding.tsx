@@ -408,10 +408,11 @@ export default function AdminSchoolBranding() {
         method: "PUT",
         body: JSON.stringify(branding),
       });
+      const json = await res.json().catch(() => ({}));
       if (res.ok) {
         toast.success("Branding saved successfully!");
       } else {
-        toast.error("Failed to save branding.");
+        toast.error(json?.error ?? `Save failed (${res.status})`);
       }
     } catch {
       toast.error("Network error while saving.");

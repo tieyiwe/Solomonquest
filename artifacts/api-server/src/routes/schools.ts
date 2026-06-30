@@ -199,7 +199,7 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
   if (secondary_color !== undefined) columnUpdates.secondary_color = secondary_color;
   if (custom_css !== undefined) columnUpdates.custom_css = custom_css;
 
-  // Fetch existing branding JSONB to merge
+  // Fetch existing branding JSONB to merge (column may not exist yet)
   const { data: current } = await supabaseAdmin
     .from("schools")
     .select("branding")
@@ -211,12 +211,26 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
   // Merge entire body into branding JSONB (frontend sends full branding object)
   const mergedBranding = { ...existingBranding, ...body };
 
-  const { data, error } = await supabaseAdmin
+  // Try saving with branding JSONB first; fall back to column-only update if column missing
+  let { data, error } = await supabaseAdmin
     .from("schools")
     .update({ ...columnUpdates, branding: mergedBranding })
     .eq("id", id)
     .select()
     .single();
+
+  if (error && (error.message.includes("branding") || error.code === "42703")) {
+    // branding column doesn't exist yet — save individual columns only
+    logger.warn("branding column missing, saving individual columns only");
+    const fallback = await supabaseAdmin
+      .from("schools")
+      .update(columnUpdates)
+      .eq("id", id)
+      .select()
+      .single();
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error || !data) {
     logger.error({ error }, "Error updating school branding");
