@@ -1,10 +1,22 @@
 -- SolomonQuest schema additions — run this in your Supabase SQL Editor
 
 -- ─── Video sessions ───────────────────────────────────────────────────────────
-ALTER TABLE video_sessions ADD COLUMN IF NOT EXISTS provider text DEFAULT 'jitsi' CHECK (provider IN ('jitsi', 'zoom'));
-ALTER TABLE video_sessions ADD COLUMN IF NOT EXISTS join_url text;
-ALTER TABLE video_sessions ADD COLUMN IF NOT EXISTS start_url text;
-ALTER TABLE video_sessions ADD COLUMN IF NOT EXISTS zoom_meeting_id text;
+CREATE TABLE IF NOT EXISTS video_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id uuid REFERENCES courses,
+  started_by uuid REFERENCES profiles,
+  provider text DEFAULT 'jitsi' CHECK (provider IN ('jitsi', 'zoom')),
+  room_name text,
+  join_url text,
+  start_url text,
+  zoom_meeting_id text,
+  ended_at timestamptz,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE video_sessions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "video_sessions_all" ON video_sessions;
+CREATE POLICY "video_sessions_all" ON video_sessions FOR ALL USING (true);
+ALTER PUBLICATION supabase_realtime ADD TABLE video_sessions;
 
 -- ─── School uniqueness ────────────────────────────────────────────────────────
 CREATE UNIQUE INDEX IF NOT EXISTS schools_name_unique ON schools (LOWER(name));
