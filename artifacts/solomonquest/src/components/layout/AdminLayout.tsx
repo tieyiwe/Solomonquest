@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   MessageSquare,
   Paintbrush,
+  ChevronDown,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
@@ -33,24 +34,36 @@ const adminLinks = [
   { href: "/dashboard/admin/admissions", label: "Admissions", icon: CheckSquare },
   { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
   { href: "/dashboard/admin/analytics", label: "Analytics", icon: BarChart2 },
-  { href: "/dashboard/admin/reminders", label: "Reminders", icon: Bell },
-  { href: "/dashboard/admin/branding", label: "Branding", icon: Paintbrush },
-  { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
   { href: "/dashboard/admin/danger-zone", label: "Danger Zone", icon: AlertTriangle },
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/help", label: "Help Center", icon: HelpCircle },
+  // Settings sub-links kept here so BottomNav includes them
+  { href: "/dashboard/admin/reminders", label: "Reminders", icon: Bell },
+  { href: "/dashboard/admin/branding", label: "Branding", icon: Paintbrush },
+  { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
+];
+
+const settingsSubLinks = [
+  { href: "/dashboard/admin/reminders", label: "Reminders", icon: Bell },
+  { href: "/dashboard/admin/branding", label: "Branding", icon: Paintbrush },
 ];
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
   return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U";
 }
 
+const mainLinks = adminLinks.filter(
+  (l) => l.href !== "/dashboard/admin/settings" && l.href !== "/dashboard/admin/reminders" && l.href !== "/dashboard/admin/branding"
+);
+
 function NavLinks({ onClose }: { onClose?: () => void }) {
   const [location] = useLocation();
+  const isInSettings = settingsSubLinks.some((l) => location.startsWith(l.href));
+  const [settingsOpen, setSettingsOpen] = useState(isInSettings);
 
   return (
     <nav className="flex flex-col gap-1 p-3">
-      {adminLinks.map((link) => {
+      {mainLinks.map((link) => {
         const Icon = link.icon;
         const isActive =
           link.href === "/dashboard/admin"
@@ -73,6 +86,51 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
           </Link>
         );
       })}
+
+      {/* Settings group — always last, sub-items expand downward */}
+      <div>
+        <button
+          onClick={() => setSettingsOpen((v) => !v)}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 ${
+            isInSettings
+              ? "bg-white/15 text-white font-semibold border-l-2 border-white pl-[10px]"
+              : "text-slate-300 font-medium hover:bg-white/8 hover:text-white"
+          }`}
+        >
+          <Settings className={`h-4 w-4 shrink-0 ${isInSettings ? "text-white" : "text-slate-400"}`} />
+          <span>Settings</span>
+          <span className="ml-auto">
+            {settingsOpen
+              ? <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+              : <ChevronRight className="h-3.5 w-3.5 opacity-60" />}
+          </span>
+        </button>
+
+        {settingsOpen && (
+          <div className="mt-0.5 ml-3 pl-3 border-l border-white/10 flex flex-col gap-0.5">
+            {settingsSubLinks.map((link) => {
+              const Icon = link.icon;
+              const isActive = location.startsWith(link.href);
+              return (
+                <Link key={link.href} href={link.href}>
+                  <button
+                    onClick={onClose}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150 ${
+                      isActive
+                        ? "bg-white/15 text-white font-semibold"
+                        : "text-slate-400 font-medium hover:bg-white/8 hover:text-white"
+                    }`}
+                  >
+                    <Icon className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-white" : "text-slate-500"}`} />
+                    <span>{link.label}</span>
+                    {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-white/80" />}
+                  </button>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </nav>
   );
 }
