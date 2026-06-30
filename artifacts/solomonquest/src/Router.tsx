@@ -45,40 +45,8 @@ const NotificationPreferences = lazy(() => import("@/pages/settings/Notification
 const MessagesPage = lazy(() => import("@/pages/messages/MessagesPage"));
 const SuperAdminDashboard = lazy(() => import("@/pages/super-admin/SuperAdminDashboard"));
 const AdminDangerZone = lazy(() => import("@/pages/admin/AdminDangerZone"));
+const AcceptInvitePage = lazy(() => import("@/pages/auth/AcceptInvitePage"));
 
-function InviteAcceptPage({ token }: { token: string }) {
-  const [, setLocation] = useLocation();
-  const [status, setStatus] = useState<"pending" | "error">("pending");
-
-  useEffect(() => {
-    fetch(`/api/invitations/accept/${token}`, { method: "POST" })
-      .then((res) => {
-        if (res.ok) {
-          setLocation("/onboarding/setup");
-        } else {
-          setStatus("error");
-        }
-      })
-      .catch(() => setStatus("error"));
-  }, [token, setLocation]);
-
-  if (status === "error") {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-destructive">Invalid or expired invite link.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        <p className="text-muted-foreground">Accepting invite...</p>
-      </div>
-    </div>
-  );
-}
 
 function StudentVideoSession() {
   const params = useParams<{ id: string }>();
@@ -222,9 +190,7 @@ export function Router() {
         </Route>
 
         {/* Invite Accept Route */}
-        <Route path="/invite/:token">
-          {(params) => <InviteAcceptPage token={params.token} />}
-        </Route>
+        <Route path="/invite/:token" component={AcceptInvitePage} />
 
         {/* Student Video Route */}
         <Route path="/dashboard/student/courses/:id/video">
