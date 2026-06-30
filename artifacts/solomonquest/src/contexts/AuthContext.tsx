@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import { useGetMe } from "@workspace/api-client-react";
+import { useGetMe, setAuthTokenGetter } from "@workspace/api-client-react";
 import type { Profile } from "@workspace/api-client-react/src/generated/api.schemas";
 import { useLocation } from "wouter";
 
@@ -37,6 +37,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  // Keep the API client's auth token in sync with the Supabase session
+  useEffect(() => {
+    setAuthTokenGetter(async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      return session?.access_token ?? null;
+    });
+    return () => setAuthTokenGetter(null);
   }, []);
 
   const { data: profile, isLoading: isLoadingProfile } = useGetMe({

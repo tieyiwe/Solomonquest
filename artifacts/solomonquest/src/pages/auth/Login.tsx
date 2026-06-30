@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -23,16 +23,20 @@ export default function Login() {
   const [_, setLocation] = useLocation();
   const { user } = useAuth();
 
-  // If already logged in, redirect
-  if (user) {
+  // Redirect logged-in users to their dashboard
+  useEffect(() => {
+    if (!user) return;
     if (user.role === "admin" || user.role === "super_admin") {
       setLocation("/dashboard/admin");
     } else if (user.role === "teacher") {
       setLocation("/dashboard/teacher");
-    } else {
+    } else if (user.role === "student" || user.role === "staff") {
       setLocation("/dashboard/student");
+    } else {
+      // Logged in but no role yet — go to onboarding
+      setLocation("/onboarding/setup");
     }
-  }
+  }, [user, setLocation]);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -54,8 +58,14 @@ export default function Login() {
       
       toast.success("Successfully logged in");
       // Let AuthContext handle redirect based on role
-    } catch (error: any) {
-      toast.error(error.message || "Failed to log in");
+    } catch (error: unknown) {
+      const msg =
+        error instanceof Error && error.message
+          ? error.message
+          : typeof error === "string" && error
+            ? error
+            : "Failed to log in. Please try again.";
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }

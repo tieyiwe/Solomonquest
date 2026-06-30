@@ -36,7 +36,7 @@ export default function Register() {
   async function onSubmit(data: RegisterFormValues) {
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data: signUpData, error } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
         options: {
@@ -48,11 +48,24 @@ export default function Register() {
       });
 
       if (error) throw error;
-      
-      toast.success("Registration successful. Please log in.");
-      setLocation("/auth/login");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to register");
+
+      if (signUpData.session) {
+        // Email confirmation is disabled — user is logged in immediately
+        toast.success("Account created! Setting up your profile...");
+        setLocation("/onboarding/setup");
+      } else {
+        // Email confirmation required
+        toast.success("Account created! Please check your email to confirm your address, then log in.");
+        setLocation("/auth/login");
+      }
+    } catch (error: unknown) {
+      const msg =
+        error instanceof Error && error.message
+          ? error.message
+          : typeof error === "string" && error
+            ? error
+            : "Failed to register. Please try again.";
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }
