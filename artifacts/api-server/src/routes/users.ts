@@ -130,4 +130,132 @@ function mapProfile(p: Record<string, unknown>, email?: string | null) {
   };
 }
 
+// GET /users/me/notification-prefs - get current user's notification preferences
+router.get("/users/me/notification-prefs", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("notification_prefs")
+    .eq("id", req.userId)
+    .single();
+
+  if (error || !data) {
+    res.status(404).json({ error: "Profile not found" });
+    return;
+  }
+
+  res.json({ notification_prefs: data.notification_prefs ?? {} });
+});
+
+// PUT /users/me/notification-prefs - update current user's notification preferences
+router.put("/users/me/notification-prefs", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const { in_app, email, chat, forum, assignments, grades, resources, applications } = req.body;
+
+  const notification_prefs: Record<string, unknown> = {};
+  if (in_app !== undefined) notification_prefs.in_app = in_app;
+  if (email !== undefined) notification_prefs.email = email;
+  if (chat !== undefined) notification_prefs.chat = chat;
+  if (forum !== undefined) notification_prefs.forum = forum;
+  if (assignments !== undefined) notification_prefs.assignments = assignments;
+  if (grades !== undefined) notification_prefs.grades = grades;
+  if (resources !== undefined) notification_prefs.resources = resources;
+  if (applications !== undefined) notification_prefs.applications = applications;
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ notification_prefs })
+    .eq("id", req.userId)
+    .select("notification_prefs")
+    .single();
+
+  if (error || !data) {
+    res.status(500).json({ error: error?.message ?? "Failed to update notification preferences" });
+    return;
+  }
+
+  res.json({ notification_prefs: data.notification_prefs });
+});
+
+// PUT /users/me/online - update last online time
+router.put("/users/me/online", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const { error } = await supabaseAdmin
+    .from("profiles")
+    .update({ online_at: new Date().toISOString() })
+    .eq("id", req.userId);
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  res.json({ success: true });
+});
+
+// GET /users/search - search users by unique_student_id or first/last name
+router.get("/users/search", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const query = req.query.query as string | undefined;
+  const school_id = req.query.school_id as string | undefined;
+
+  if (!query) {
+    res.status(400).json({ error: "query parameter is required" });
+    return;
+  }
+
+  let dbQuery = supabaseAdmin
+    .from("profiles")
+    .select("id, first_name, last_name, unique_student_id, avatar_url, role");
+
+  if (school_id) {
+    dbQuery = dbQuery.eq("school_id", school_id);
+  }
+
+  dbQuery = dbQuery.or(
+    `unique_student_id.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`
+  );
+
+  const { data, error } = await dbQuery;
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  res.json(data ?? []);
+});
+
+// POST /users/admin/reset-password - admin resets any user's password
+router.post("/users/admin/reset-password", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const { user_id, new_password } = req.body;
+
+  if (!user_id || !new_password) {
+    res.status(400).json({ error: "user_id and new_password are required" });
+    return;
+  }
+
+  const { data, error } = await supabaseAdmin.auth.admin.updateUserById(user_id, {
+    password: new_password,
+  });
+
+  if (error || !data) {
+    res.status(500).json({ error: error?.message ?? "Failed to reset password" });
+    return;
+  }
+
+  res.json({ success: true });
+});
+
 export default router;

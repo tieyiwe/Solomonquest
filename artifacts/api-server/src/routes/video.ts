@@ -4,148 +4,61 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-// ─── Zoom Integration Placeholder ────────────────────────────────────────────
-// To activate Zoom: set ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET in env.
-// Then implement generateZoomMeeting() using the Zoom Server-to-Server OAuth API:
-//   POST https://zoom.us/oauth/token?grant_type=account_credentials&account_id=...
-//   POST https://api.zoom.us/v2/users/me/meetings { topic, type: 2, duration }
-//   Returns: { join_url, start_url, id }
-// Replace the ZOOM_PLACEHOLDER functions below with real calls.
+// POST /video/sessions - start a session (teacher only)
+router.post("/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { course_id } = req.body;
+    const userId = req.user!.id;
 
-const ZOOM_ENABLED = !!(
-  process.env.ZOOM_ACCOUNT_ID &&
-  process.env.ZOOM_CLIENT_ID &&
-  process.env.ZOOM_CLIENT_SECRET
-);
-
-async function generateZoomMeeting(_topic: string): Promise<{ joinUrl: string; startUrl: string; meetingId: string } | null> {
-  if (!ZOOM_ENABLED) return null;
-  // TODO: implement Zoom Server-to-Server OAuth + create meeting API call here
-  // Example:
-  // const token = await getZoomAccessToken();
-  // const meeting = await createZoomMeeting(token, topic);
-  // return { joinUrl: meeting.join_url, startUrl: meeting.start_url, meetingId: String(meeting.id) };
-  return null;
-}
-
-async function getZoomMeetingStatus(_meetingId: string): Promise<"active" | "ended" | "unknown"> {
-  if (!ZOOM_ENABLED) return "unknown";
-  // TODO: GET https://api.zoom.us/v2/meetings/:meetingId
-  return "unknown";
-}
-
-// POST /courses/:courseId/video/start — teacher/admin starts a video session
-// Body: { provider?: "jitsi" | "zoom" }  (defaults to "jitsi")
-router.post(
-  "/courses/:courseId/video/start",
-  requireAuth,
-  async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { courseId } = req.params;
-    const userId = req.userId ?? "";
-    const userRole = req.userRole ?? "";
-    const provider: "jitsi" | "zoom" = (req.body as { provider?: "jitsi" | "zoom" }).provider ?? "jitsi";
-
-    if (userRole !== "teacher" && userRole !== "admin") {
-      res.status(403).json({ error: "Only teachers or admins can start a video session" });
-      return;
-    }
-
-    if (provider === "zoom" && !ZOOM_ENABLED) {
-      res.status(503).json({ error: "Zoom integration is not configured. Please add ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, and ZOOM_CLIENT_SECRET to environment variables." });
-      return;
-    }
-
-    // Check no active session already exists for this course
-    const { data: existing, error: existingError } = await supabaseAdmin
-      .from("video_sessions")
-      .select("id")
-      .eq("course_id", courseId)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (existingError) {
-      res.status(500).json({ error: existingError.message });
-      return;
-    }
-
-    if (existing) {
-      res.status(409).json({ error: "A video session is already active for this course" });
-      return;
-    }
-
-    // Fetch course title for notification
     const { data: course, error: courseError } = await supabaseAdmin
       .from("courses")
-      .select("title")
-      .eq("id", courseId)
+      .select("id, name, teacher_id")
+      .eq("id", course_id)
       .single();
 
     if (courseError || !course) {
-      res.status(404).json({ error: "Course not found" });
-      return;
+      return res.status(404).json({ error: "Course not found" });
     }
 
-    const roomId = `solomonquest-${courseId}-${Date.now()}`;
-
-    // Resolve meeting URL based on provider
-    let joinUrl: string;
-    let startUrl: string | null = null;
-    let zoomMeetingId: string | null = null;
-
-    if (provider === "zoom") {
-      const zoomMeeting = await generateZoomMeeting(course.title as string);
-      if (!zoomMeeting) {
-        res.status(500).json({ error: "Failed to create Zoom meeting" });
-        return;
-      }
-      joinUrl = zoomMeeting.joinUrl;
-      startUrl = zoomMeeting.startUrl;
-      zoomMeetingId = zoomMeeting.meetingId;
-    } else {
-      joinUrl = `https://meet.jit.si/${roomId}`;
+    if (course.teacher_id !== userId) {
+      return res.status(403).json({ error: "Only the teacher can start a video session" });
     }
 
-    // Insert into video_sessions table
-    const { data: session, error: insertError } = await supabaseAdmin
+    const jitsi_room = "solomonquest-" + course_id.slice(0, 8) + "-" + Date.now();
+
+    const { data: session, error: sessionError } = await supabaseAdmin
       .from("video_sessions")
       .insert({
-        course_id: courseId,
-        room_id: roomId,
-        started_by: userId,
-        is_active: true,
-        provider,
-        join_url: joinUrl,
-        start_url: startUrl,
-        zoom_meeting_id: zoomMeetingId,
+        course_id,
+        jitsi_room,
+        status: "active",
+        started_at: new Date().toISOString(),
       })
-      .select()
+      .select("id, jitsi_room, course_id, status, started_at")
       .single();
 
-    if (insertError || !session) {
-      res.status(500).json({ error: insertError?.message ?? "Failed to create video session" });
-      return;
+    if (sessionError) {
+      return res.status(500).json({ error: sessionError.message });
     }
 
-    // Get all enrolled students in the course
-    const { data: enrollments, error: enrollmentsError } = await supabaseAdmin
-      .from("course_enrollments")
-      .select("student_id")
-      .eq("course_id", courseId);
+    const { data: enrollments, error: enrollError } = await supabaseAdmin
+      .from("enrollments")
+      .select("user_id")
+      .eq("course_id", course_id);
 
-    if (enrollmentsError) {
-      console.error("Failed to fetch enrollments for notifications:", enrollmentsError.message);
+    if (enrollError) {
+      return res.status(500).json({ error: enrollError.message });
     }
 
-    const students = enrollments ?? [];
-
-    if (students.length > 0) {
-      const notifications = students.map((e: { student_id: string }) => ({
-        user_id: e.student_id,
-        title: `Live class started in ${course.title}`,
-        message: `Your teacher has started a live class via ${provider === "zoom" ? "Zoom" : "Jitsi"}. Click to join.`,
+    if (enrollments && enrollments.length > 0) {
+      const notifications = enrollments.map((enrollment) => ({
+        user_id: enrollment.user_id,
         type: "video_session",
-        metadata: { session_id: session.id, join_url: joinUrl, provider },
-        is_read: false,
+        message: `Live class started for ${course.name}. Click to join.`,
+        metadata: {
+          jitsi_room: session.jitsi_room,
+          session_id: session.id,
+        },
       }));
 
       const { error: notifError } = await supabaseAdmin
@@ -153,138 +66,160 @@ router.post(
         .insert(notifications);
 
       if (notifError) {
-        console.error("Failed to send notifications:", notifError.message);
+        return res.status(500).json({ error: notifError.message });
       }
     }
 
-    res.status(201).json({
-      sessionId: session.id,
-      roomId,
-      provider,
-      joinUrl,
-      startUrl,
-      zoomEnabled: ZOOM_ENABLED,
-      // Legacy field kept for backward compat
-      jitsiUrl: provider === "jitsi" ? joinUrl : null,
-    });
+    return res.status(201).json(session);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
   }
-);
+});
 
-// DELETE /courses/:courseId/video/end — teacher/admin ends a session
-router.delete(
-  "/courses/:courseId/video/end",
-  requireAuth,
-  async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { courseId } = req.params;
-    const userRole = req.userRole ?? "";
+// GET /video/sessions?course_id=X - get active session for a course (any enrolled user)
+router.get("/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { course_id } = req.query;
+    const userId = req.user!.id;
 
-    if (userRole !== "teacher" && userRole !== "admin") {
-      res.status(403).json({ error: "Only teachers or admins can end a video session" });
-      return;
+    if (!course_id) {
+      return res.status(400).json({ error: "course_id query parameter is required" });
     }
 
-    const { data, error } = await supabaseAdmin
-      .from("video_sessions")
-      .update({ is_active: false, ended_at: new Date().toISOString() })
-      .eq("course_id", courseId)
-      .eq("is_active", true)
-      .select()
-      .maybeSingle();
+    const { data: course, error: courseError } = await supabaseAdmin
+      .from("courses")
+      .select("id, teacher_id")
+      .eq("id", course_id)
+      .single();
 
-    if (error) {
-      res.status(500).json({ error: error.message });
-      return;
+    if (courseError || !course) {
+      return res.status(404).json({ error: "Course not found" });
     }
 
-    if (!data) {
-      res.status(404).json({ error: "No active video session found for this course" });
-      return;
-    }
+    const isTeacher = course.teacher_id === userId;
 
-    res.sendStatus(204);
-  }
-);
-
-// GET /courses/:courseId/video/active — get active session if any
-router.get(
-  "/courses/:courseId/video/active",
-  requireAuth,
-  async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { courseId } = req.params;
-    const userId = req.userId ?? "";
-    const userRole = req.userRole ?? "";
-
-    // Verify the requester is either the teacher/admin or an enrolled student
-    if (userRole !== "teacher" && userRole !== "admin") {
+    if (!isTeacher) {
       const { data: enrollment, error: enrollError } = await supabaseAdmin
         .from("enrollments")
         .select("id")
-        .eq("course_id", courseId)
+        .eq("course_id", course_id as string)
         .eq("user_id", userId)
-        .eq("status", "active")
-        .maybeSingle();
+        .single();
 
-      if (enrollError) {
-        res.status(500).json({ error: enrollError.message });
-        return;
-      }
-
-      if (!enrollment) {
-        res.status(403).json({ error: "You are not enrolled in this course" });
-        return;
+      if (enrollError || !enrollment) {
+        return res.status(403).json({ error: "Access denied: not enrolled in this course" });
       }
     }
 
-    const { data: session, error } = await supabaseAdmin
+    const { data: session, error: sessionError } = await supabaseAdmin
       .from("video_sessions")
-      .select("id, course_id, room_id, started_by, is_active, started_at, ended_at")
-      .eq("course_id", courseId)
-      .eq("is_active", true)
-      .maybeSingle();
+      .select("id, jitsi_room, course_id, status, started_at")
+      .eq("course_id", course_id as string)
+      .eq("status", "active")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .single();
 
-    if (error) {
-      res.status(500).json({ error: error.message });
-      return;
+    if (sessionError && sessionError.code !== "PGRST116") {
+      return res.status(500).json({ error: sessionError.message });
     }
 
-    if (!session) {
-      res.json(null);
-      return;
-    }
-
-    const provider = (session.provider as string) ?? "jitsi";
-    const joinUrl = (session.join_url as string) ?? `https://meet.jit.si/${session.room_id as string}`;
-
-    res.json({
-      sessionId: session.id,
-      courseId: session.course_id,
-      roomId: session.room_id,
-      startedBy: session.started_by,
-      isActive: session.is_active,
-      startedAt: session.started_at,
-      endedAt: session.ended_at,
-      provider,
-      joinUrl,
-      zoomEnabled: ZOOM_ENABLED,
-      // Legacy
-      jitsiUrl: provider === "jitsi" ? joinUrl : null,
-    });
+    return res.status(200).json(session || null);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
   }
-);
+});
 
-// GET /video/providers — returns which meeting providers are available
-// Frontend uses this to show/hide the Zoom option in the UI
-router.get("/video/providers", requireAuth, (_req, res) => {
-  res.json({
-    jitsi: { enabled: true, label: "Jitsi Meet", description: "Free, open-source video conferencing" },
-    zoom: {
-      enabled: ZOOM_ENABLED,
-      label: "Zoom",
-      description: ZOOM_ENABLED
-        ? "Zoom meetings (configured)"
-        : "Zoom meetings (not configured — add ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET to enable)",
-    },
-  });
+// PUT /video/sessions/:id/end - end session (teacher only)
+router.put("/sessions/:id/end", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+
+    const { data: session, error: sessionError } = await supabaseAdmin
+      .from("video_sessions")
+      .select("id, course_id, courses(teacher_id)")
+      .eq("id", id)
+      .single();
+
+    if (sessionError || !session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    const courseData = session.courses as any;
+    if (!courseData || courseData.teacher_id !== userId) {
+      return res.status(403).json({ error: "Only the teacher can end a video session" });
+    }
+
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from("video_sessions")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("id, jitsi_room, course_id, status, started_at, ended_at")
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    return res.status(200).json(updated);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /video/chat-calls - start group call in chat channel
+router.post("/chat-calls", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { channel_id } = req.body;
+
+    const jitsi_room = "solomonquest-chat-" + channel_id.slice(0, 8) + "-" + Date.now();
+
+    const { data: call, error: callError } = await supabaseAdmin
+      .from("chat_calls")
+      .insert({
+        channel_id,
+        jitsi_room,
+        status: "active",
+        started_at: new Date().toISOString(),
+      })
+      .select("id, jitsi_room, channel_id, status, started_at")
+      .single();
+
+    if (callError) {
+      return res.status(500).json({ error: callError.message });
+    }
+
+    return res.status(201).json(call);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /video/chat-calls/:id/end - end chat call
+router.put("/chat-calls/:id/end", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from("chat_calls")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("id, jitsi_room, channel_id, status, started_at, ended_at")
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    if (!updated) {
+      return res.status(404).json({ error: "Chat call not found" });
+    }
+
+    return res.status(200).json(updated);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 export default router;
