@@ -22,7 +22,8 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export default function Register() {
   const [isLoading, setIsLoading] = useState(false);
-  const [_, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const nextPath = new URLSearchParams(location.split("?")[1] ?? "").get("next") ?? "/onboarding/setup";
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -55,7 +56,7 @@ export default function Register() {
       if (signUpData.session) {
         // Email confirmation is disabled — user is logged in immediately
         toast.success("Account created! Setting up your profile...");
-        setLocation("/onboarding/setup");
+        setLocation(nextPath);
       } else {
         // Email confirmation required
         toast.success("Account created! Please check your email to confirm your address, then log in.");
