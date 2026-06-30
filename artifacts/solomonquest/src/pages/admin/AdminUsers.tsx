@@ -250,7 +250,7 @@ function InviteButton({
   onSent,
 }: {
   role: "teacher" | "staff";
-  onSent: (entry: { email: string; role: string; sentAt: string }) => void;
+  onSent: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
@@ -275,7 +275,7 @@ function InviteButton({
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || err.message || "Failed to send invitation");
       }
-      onSent({ email: email.trim(), role, sentAt: new Date().toISOString() });
+      onSent();
       toast.success(`Invitation sent to ${email.trim()}`);
       setEmail("");
       setOpen(false);
@@ -328,59 +328,112 @@ function InviteButton({
   );
 }
 
-function InvitationsTab({ invites }: { invites: Array<{ email: string; role: string; sentAt: string }> }) {
+interface Invitation {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  accepted_at?: string | null;
+}
+
+function statusBadge(status: string) {
+  switch (status) {
+    case "accepted":
+      return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 border">Accepted</Badge>;
+    case "expired":
+      return <Badge className="bg-red-100 text-red-700 border-red-200 border">Expired</Badge>;
+    default:
+      return <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 border">Pending</Badge>;
+  }
+}
+
+function InvitationsTab({ refreshKey }: { refreshKey: number }) {
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      fetch("/api/invitations", {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (!cancelled) setInvitations(data.invitations ?? []);
+        })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setLoading(false); });
+    });
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
+  if (loading) {
+    return (
+      <div className="p-6 space-y-3">
+        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+      </div>
+    );
+  }
+
+  if (invitations.length === 0) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <Mail className="h-10 w-10 mx-auto mb-3 opacity-30" />
+        <p className="text-sm">No invitations sent yet. Use the Invite buttons in the Teachers or Staff tabs.</p>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      {invites.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground">
-          <Mail className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No invitations sent yet. Use the Invite buttons in the Teachers or Staff tabs.</p>
-        </div>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50/50">
-              <TableHead className="font-semibold">Email</TableHead>
-              <TableHead className="font-semibold">Role</TableHead>
-              <TableHead className="font-semibold">Sent</TableHead>
-              <TableHead className="font-semibold">Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {invites.map((inv, i) => (
-              <TableRow key={i}>
-                <TableCell className="font-medium text-sm">{inv.email}</TableCell>
-                <TableCell>
-                  {inv.role === "teacher" ? (
-                    <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Teacher</Badge>
-                  ) : (
-                    <Badge className="bg-orange-100 text-orange-700 border-orange-200 border">Staff</Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {new Date(inv.sentAt).toLocaleDateString()}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="text-yellow-700 border-yellow-300 bg-yellow-50">
-                    Pending
-                  </Badge>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-    </div>
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-gray-50/50">
+          <TableHead className="font-semibold">Email</TableHead>
+          <TableHead className="font-semibold">Role</TableHead>
+          <TableHead className="font-semibold">Status</TableHead>
+          <TableHead className="font-semibold">Sent</TableHead>
+          <TableHead className="font-semibold">Accepted / Expires</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {invitations.map((inv) => (
+          <TableRow key={inv.id}>
+            <TableCell className="font-medium text-sm">{inv.email}</TableCell>
+            <TableCell>
+              {inv.role === "teacher" ? (
+                <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Teacher</Badge>
+              ) : inv.role === "staff" ? (
+                <Badge className="bg-orange-100 text-orange-700 border-orange-200 border">Staff</Badge>
+              ) : (
+                <Badge variant="outline" className="capitalize">{inv.role}</Badge>
+              )}
+            </TableCell>
+            <TableCell>{statusBadge(inv.status)}</TableCell>
+            <TableCell className="text-sm text-muted-foreground">
+              {new Date(inv.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+            </TableCell>
+            <TableCell className="text-sm text-muted-foreground">
+              {inv.status === "accepted" && inv.accepted_at
+                ? new Date(inv.accepted_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+                : inv.status === "expired"
+                ? "—"
+                : `Expires ${new Date(inv.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
 export default function AdminUsers() {
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("teachers");
-  const [sentInvites, setSentInvites] = useState<Array<{ email: string; role: string; sentAt: string }>>([]);
-
-  const addInvite = (entry: { email: string; role: string; sentAt: string }) =>
-    setSentInvites((prev) => [entry, ...prev]);
+  const [inviteRefreshKey, setInviteRefreshKey] = useState(0);
+  const addInvite = () => setInviteRefreshKey((k) => k + 1);
 
   return (
     <AdminLayout>
@@ -441,7 +494,7 @@ export default function AdminUsers() {
             <Card className="border-0 shadow-sm">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">Teachers enrolled in your school.</p>
-                <InviteButton role="teacher" onSent={addInvite} />
+                <InviteButton role="teacher" onSent={() => { addInvite(); setActiveTab("invitations"); }} />
               </div>
               <CardContent className="p-0">
                 <UserTable role="teacher" search={search} />
@@ -461,7 +514,7 @@ export default function AdminUsers() {
             <Card className="border-0 shadow-sm">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">Staff members associated with your school.</p>
-                <InviteButton role="staff" onSent={addInvite} />
+                <InviteButton role="staff" onSent={() => { addInvite(); setActiveTab("invitations"); }} />
               </div>
               <CardContent className="p-0">
                 <UserTable role="staff" search={search} />
@@ -472,7 +525,7 @@ export default function AdminUsers() {
           <TabsContent value="invitations" className="mt-0">
             <Card className="border-0 shadow-sm">
               <CardContent className="p-0">
-                <InvitationsTab invites={sentInvites} />
+                <InvitationsTab refreshKey={inviteRefreshKey} />
               </CardContent>
             </Card>
           </TabsContent>

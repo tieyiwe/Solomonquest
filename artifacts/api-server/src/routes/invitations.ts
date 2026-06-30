@@ -95,7 +95,7 @@ router.get(
 
     const { data: invitations, error } = await supabaseAdmin
       .from("invitations")
-      .select("id, email, role, status, created_at, expires_at")
+      .select("id, email, role, status, created_at, expires_at, accepted_at")
       .eq("school_id", schoolId)
       .order("created_at", { ascending: false });
 
@@ -239,7 +239,7 @@ router.post(
     // Mark invitation as accepted
     const { error: inviteUpdateError } = await supabaseAdmin
       .from("invitations")
-      .update({ status: "accepted" })
+      .update({ status: "accepted", accepted_at: new Date().toISOString() })
       .eq("id", invitation.id);
 
     if (inviteUpdateError) {
