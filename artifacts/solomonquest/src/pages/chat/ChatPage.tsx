@@ -207,6 +207,100 @@ function SidebarChannel({
 }
 
 // ---------------------------------------------------------------------------
+// People Search — visible search bar at the top of the chat sidebar
+// ---------------------------------------------------------------------------
+
+interface PersonResult {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  internal_email?: string | null;
+  role?: string | null;
+  avatar_url?: string | null;
+}
+
+function PeopleSearch({
+  onOpenDm,
+}: {
+  onOpenDm: (userId: string, name: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PersonResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (!query.trim()) { setResults([]); return; }
+    timerRef.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await apiFetch(`/api/users/search?query=${encodeURIComponent(query)}`);
+        if (res.ok) setResults(await res.json());
+      } catch { /* ignore */ } finally { setLoading(false); }
+    }, 300);
+  }, [query]);
+
+  function fullName(p: PersonResult) {
+    return [p.first_name, p.last_name].filter(Boolean).join(" ") || p.internal_email || "Unknown";
+  }
+
+  return (
+    <div className="px-2 pb-2 relative">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-[#72767d]" />
+        <input
+          className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md bg-white/8 border border-white/10 text-white placeholder:text-[#72767d] focus:outline-none focus:ring-1 focus:ring-white/20"
+          placeholder="Find people..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {query && (
+          <button
+            className="absolute right-2 top-2 text-[#72767d] hover:text-white"
+            onClick={() => { setQuery(""); setResults([]); }}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {(results.length > 0 || loading) && (
+        <div className="absolute left-2 right-2 mt-1 rounded-md border border-white/10 overflow-hidden z-50" style={{ backgroundColor: "#2b2d42" }}>
+          {loading && (
+            <p className="px-3 py-2 text-xs text-[#72767d]">Searching…</p>
+          )}
+          {results.map((p) => (
+            <button
+              key={p.id}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-white/10 transition-colors text-left"
+              onClick={() => {
+                onOpenDm(p.id, fullName(p));
+                setQuery("");
+                setResults([]);
+              }}
+            >
+              <Avatar name={fullName(p)} size="sm" />
+              <div className="min-w-0">
+                <p className="text-white font-medium truncate">{fullName(p)}</p>
+                {p.internal_email && (
+                  <p className="text-[#72767d] text-xs truncate">{p.internal_email}</p>
+                )}
+              </div>
+              {p.role && (
+                <span className="ml-auto text-[10px] text-[#72767d] capitalize shrink-0">
+                  {p.role.replace("_", " ")}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // New Channel Dialog
 // ---------------------------------------------------------------------------
 
@@ -1098,6 +1192,28 @@ export default function ChatPage() {
     setThreadMessage(null);
   }
 
+  async function openDmWith(userId: string, name: string) {
+    // Check if DM already exists in local state
+    const existing = directChannels.find((c) => c.name === name);
+    if (existing) { selectChannel(existing); return; }
+    try {
+      const res = await apiFetch("/api/chat/channels", {
+        method: "POST",
+        body: JSON.stringify({ name, type: "direct", memberIds: [userId] }),
+      });
+      if (res.status === 409) {
+        // Already exists — fetch fresh channel list and open it
+        await fetchChannels();
+        return;
+      }
+      if (!res.ok) throw new Error();
+      const ch: Channel = await res.json();
+      handleChannelCreated(ch);
+    } catch {
+      toast.error("Failed to open conversation");
+    }
+  }
+
   async function selectChannel(ch: Channel) {
     setActiveChannel(ch);
     setMessages([]);
@@ -1135,9 +1251,14 @@ export default function ChatPage() {
         style={{ backgroundColor: "#1e1e2e" }}
       >
         {/* Workspace header */}
-        <div className="px-4 py-4 border-b border-white/10 flex-shrink-0">
+        <div className="px-4 py-3 border-b border-white/10 flex-shrink-0">
           <h1 className="font-bold text-white text-base">Chat</h1>
           <p className="text-[#b9bbbe] text-xs mt-0.5">Learning Community</p>
+        </div>
+
+        {/* People search */}
+        <div className="pt-2 flex-shrink-0">
+          <PeopleSearch onOpenDm={openDmWith} />
         </div>
 
         {/* Nav */}
