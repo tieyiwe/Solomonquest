@@ -4,7 +4,19 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Send, Hash, Lock, User, Phone, Search, Plus, X, MessageSquare } from "lucide-react";
+import {
+  Send,
+  Hash,
+  Lock,
+  User,
+  Phone,
+  Search,
+  Plus,
+  X,
+  MessageSquare,
+  ChevronRight,
+  ChevronDown,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +33,7 @@ interface Channel {
   id: string;
   name: string;
   type: "public" | "course" | "private" | "direct";
+  description?: string;
   unread_count?: number;
   member_count?: number;
   active_call?: { jitsi_room: string } | null;
@@ -36,6 +49,7 @@ interface ChatMessage {
   sender: {
     id: string;
     name: string;
+    avatar_url?: string | null;
     online_at?: string | null;
   };
   _optimistic?: boolean;
@@ -68,28 +82,15 @@ async function apiFetch(url: string, options: RequestInit = {}) {
   });
 }
 
-function nameHash(name: string): string {
-  const colors = [
-    "bg-red-500",
-    "bg-orange-500",
-    "bg-amber-500",
-    "bg-yellow-500",
-    "bg-lime-500",
-    "bg-green-500",
-    "bg-emerald-500",
-    "bg-teal-500",
-    "bg-cyan-500",
-    "bg-sky-500",
-    "bg-blue-500",
-    "bg-indigo-500",
-    "bg-violet-500",
-    "bg-purple-500",
-    "bg-pink-500",
-    "bg-rose-500",
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return colors[Math.abs(hash) % colors.length];
+const AVATAR_COLORS = [
+  "#ef4444","#f97316","#f59e0b","#84cc16","#22c55e",
+  "#14b8a6","#06b6d4","#3b82f6","#8b5cf6","#ec4899",
+];
+
+function nameColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
 function initials(name: string): string {
@@ -119,24 +120,73 @@ function isOnline(onlineAt?: string | null): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Avatar
 // ---------------------------------------------------------------------------
 
-function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" }) {
-  const sz = size === "sm" ? "w-7 h-7 text-xs" : "w-9 h-9 text-sm";
+function Avatar({
+  name,
+  size = "md",
+}: {
+  name: string;
+  size?: "xs" | "sm" | "md";
+}) {
+  const sz =
+    size === "xs"
+      ? "w-6 h-6 text-[10px]"
+      : size === "sm"
+      ? "w-7 h-7 text-xs"
+      : "w-9 h-9 text-sm";
   return (
     <div
-      className={`${sz} rounded-full ${nameHash(name)} flex items-center justify-center text-white font-semibold flex-shrink-0`}
+      className={`${sz} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`}
+      style={{ backgroundColor: nameColor(name) }}
     >
       {initials(name)}
     </div>
   );
 }
 
-function ChannelIcon({ type }: { type: Channel["type"] }) {
-  if (type === "private") return <Lock className="w-3.5 h-3.5" />;
-  if (type === "direct") return <User className="w-3.5 h-3.5" />;
-  return <Hash className="w-3.5 h-3.5" />;
+// ---------------------------------------------------------------------------
+// Channel icon
+// ---------------------------------------------------------------------------
+
+function ChannelIcon({ type, className = "w-3.5 h-3.5" }: { type: Channel["type"]; className?: string }) {
+  if (type === "private") return <Lock className={className} />;
+  if (type === "direct") return <User className={className} />;
+  return <Hash className={className} />;
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar channel button
+// ---------------------------------------------------------------------------
+
+function SidebarChannel({
+  ch,
+  active,
+  onClick,
+}: {
+  ch: Channel;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+        active
+          ? "bg-white/10 text-white"
+          : "text-[#b9bbbe] hover:bg-white/5 hover:text-white"
+      }`}
+    >
+      <ChannelIcon type={ch.type} className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+      <span className="flex-1 truncate text-left">{ch.name}</span>
+      {(ch.unread_count ?? 0) > 0 && (
+        <span className="text-xs font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-tight">
+          {ch.unread_count}
+        </span>
+      )}
+    </button>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -155,16 +205,23 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
 
   const searchUsers = useCallback((q: string) => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (!q.trim()) { setUserResults([]); return; }
+    if (!q.trim()) {
+      setUserResults([]);
+      return;
+    }
     searchTimeout.current = setTimeout(async () => {
       try {
         const res = await apiFetch(`/api/users/search?query=${encodeURIComponent(q)}`);
         if (res.ok) setUserResults(await res.json());
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }, 300);
   }, []);
 
-  useEffect(() => { searchUsers(userQuery); }, [userQuery, searchUsers]);
+  useEffect(() => {
+    searchUsers(userQuery);
+  }, [userQuery, searchUsers]);
 
   function toggleUser(u: UserResult) {
     setSelectedUsers((prev) =>
@@ -173,12 +230,18 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
   }
 
   async function handleCreate() {
-    if (selectedUsers.length === 0) { toast.error("Select at least one user"); return; }
+    if (selectedUsers.length === 0) {
+      toast.error("Select at least one user");
+      return;
+    }
     const name =
       mode === "direct"
         ? selectedUsers.map((u) => u.name).join(", ")
         : channelName.trim();
-    if (mode === "private" && !name) { toast.error("Enter a channel name"); return; }
+    if (mode === "private" && !name) {
+      toast.error("Enter a channel name");
+      return;
+    }
     setLoading(true);
     try {
       const res = await apiFetch("/api/chat/channels", {
@@ -202,23 +265,25 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-6 w-6">
+        <button
+          className="w-5 h-5 rounded flex items-center justify-center text-[#b9bbbe] hover:text-white hover:bg-white/10 transition-colors"
+          title="Create channel"
+        >
           <Plus className="w-4 h-4" />
-        </Button>
+        </button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>New Channel</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 mt-2">
-          {/* Mode toggle */}
           <div className="flex gap-2">
             <Button
               variant={mode === "private" ? "default" : "outline"}
               size="sm"
               onClick={() => setMode("private")}
             >
-              <Lock className="w-3.5 h-3.5 mr-1" /> Private
+              <Lock className="w-3.5 h-3.5 mr-1" /> Private Channel
             </Button>
             <Button
               variant={mode === "direct" ? "default" : "outline"}
@@ -237,7 +302,6 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
             />
           )}
 
-          {/* User search */}
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
             <Input
@@ -248,7 +312,6 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
             />
           </div>
 
-          {/* Selected users */}
           {selectedUsers.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {selectedUsers.map((u) => (
@@ -265,7 +328,6 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
             </div>
           )}
 
-          {/* Results */}
           {userResults.length > 0 && (
             <div className="border rounded-md max-h-40 overflow-y-auto">
               {userResults.map((u) => {
@@ -273,7 +335,9 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
                 return (
                   <button
                     key={u.id}
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center gap-2 ${sel ? "bg-primary/10" : ""}`}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center gap-2 ${
+                      sel ? "bg-primary/10" : ""
+                    }`}
                     onClick={() => toggleUser(u)}
                   >
                     <Avatar name={u.name} size="sm" />
@@ -295,6 +359,84 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// Inline thread preview (collapsed)
+// ---------------------------------------------------------------------------
+
+function InlineThreadPreview({
+  count,
+  channelId,
+  parentId,
+  onExpand,
+}: {
+  count: number;
+  channelId: string;
+  parentId: string;
+  onExpand: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [replies, setReplies] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  async function toggle() {
+    if (!expanded) {
+      setLoading(true);
+      try {
+        const res = await apiFetch(
+          `/api/chat/channels/${channelId}/messages/${parentId}/thread`
+        );
+        if (res.ok) setReplies(await res.json());
+      } catch {
+        /* ignore */
+      } finally {
+        setLoading(false);
+      }
+    }
+    setExpanded((v) => !v);
+  }
+
+  return (
+    <div className="mt-1 ml-1">
+      <button
+        className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-600 font-medium"
+        onClick={toggle}
+      >
+        {expanded ? (
+          <ChevronDown className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5" />
+        )}
+        <MessageSquare className="w-3.5 h-3.5" />
+        {count} {count === 1 ? "reply" : "replies"}
+      </button>
+
+      {expanded && (
+        <div className="mt-2 ml-4 border-l-2 border-border pl-3 space-y-2">
+          {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
+          {replies.map((r) => (
+            <div key={r.id} className="flex gap-2">
+              <Avatar name={r.sender?.name ?? "?"} size="xs" />
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs font-semibold">{r.sender?.name}</span>
+                  <span className="text-[10px] text-muted-foreground">{formatTs(r.created_at)}</span>
+                </div>
+                <p className="text-xs text-foreground whitespace-pre-wrap break-words">{r.content}</p>
+              </div>
+            </div>
+          ))}
+          <button
+            className="text-xs text-blue-500 hover:underline"
+            onClick={onExpand}
+          >
+            Open in thread panel →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Message item
 // ---------------------------------------------------------------------------
 
@@ -306,30 +448,51 @@ function MessageItem({
   onOpenThread: (msg: ChatMessage) => void;
 }) {
   const online = isOnline(msg.sender?.online_at);
+  const threadCount = msg.thread_count ?? 0;
+
   return (
-    <div className="flex gap-3 group px-4 py-2 hover:bg-accent/30 rounded-lg">
-      <div className="relative flex-shrink-0">
+    <div className="group flex gap-3 px-4 py-1.5 hover:bg-gray-50/5 rounded-lg transition-colors relative">
+      {/* Hover action: Reply in thread */}
+      <div className="absolute right-4 top-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          className="flex items-center gap-1 text-xs text-muted-foreground bg-background border rounded-md px-2 py-1 shadow-sm hover:bg-accent hover:text-foreground"
+          onClick={() => onOpenThread(msg)}
+        >
+          <MessageSquare className="w-3 h-3" />
+          Reply in thread
+        </button>
+      </div>
+
+      {/* Avatar */}
+      <div className="relative flex-shrink-0 mt-0.5">
         <Avatar name={msg.sender?.name ?? "?"} />
         {online && (
           <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />
         )}
       </div>
+
+      {/* Body */}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="font-semibold text-sm text-foreground">{msg.sender?.name}</span>
+          <span className="font-semibold text-sm">{msg.sender?.name}</span>
           <span className="text-xs text-muted-foreground">{formatTs(msg.created_at)}</span>
         </div>
-        <p className={`text-sm text-foreground whitespace-pre-wrap break-words ${msg._optimistic ? "opacity-60" : ""}`}>
+        <p
+          className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${
+            msg._optimistic ? "opacity-50" : ""
+          }`}
+        >
           {msg.content}
         </p>
-        {(msg.thread_count ?? 0) > 0 && (
-          <button
-            className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
-            onClick={() => onOpenThread(msg)}
-          >
-            <MessageSquare className="w-3 h-3" />
-            {msg.thread_count} {msg.thread_count === 1 ? "reply" : "replies"}
-          </button>
+
+        {/* Inline thread preview */}
+        {threadCount > 0 && !msg._optimistic && (
+          <InlineThreadPreview
+            count={threadCount}
+            channelId={msg.channel_id}
+            parentId={msg.id}
+            onExpand={() => onOpenThread(msg)}
+          />
         )}
       </div>
     </div>
@@ -343,37 +506,60 @@ function MessageItem({
 function MessageInput({
   onSend,
   placeholder,
+  disabled,
 }: {
   onSend: (content: string) => void;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   const [text, setText] = useState("");
+  const ref = useRef<HTMLTextAreaElement>(null);
 
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       const trimmed = text.trim();
-      if (trimmed) { onSend(trimmed); setText(""); }
+      if (trimmed) {
+        onSend(trimmed);
+        setText("");
+      }
+    }
+  }
+
+  function handleSend() {
+    const t = text.trim();
+    if (t) {
+      onSend(t);
+      setText("");
+      ref.current?.focus();
     }
   }
 
   return (
-    <div className="flex items-end gap-2 p-4 border-t bg-background">
-      <textarea
-        className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm min-h-[40px] max-h-32 focus:outline-none focus:ring-2 focus:ring-ring"
-        placeholder={placeholder ?? "Type a message... (Enter to send, Shift+Enter for newline)"}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKey}
-        rows={1}
-      />
-      <Button
-        size="icon"
-        disabled={!text.trim()}
-        onClick={() => { const t = text.trim(); if (t) { onSend(t); setText(""); } }}
-      >
-        <Send className="w-4 h-4" />
-      </Button>
+    <div className="px-4 py-3 border-t bg-background flex-shrink-0">
+      <div className="flex items-end gap-2 bg-muted/40 border rounded-lg px-3 py-2">
+        <textarea
+          ref={ref}
+          className="flex-1 resize-none bg-transparent text-sm min-h-[24px] max-h-32 focus:outline-none leading-relaxed"
+          placeholder={placeholder ?? "Type a message... (Enter to send, Shift+Enter for new line)"}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKey}
+          rows={1}
+          disabled={disabled}
+        />
+        <button
+          className="flex-shrink-0 p-1.5 rounded-md text-primary disabled:opacity-30 hover:bg-primary/10 transition-colors"
+          disabled={!text.trim() || disabled}
+          onClick={handleSend}
+          title="Send"
+        >
+          <Send className="w-4 h-4" />
+        </button>
+      </div>
+      <p className="text-[10px] text-muted-foreground mt-1">
+        Enter to send &middot; Shift+Enter for new line
+      </p>
     </div>
   );
 }
@@ -385,25 +571,33 @@ function MessageInput({
 function ThreadPanel({
   channel,
   parentMessage,
+  currentUserId,
+  currentUserName,
   onClose,
 }: {
   channel: Channel;
   parentMessage: ChatMessage;
+  currentUserId: string;
+  currentUserName: string;
   onClose: () => void;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [replies, setReplies] = useState<ChatMessage[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const fetchMessages = useCallback(async () => {
+  const fetchReplies = useCallback(async () => {
     try {
       const res = await apiFetch(
-        `/api/chat/channels/${channel.id}/messages?thread_parent_id=${parentMessage.id}`
+        `/api/chat/channels/${channel.id}/messages/${parentMessage.id}/thread`
       );
-      if (res.ok) setMessages(await res.json());
-    } catch { /* ignore */ }
+      if (res.ok) setReplies(await res.json());
+    } catch {
+      /* ignore */
+    }
   }, [channel.id, parentMessage.id]);
 
-  useEffect(() => { fetchMessages(); }, [fetchMessages]);
+  useEffect(() => {
+    fetchReplies();
+  }, [fetchReplies]);
 
   useEffect(() => {
     const sub = supabase
@@ -419,15 +613,22 @@ function ThreadPanel({
         (payload) => {
           const msg = payload.new as ChatMessage;
           if (msg.thread_parent_id === parentMessage.id) {
-            setMessages((prev) => [...prev, msg]);
+            setReplies((prev) => {
+              if (prev.find((r) => r.id === msg.id)) return prev;
+              return [...prev, msg];
+            });
           }
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(sub); };
+    return () => {
+      supabase.removeChannel(sub);
+    };
   }, [channel.id, parentMessage.id]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [replies.length]);
 
   async function sendReply(content: string) {
     const optimistic: ChatMessage = {
@@ -436,43 +637,128 @@ function ThreadPanel({
       content,
       thread_parent_id: parentMessage.id,
       created_at: new Date().toISOString(),
-      sender: { id: "me", name: "You" },
+      sender: { id: currentUserId, name: currentUserName },
       _optimistic: true,
     };
-    setMessages((prev) => [...prev, optimistic]);
+    setReplies((prev) => [...prev, optimistic]);
     try {
       const res = await apiFetch(`/api/chat/channels/${channel.id}/messages`, {
         method: "POST",
         body: JSON.stringify({ content, thread_parent_id: parentMessage.id }),
       });
       if (!res.ok) throw new Error();
-      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+      setReplies((prev) => prev.filter((r) => r.id !== optimistic.id));
     } catch {
-      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+      setReplies((prev) => prev.filter((r) => r.id !== optimistic.id));
       toast.error("Failed to send reply");
     }
   }
 
   return (
-    <div className="w-[300px] flex-shrink-0 border-l bg-background flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <div>
+    <div className="w-[320px] flex-shrink-0 border-l bg-background flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+        <div className="min-w-0">
           <h3 className="font-semibold text-sm">Thread</h3>
-          <p className="text-xs text-muted-foreground truncate max-w-[220px]">
+          <p className="text-xs text-muted-foreground truncate max-w-[240px]">
             {parentMessage.content}
           </p>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+        <button
+          className="w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ml-2"
+          onClick={onClose}
+        >
           <X className="w-4 h-4" />
-        </Button>
+        </button>
       </div>
+
+      {/* Parent message */}
+      <div className="px-4 py-3 border-b bg-muted/30">
+        <div className="flex gap-2">
+          <Avatar name={parentMessage.sender?.name ?? "?"} />
+          <div className="min-w-0">
+            <div className="flex items-baseline gap-2">
+              <span className="font-semibold text-sm">{parentMessage.sender?.name}</span>
+              <span className="text-xs text-muted-foreground">{formatTs(parentMessage.created_at)}</span>
+            </div>
+            <p className="text-sm whitespace-pre-wrap break-words">{parentMessage.content}</p>
+          </div>
+        </div>
+        {replies.length > 0 && (
+          <p className="text-xs text-muted-foreground mt-2 ml-11">
+            {replies.length} {replies.length === 1 ? "reply" : "replies"}
+          </p>
+        )}
+      </div>
+
+      {/* Replies */}
       <div className="flex-1 overflow-y-auto py-2">
-        {messages.map((m) => (
-          <MessageItem key={m.id} msg={m} onOpenThread={() => {}} />
+        {replies.map((r) => (
+          <MessageItem key={r.id} msg={r} onOpenThread={() => {}} />
         ))}
         <div ref={bottomRef} />
       </div>
+
+      {/* Input */}
       <MessageInput onSend={sendReply} placeholder="Reply in thread..." />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar section
+// ---------------------------------------------------------------------------
+
+function SidebarSection({
+  label,
+  channels,
+  activeId,
+  onSelect,
+  actions,
+}: {
+  label: string;
+  channels: Channel[];
+  activeId: string | null;
+  onSelect: (ch: Channel) => void;
+  actions?: React.ReactNode;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <div className="mb-3">
+      <div className="flex items-center justify-between px-2 mb-1 group/section">
+        <button
+          className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-[#8e9297] hover:text-white transition-colors"
+          onClick={() => setCollapsed((v) => !v)}
+        >
+          {collapsed ? (
+            <ChevronRight className="w-3 h-3" />
+          ) : (
+            <ChevronDown className="w-3 h-3" />
+          )}
+          {label}
+        </button>
+        {actions && (
+          <div className="opacity-0 group-hover/section:opacity-100 transition-opacity">
+            {actions}
+          </div>
+        )}
+      </div>
+      {!collapsed && (
+        <div className="space-y-0.5">
+          {channels.map((ch) => (
+            <SidebarChannel
+              key={ch.id}
+              ch={ch}
+              active={ch.id === activeId}
+              onClick={() => onSelect(ch)}
+            />
+          ))}
+          {channels.length === 0 && (
+            <p className="px-3 py-1 text-xs text-[#72767d]">None yet</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -489,9 +775,26 @@ export default function ChatPage() {
   const [threadMessage, setThreadMessage] = useState<ChatMessage | null>(null);
   const messagesBottomRef = useRef<HTMLDivElement>(null);
 
-  // -------------------------------------------------------------------
-  // Fetch channels
-  // -------------------------------------------------------------------
+  const currentUserId: string = (user as any)?.id ?? "";
+  const currentUserName: string =
+    (user as any)?.full_name ??
+    (user as any)?.name ??
+    (user as any)?.email ??
+    "You";
+
+  // -------------------------------------------------------------------------
+  // Derived channel groups
+  // -------------------------------------------------------------------------
+
+  const schoolAndCourseChannels = channels.filter(
+    (c) => c.type === "public" || c.type === "course"
+  );
+  const directChannels = channels.filter((c) => c.type === "direct");
+  const privateChannels = channels.filter((c) => c.type === "private");
+
+  // -------------------------------------------------------------------------
+  // Fetch channels on mount
+  // -------------------------------------------------------------------------
 
   const fetchChannels = useCallback(async () => {
     try {
@@ -501,48 +804,61 @@ export default function ChatPage() {
         setChannels(data);
         if (!activeChannel && data.length > 0) setActiveChannel(data[0]);
       }
-    } catch { /* ignore */ }
-  }, [activeChannel]);
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  useEffect(() => { fetchChannels(); }, []);  // intentionally run once on mount
+  useEffect(() => {
+    fetchChannels();
+  }, [fetchChannels]);
 
-  // -------------------------------------------------------------------
-  // Fetch messages for active channel
-  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Fetch messages when channel changes
+  // -------------------------------------------------------------------------
 
   const fetchMessages = useCallback(async () => {
     if (!activeChannel) return;
     try {
       const res = await apiFetch(`/api/chat/channels/${activeChannel.id}/messages`);
       if (res.ok) setMessages(await res.json());
-    } catch { /* ignore */ }
-  }, [activeChannel?.id]);
+    } catch {
+      /* ignore */
+    }
+  }, [activeChannel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { fetchMessages(); }, [fetchMessages]);
+  useEffect(() => {
+    setMessages([]);
+    fetchMessages();
+  }, [fetchMessages]);
 
+  // Scroll to bottom when switching channels
   useEffect(() => {
     messagesBottomRef.current?.scrollIntoView({ behavior: "instant" });
   }, [activeChannel?.id]);
 
+  // Scroll to bottom on new messages
   useEffect(() => {
     messagesBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // Realtime subscription
-  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
   useEffect(() => {
     if (!activeChannel) return;
+    const channelId = activeChannel.id;
     const sub = supabase
-      .channel(`chat:${activeChannel.id}`)
+      .channel(`chat-messages:${channelId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "chat_messages",
-          filter: `channel_id=eq.${activeChannel.id}`,
+          filter: `channel_id=eq.${channelId}`,
         },
         (payload) => {
           const msg = payload.new as ChatMessage;
@@ -551,27 +867,44 @@ export default function ChatPage() {
               if (prev.find((m) => m.id === msg.id)) return prev;
               return [...prev, msg];
             });
+          } else {
+            // Update thread_count on parent
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msg.thread_parent_id
+                  ? { ...m, thread_count: (m.thread_count ?? 0) + 1 }
+                  : m
+              )
+            );
           }
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(sub); };
-  }, [activeChannel?.id]);
+    return () => {
+      supabase.removeChannel(sub);
+    };
+  }, [activeChannel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // Online presence ping
-  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
   useEffect(() => {
-    const ping = async () => { try { await apiFetch("/api/users/me/online", { method: "PUT" }); } catch { /* ignore */ } };
+    const ping = async () => {
+      try {
+        await apiFetch("/api/users/me/online", { method: "PUT" });
+      } catch {
+        /* ignore */
+      }
+    };
     ping();
     const iv = setInterval(ping, 30_000);
     return () => clearInterval(iv);
   }, []);
 
-  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // Send message
-  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
   async function sendMessage(content: string) {
     if (!activeChannel) return;
@@ -580,7 +913,7 @@ export default function ChatPage() {
       channel_id: activeChannel.id,
       content,
       created_at: new Date().toISOString(),
-      sender: { id: user?.id ?? "me", name: user?.user_metadata?.name ?? user?.email ?? "You" },
+      sender: { id: currentUserId, name: currentUserName },
       _optimistic: true,
     };
     setMessages((prev) => [...prev, optimistic]);
@@ -597,9 +930,9 @@ export default function ChatPage() {
     }
   }
 
-  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // Video call
-  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
   async function startVideoCall() {
     if (!activeChannel) return;
@@ -621,19 +954,23 @@ export default function ChatPage() {
     window.open(`https://meet.jit.si/${activeChannel.active_call.jitsi_room}`, "_blank");
   }
 
+  // -------------------------------------------------------------------------
+  // Channel helpers
+  // -------------------------------------------------------------------------
+
   function handleChannelCreated(ch: Channel) {
     setChannels((prev) => {
       if (prev.find((c) => c.id === ch.id)) return prev;
       return [...prev, ch];
     });
     setActiveChannel(ch);
+    setThreadMessage(null);
   }
 
   async function selectChannel(ch: Channel) {
     setActiveChannel(ch);
     setMessages([]);
     setThreadMessage(null);
-    // Refresh channel detail for active_call
     try {
       const res = await apiFetch(`/api/chat/channels/${ch.id}`);
       if (res.ok) {
@@ -641,57 +978,69 @@ export default function ChatPage() {
         setActiveChannel(detail);
         setChannels((prev) => prev.map((c) => (c.id === detail.id ? detail : c)));
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
-  // -------------------------------------------------------------------
+  const topMessages = messages.filter((m) => !m.thread_parent_id);
+
+  // -------------------------------------------------------------------------
   // Render
-  // -------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* ------------------------------------------------------------------ */}
       {/* Sidebar */}
       {/* ------------------------------------------------------------------ */}
-      <aside className="w-[250px] flex-shrink-0 border-r bg-card flex flex-col">
-        <div className="px-4 py-3 border-b flex items-center justify-between">
-          <h2 className="font-semibold text-base">Channels</h2>
-          <NewChannelDialog onCreated={handleChannelCreated} />
+      <aside
+        className="w-[240px] flex-shrink-0 flex flex-col overflow-hidden"
+        style={{ backgroundColor: "#1e1e2e" }}
+      >
+        {/* Workspace header */}
+        <div className="px-4 py-4 border-b border-white/10 flex-shrink-0">
+          <h1 className="font-bold text-white text-base">SolomonQuest</h1>
+          <p className="text-[#b9bbbe] text-xs mt-0.5">Learning Community</p>
         </div>
-        <nav className="flex-1 overflow-y-auto py-2">
-          {channels.map((ch) => {
-            const active = activeChannel?.id === ch.id;
-            return (
-              <button
-                key={ch.id}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md mx-1 text-left transition-colors ${
-                  active
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                }`}
-                style={{ width: "calc(100% - 8px)" }}
-                onClick={() => selectChannel(ch)}
-              >
-                <ChannelIcon type={ch.type} />
-                <span className="flex-1 truncate">{ch.name}</span>
-                {(ch.unread_count ?? 0) > 0 && (
-                  <span
-                    className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${
-                      active ? "bg-white/20 text-white" : "bg-primary text-primary-foreground"
-                    }`}
-                  >
-                    {ch.unread_count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          {channels.length === 0 && (
-            <p className="px-4 py-6 text-xs text-muted-foreground text-center">
-              No channels yet. Create one above.
-            </p>
-          )}
+
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto py-3 px-2">
+          <SidebarSection
+            label="Channels"
+            channels={schoolAndCourseChannels}
+            activeId={activeChannel?.id ?? null}
+            onSelect={selectChannel}
+          />
+          <SidebarSection
+            label="Direct Messages"
+            channels={directChannels}
+            activeId={activeChannel?.id ?? null}
+            onSelect={selectChannel}
+            actions={<NewChannelDialog onCreated={handleChannelCreated} />}
+          />
+          <SidebarSection
+            label="Private Channels"
+            channels={privateChannels}
+            activeId={activeChannel?.id ?? null}
+            onSelect={selectChannel}
+            actions={<NewChannelDialog onCreated={handleChannelCreated} />}
+          />
         </nav>
+
+        {/* Current user */}
+        {currentUserName && (
+          <div className="px-3 py-3 border-t border-white/10 flex items-center gap-2 flex-shrink-0">
+            <div className="relative">
+              <Avatar name={currentUserName} size="sm" />
+              <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 border-2 rounded-full" style={{ borderColor: "#1e1e2e" }} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-white truncate">{currentUserName}</p>
+              <p className="text-xs text-[#72767d]">Online</p>
+            </div>
+          </div>
+        )}
       </aside>
 
       {/* ------------------------------------------------------------------ */}
@@ -701,26 +1050,33 @@ export default function ChatPage() {
         <div className="flex flex-1 min-w-0">
           {/* Messages column */}
           <div className="flex flex-col flex-1 min-w-0">
-            {/* Header */}
-            <header className="flex items-center justify-between px-5 py-3 border-b bg-card flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <ChannelIcon type={activeChannel.type} />
-                <span className="font-semibold text-base">{activeChannel.name}</span>
+            {/* Channel header */}
+            <header className="flex items-center justify-between px-5 py-3 border-b bg-background flex-shrink-0 shadow-sm">
+              <div className="flex items-center gap-2 min-w-0">
+                <ChannelIcon type={activeChannel.type} className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                <h2 className="font-bold text-base truncate">{activeChannel.name}</h2>
                 {activeChannel.member_count != null && (
-                  <span className="text-xs text-muted-foreground">
-                    {activeChannel.member_count} member{activeChannel.member_count !== 1 ? "s" : ""}
+                  <span className="text-xs text-muted-foreground flex-shrink-0">
+                    {activeChannel.member_count}{" "}
+                    {activeChannel.member_count !== 1 ? "members" : "member"}
                   </span>
                 )}
+                {activeChannel.description && (
+                  <>
+                    <span className="text-muted-foreground/40 text-sm">|</span>
+                    <span className="text-sm text-muted-foreground truncate">{activeChannel.description}</span>
+                  </>
+                )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0 ml-4">
                 {activeChannel.active_call ? (
-                  <Button size="sm" variant="default" onClick={joinCall}>
-                    <Phone className="w-4 h-4 mr-1" />
+                  <Button size="sm" onClick={joinCall}>
+                    <Phone className="w-4 h-4 mr-1.5" />
                     Join Call
                   </Button>
                 ) : (
                   <Button size="sm" variant="outline" onClick={startVideoCall}>
-                    <Phone className="w-4 h-4 mr-1" />
+                    <Phone className="w-4 h-4 mr-1.5" />
                     Video Call
                   </Button>
                 )}
@@ -728,19 +1084,32 @@ export default function ChatPage() {
             </header>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto py-3 space-y-0.5">
-              {messages
-                .filter((m) => !m.thread_parent_id)
-                .map((m) => (
+            <div className="flex-1 overflow-y-auto py-4">
+              {topMessages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full text-center px-8">
+                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                    <ChannelIcon type={activeChannel.type} className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="font-semibold text-lg mb-1">
+                    Welcome to #{activeChannel.name}!
+                  </h3>
+                  <p className="text-muted-foreground text-sm">
+                    This is the beginning of the #{activeChannel.name} channel. Send a message to get started.
+                  </p>
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {topMessages.map((m) => (
                   <MessageItem key={m.id} msg={m} onOpenThread={setThreadMessage} />
                 ))}
+              </div>
               <div ref={messagesBottomRef} />
             </div>
 
-            {/* Input */}
+            {/* Message input */}
             <MessageInput
               onSend={sendMessage}
-              placeholder={`Message #${activeChannel.name}`}
+              placeholder={`Message ${activeChannel.type === "direct" ? "" : "#"}${activeChannel.name}`}
             />
           </div>
 
@@ -749,15 +1118,22 @@ export default function ChatPage() {
             <ThreadPanel
               channel={activeChannel}
               parentMessage={threadMessage}
+              currentUserId={currentUserId}
+              currentUserName={currentUserName}
               onClose={() => setThreadMessage(null)}
             />
           )}
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-muted-foreground">
-          <div className="text-center space-y-2">
-            <MessageSquare className="w-12 h-12 mx-auto opacity-20" />
-            <p className="text-sm">Select a channel to start chatting</p>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-3">
+            <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto">
+              <MessageSquare className="w-10 h-10 text-muted-foreground opacity-50" />
+            </div>
+            <h2 className="text-xl font-semibold">No channel selected</h2>
+            <p className="text-muted-foreground text-sm">
+              Pick a channel from the sidebar to start chatting.
+            </p>
           </div>
         </div>
       )}

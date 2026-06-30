@@ -1,56 +1,165 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
+  LayoutDashboard,
   Users,
   BookOpen,
   FileText,
-  Bell,
-  Settings,
-  Home,
+  FolderOpen,
   MessageSquare,
-  Globe,
-  GraduationCap,
-  ClipboardList,
-  UserPlus,
-  ChevronRight,
+  MessageCircle,
+  BarChart2,
+  Settings,
+  Bell,
   LogOut,
   Menu,
   X,
-  TrendingUp,
+  ChevronRight,
   AlertCircle,
+  GraduationCap,
+  UserPlus,
+  ClipboardList,
   Loader2,
-  FolderOpen,
 } from "lucide-react";
-import { toast } from "sonner";
-import { format, formatDistanceToNow, subDays } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
-  useGetAdminStats,
-  useListUsers,
-  useListApplications,
-} from "@workspace/api-client-react";
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { format } from "date-fns";
 
-// ─── Sidebar Navigation ─────────────────────────────────────────────────────
+// ─── apiFetch helper ──────────────────────────────────────────────────────────
 
-const navLinks = [
-  { href: "/dashboard/admin", label: "Overview", icon: Home, exact: true },
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as any).message ?? `Request failed: ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface DashboardStats {
+  totalStudents?: number;
+  totalTeachers?: number;
+  totalCourses?: number;
+  pendingApplications?: number;
+}
+
+interface UserRow {
+  id: string;
+  first_name?: string;
+  last_name?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  role?: string;
+  unique_student_id?: string;
+  uniqueStudentId?: string;
+  created_at?: string;
+  createdAt?: string;
+  status?: string;
+  avatar_url?: string;
+  avatarUrl?: string;
+  courses_count?: number;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getInitials(first?: string | null, last?: string | null) {
+  return `${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase() || "U";
+}
+
+function displayName(u: UserRow) {
+  const first = u.firstName || u.first_name || "";
+  const last = u.lastName || u.last_name || "";
+  return `${first} ${last}`.trim() || "—";
+}
+
+function formatDate(raw?: string | null) {
+  if (!raw) return "—";
+  try {
+    return format(new Date(raw), "MMM d, yyyy h:mm a");
+  } catch {
+    return raw;
+  }
+}
+
+function roleBadgeClass(role?: string | null) {
+  switch (role) {
+    case "admin":
+    case "super_admin":
+      return "bg-purple-100 text-purple-700 border-purple-200";
+    case "teacher":
+      return "bg-blue-100 text-blue-700 border-blue-200";
+    case "student":
+      return "bg-emerald-100 text-emerald-700 border-emerald-200";
+    default:
+      return "bg-gray-100 text-gray-600 border-gray-200";
+  }
+}
+
+function statusBadgeClass(status?: string | null) {
+  switch (status?.toLowerCase()) {
+    case "active":
+    case "approved":
+      return "bg-green-100 text-green-700 border-green-200";
+    case "rejected":
+      return "bg-red-100 text-red-700 border-red-200";
+    default:
+      return "bg-yellow-100 text-yellow-700 border-yellow-200";
+  }
+}
+
+function TableSkeleton({ cols, rows = 5 }: { cols: number; rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <tr key={i} className="border-b">
+          {Array.from({ length: cols }).map((_, j) => (
+            <td key={j} className="px-4 py-3">
+              <Skeleton className="h-4 w-full max-w-[140px]" />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+
+const NAV_LINKS = [
+  { href: "/dashboard/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/admin/users", label: "Users", icon: Users },
   { href: "/dashboard/admin/courses", label: "Courses", icon: BookOpen },
-  { href: "/dashboard/admin/admissions", label: "Admissions", icon: ClipboardList },
+  { href: "/dashboard/admin/admissions", label: "Admissions", icon: FileText },
   { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
-  { href: "/forum", label: "Forum", icon: Globe },
-  { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/forum", label: "Forum", icon: MessageSquare },
+  { href: "/chat", label: "Chat", icon: MessageCircle },
+  { href: "/dashboard/admin/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
 ];
-
-function getInitials(firstName?: string | null, lastName?: string | null) {
-  return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U";
-}
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
   const [location] = useLocation();
@@ -59,61 +168,63 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
   return (
     <div className="flex flex-col h-full bg-slate-900">
       {/* Logo */}
-      <div className="px-4 py-5 border-b border-white/10">
+      <div className="px-4 py-5 border-b border-white/10 flex items-center justify-between shrink-0">
         <Link href="/dashboard/admin">
           <div className="flex items-center gap-2.5 cursor-pointer">
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm shrink-0">
               S
             </div>
-            <div className="overflow-hidden">
-              <p className="text-white font-semibold text-sm truncate leading-tight">SolomonQuest</p>
+            <div>
+              <p className="text-white font-semibold text-sm leading-tight">SolomonQuest</p>
               <p className="text-slate-400 text-xs">Admin Panel</p>
             </div>
           </div>
         </Link>
+        {onClose && (
+          <button onClick={onClose} className="text-slate-400 hover:text-white md:hidden">
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
-        {navLinks.map((link) => {
-          const Icon = link.icon;
-          const isActive = link.exact
-            ? location === link.href
-            : location.startsWith(link.href);
+        {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
+          const active = exact ? location === href : location.startsWith(href);
           return (
-            <Link key={link.href} href={link.href}>
+            <Link key={href} href={href}>
               <button
                 onClick={onClose}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
-                  isActive
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  active
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "text-slate-300 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                <span>{link.label}</span>
-                {isActive && <ChevronRight className="h-3 w-3 ml-auto opacity-70" />}
+                <span className="flex-1 text-left">{label}</span>
+                {active && <ChevronRight className="h-3 w-3 opacity-70" />}
               </button>
             </Link>
           );
         })}
       </nav>
 
-      {/* User Footer */}
-      <div className="p-3 border-t border-white/10">
+      {/* User footer */}
+      <div className="p-3 border-t border-white/10 shrink-0">
         <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
-          <Avatar className="h-8 w-8 border border-white/20">
-            <AvatarImage src={user?.avatarUrl || ""} />
+          <Avatar className="h-8 w-8 border border-white/20 shrink-0">
+            <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
             <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-              {getInitials(user?.firstName, user?.lastName)}
+              {getInitials((user as any)?.firstName, (user as any)?.lastName)}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 overflow-hidden">
             <p className="text-white text-sm font-medium truncate">
-              {user?.firstName} {user?.lastName}
+              {(user as any)?.firstName} {(user as any)?.lastName}
             </p>
             <p className="text-slate-400 text-xs capitalize truncate">
-              {user?.role?.replace("_", " ")}
+              {(user as any)?.role?.replace("_", " ")}
             </p>
           </div>
         </div>
@@ -131,7 +242,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
   );
 }
 
-// ─── Stat Card ───────────────────────────────────────────────────────────────
+// ─── Stat Card ────────────────────────────────────────────────────────────────
 
 function StatCard({
   title,
@@ -151,7 +262,7 @@ function StatCard({
   return (
     <Card className="border shadow-sm hover:shadow-md transition-shadow">
       <CardContent className="p-5">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
             {loading ? (
@@ -161,7 +272,7 @@ function StatCard({
             )}
             {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
           </div>
-          <div className={`p-3 rounded-xl ${color}`}>
+          <div className={`p-3 rounded-xl ${color} shrink-0`}>
             <Icon className="h-5 w-5 text-white" />
           </div>
         </div>
@@ -170,68 +281,42 @@ function StatCard({
   );
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function roleBadgeClass(role?: string | null) {
-  switch (role) {
-    case "admin":
-    case "super_admin":
-      return "bg-purple-100 text-purple-700 border-purple-200";
-    case "teacher":
-      return "bg-blue-100 text-blue-700 border-blue-200";
-    case "student":
-      return "bg-emerald-100 text-emerald-700 border-emerald-200";
-    default:
-      return "bg-gray-100 text-gray-600 border-gray-200";
-  }
-}
-
-function statusBadgeClass(status?: string | null) {
-  switch (status?.toLowerCase()) {
-    case "approved":
-      return "bg-green-100 text-green-700 border-green-200";
-    case "rejected":
-      return "bg-red-100 text-red-700 border-red-200";
-    case "active":
-      return "bg-emerald-100 text-emerald-700 border-emerald-200";
-    default:
-      return "bg-yellow-100 text-yellow-700 border-yellow-200";
-  }
-}
-
-function TableSkeleton({ cols, rows = 4 }: { cols: number; rows?: number }) {
-  return (
-    <>
-      {Array.from({ length: rows }).map((_, i) => (
-        <tr key={i} className="border-b">
-          {Array.from({ length: cols }).map((_, j) => (
-            <td key={j} className="px-4 py-3">
-              <Skeleton className="h-4 w-full max-w-[120px]" />
-            </td>
-          ))}
-        </tr>
-      ))}
-    </>
-  );
-}
-
-// ─── Main Page ───────────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function AdminOverview() {
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
 
-  const { data: stats, isLoading: statsLoading } = useGetAdminStats();
-  const { data: students, isLoading: studentsLoading } = useListUsers({ role: "student" });
-  const { data: teachers, isLoading: teachersLoading } = useListUsers({ role: "teacher" });
-  const { data: applications } = useListApplications();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
 
-  const recentStudents = (students ?? []).slice(0, 6);
-  const recentTeachers = (teachers ?? []).slice(0, 6);
-  const pendingCount = applications?.filter((a) => a.status === "pending").length ?? 0;
+  const [students, setStudents] = useState<UserRow[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(true);
 
-  // Close notif dropdown when clicking outside
+  const [teachers, setTeachers] = useState<UserRow[]>([]);
+  const [teachersLoading, setTeachersLoading] = useState(true);
+
+  useEffect(() => {
+    apiFetch<DashboardStats>("/api/dashboard")
+      .then(setStats)
+      .catch(() => toast.error("Failed to load dashboard stats"))
+      .finally(() => setStatsLoading(false));
+
+    apiFetch<UserRow[]>("/api/users?role=student")
+      .then((data) => setStudents(data.slice(0, 6)))
+      .catch(() => {})
+      .finally(() => setStudentsLoading(false));
+
+    apiFetch<UserRow[]>("/api/users?role=teacher")
+      .then((data) => setTeachers(data.slice(0, 6)))
+      .catch(() => {})
+      .finally(() => setTeachersLoading(false));
+  }, []);
+
+  const pendingCount = stats?.pendingApplications ?? 0;
+
+  // Close notif on outside click
   useEffect(() => {
     if (!notifOpen) return;
     const handler = () => setNotifOpen(false);
@@ -295,6 +380,7 @@ export default function AdminOverview() {
                 <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />
               )}
             </Button>
+
             {notifOpen && (
               <div
                 className="absolute right-0 top-10 w-72 bg-white rounded-xl shadow-lg border z-50 overflow-hidden"
@@ -310,24 +396,20 @@ export default function AdminOverview() {
                   </button>
                 </div>
                 {pendingCount > 0 ? (
-                  <div className="divide-y">
-                    <div className="px-4 py-3 flex items-start gap-3 hover:bg-gray-50">
-                      <div className="mt-0.5 h-7 w-7 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
-                        <AlertCircle className="h-3.5 w-3.5 text-orange-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {pendingCount} pending application{pendingCount > 1 ? "s" : ""}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Requires your review
-                        </p>
-                        <Link href="/dashboard/admin/admissions">
-                          <span className="text-xs text-primary font-medium cursor-pointer mt-1 inline-block hover:underline">
-                            Review now
-                          </span>
-                        </Link>
-                      </div>
+                  <div className="px-4 py-3 flex items-start gap-3 hover:bg-gray-50">
+                    <div className="mt-0.5 h-7 w-7 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+                      <AlertCircle className="h-3.5 w-3.5 text-orange-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {pendingCount} pending application{pendingCount > 1 ? "s" : ""}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Requires your review</p>
+                      <Link href="/dashboard/admin/admissions">
+                        <span className="text-xs text-primary font-medium cursor-pointer mt-1 inline-block hover:underline">
+                          Review now
+                        </span>
+                      </Link>
                     </div>
                   </div>
                 ) : (
@@ -340,11 +422,10 @@ export default function AdminOverview() {
             )}
           </div>
 
-          {/* Avatar */}
           <Avatar className="h-8 w-8 border">
-            <AvatarImage src={user?.avatarUrl || ""} />
+            <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
             <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-              {getInitials(user?.firstName, user?.lastName)}
+              {getInitials((user as any)?.firstName, (user as any)?.lastName)}
             </AvatarFallback>
           </Avatar>
         </header>
@@ -352,14 +433,15 @@ export default function AdminOverview() {
         {/* Page Body */}
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-8">
-            {/* Welcome */}
+
+            {/* Welcome + Quick Actions */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-bold tracking-tight text-gray-900">
-                  Welcome back{user?.firstName ? `, ${user.firstName}` : ""}!
+                  Welcome back{(user as any)?.firstName ? `, ${(user as any).firstName}` : ""}!
                 </h2>
                 <p className="text-muted-foreground mt-0.5">
-                  Here's what's happening at your school today.
+                  Here&apos;s what&apos;s happening at your school today.
                 </p>
               </div>
               <div className="flex gap-2 flex-wrap">
@@ -378,7 +460,7 @@ export default function AdminOverview() {
               </div>
             </div>
 
-            {/* Stats Cards */}
+            {/* Stats Row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard
                 title="Total Students"
@@ -386,17 +468,6 @@ export default function AdminOverview() {
                 icon={GraduationCap}
                 color="bg-emerald-500"
                 loading={statsLoading}
-                sub={
-                  students
-                    ? `${
-                        students.filter((s) => {
-                          const raw = (s as any).createdAt || (s as any).created_at;
-                          if (!raw) return false;
-                          return new Date(raw) > subDays(new Date(), 7);
-                        }).length
-                      } new this week`
-                    : undefined
-                }
               />
               <StatCard
                 title="Total Teachers"
@@ -418,15 +489,11 @@ export default function AdminOverview() {
                 icon={ClipboardList}
                 color="bg-orange-500"
                 loading={statsLoading}
-                sub={
-                  stats?.pendingApplications
-                    ? "Requires review"
-                    : "All caught up"
-                }
+                sub={pendingCount > 0 ? "Requires review" : "All caught up"}
               />
             </div>
 
-            {/* Quick Actions */}
+            {/* Quick Actions tiles */}
             <div>
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                 Quick Actions
@@ -473,54 +540,48 @@ export default function AdminOverview() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-gray-50/60">
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                          Name
-                        </th>
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide hidden sm:table-cell">
-                          Student ID
-                        </th>
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide hidden md:table-cell">
-                          Email
-                        </th>
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                          Role
-                        </th>
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">
-                          Joined
-                        </th>
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">
-                          School
-                        </th>
+                        {["Name", "Student ID", "Email", "Role", "Joined", "Status"].map((h) => (
+                          <th
+                            key={h}
+                            className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap"
+                          >
+                            {h}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {studentsLoading ? (
                         <TableSkeleton cols={6} />
-                      ) : recentStudents.length > 0 ? (
-                        recentStudents.map((s) => {
-                          const raw = s as any;
-                          const createdAt = raw.createdAt || raw.created_at;
+                      ) : students.length > 0 ? (
+                        students.map((s) => {
+                          const createdAt = s.createdAt || s.created_at;
+                          const studentId = s.uniqueStudentId || s.unique_student_id;
+                          const first = s.firstName || s.first_name || "";
+                          const last = s.lastName || s.last_name || "";
+                          const avatar = s.avatarUrl || s.avatar_url || "";
                           return (
-                            <tr key={s.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                            <tr
+                              key={s.id}
+                              className="border-b last:border-0 hover:bg-gray-50 transition-colors"
+                            >
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2.5">
                                   <Avatar className="h-7 w-7 shrink-0">
-                                    <AvatarImage src={s.avatarUrl || ""} />
+                                    <AvatarImage src={avatar} />
                                     <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs">
-                                      {getInitials(s.firstName, s.lastName)}
+                                      {getInitials(first, last)}
                                     </AvatarFallback>
                                   </Avatar>
                                   <span className="font-medium text-gray-900 whitespace-nowrap">
-                                    {s.firstName} {s.lastName}
+                                    {first} {last}
                                   </span>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
-                                {raw.uniqueStudentId || raw.unique_student_id || (
-                                  <span className="text-gray-300">—</span>
-                                )}
+                              <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
+                                {studentId || <span className="text-gray-300">—</span>}
                               </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden md:table-cell max-w-[200px] truncate">
+                              <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate">
                                 {s.email || <span className="text-gray-300">—</span>}
                               </td>
                               <td className="px-4 py-3">
@@ -530,26 +591,25 @@ export default function AdminOverview() {
                                   {s.role || "student"}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell whitespace-nowrap">
-                                {createdAt ? (
-                                  <span title={format(new Date(createdAt), "PPP")}>
-                                    {formatDistanceToNow(new Date(createdAt), { addSuffix: true })}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-300">—</span>
-                                )}
+                              <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
+                                {formatDate(createdAt)}
                               </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">
-                                {raw.schoolName || raw.school_name || (
-                                  <span className="text-gray-300">—</span>
-                                )}
+                              <td className="px-4 py-3">
+                                <span
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border capitalize ${statusBadgeClass(s.status || "active")}`}
+                                >
+                                  {s.status || "Active"}
+                                </span>
                               </td>
                             </tr>
                           );
                         })
                       ) : (
                         <tr>
-                          <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                          <td
+                            colSpan={6}
+                            className="px-4 py-10 text-center text-muted-foreground text-sm"
+                          >
                             No students enrolled yet.
                           </td>
                         </tr>
@@ -580,75 +640,61 @@ export default function AdminOverview() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-gray-50/60">
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                          Name
-                        </th>
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide hidden md:table-cell">
-                          Email
-                        </th>
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide hidden sm:table-cell">
-                          Subject
-                        </th>
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">
-                          Joined
-                        </th>
-                        <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                          Status
-                        </th>
+                        {["Name", "Email", "Courses Assigned", "Joined"].map((h) => (
+                          <th
+                            key={h}
+                            className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap"
+                          >
+                            {h}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {teachersLoading ? (
-                        <TableSkeleton cols={5} />
-                      ) : recentTeachers.length > 0 ? (
-                        recentTeachers.map((t) => {
-                          const raw = t as any;
-                          const createdAt = raw.createdAt || raw.created_at;
+                        <TableSkeleton cols={4} />
+                      ) : teachers.length > 0 ? (
+                        teachers.map((t) => {
+                          const createdAt = t.createdAt || t.created_at;
+                          const first = t.firstName || t.first_name || "";
+                          const last = t.lastName || t.last_name || "";
+                          const avatar = t.avatarUrl || t.avatar_url || "";
                           return (
-                            <tr key={t.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                            <tr
+                              key={t.id}
+                              className="border-b last:border-0 hover:bg-gray-50 transition-colors"
+                            >
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2.5">
                                   <Avatar className="h-7 w-7 shrink-0">
-                                    <AvatarImage src={t.avatarUrl || ""} />
+                                    <AvatarImage src={avatar} />
                                     <AvatarFallback className="bg-blue-100 text-blue-700 text-xs">
-                                      {getInitials(t.firstName, t.lastName)}
+                                      {getInitials(first, last)}
                                     </AvatarFallback>
                                   </Avatar>
                                   <span className="font-medium text-gray-900 whitespace-nowrap">
-                                    {t.firstName} {t.lastName}
+                                    {first} {last}
                                   </span>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden md:table-cell max-w-[200px] truncate">
+                              <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate">
                                 {t.email || <span className="text-gray-300">—</span>}
                               </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
-                                {raw.subject || raw.subjectArea || (
-                                  <span className="text-gray-300">—</span>
-                                )}
+                              <td className="px-4 py-3 text-center text-muted-foreground">
+                                {t.courses_count != null ? t.courses_count : <span className="text-gray-300">—</span>}
                               </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell whitespace-nowrap">
-                                {createdAt ? (
-                                  <span title={format(new Date(createdAt), "PPP")}>
-                                    {formatDistanceToNow(new Date(createdAt), { addSuffix: true })}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-300">—</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3">
-                                <span
-                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border capitalize ${statusBadgeClass(raw.status || "active")}`}
-                                >
-                                  {raw.status || "Active"}
-                                </span>
+                              <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
+                                {formatDate(createdAt)}
                               </td>
                             </tr>
                           );
                         })
                       ) : (
                         <tr>
-                          <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                          <td
+                            colSpan={4}
+                            className="px-4 py-10 text-center text-muted-foreground text-sm"
+                          >
                             No teachers found.
                           </td>
                         </tr>
@@ -658,6 +704,7 @@ export default function AdminOverview() {
                 </div>
               </CardContent>
             </Card>
+
           </div>
         </main>
       </div>

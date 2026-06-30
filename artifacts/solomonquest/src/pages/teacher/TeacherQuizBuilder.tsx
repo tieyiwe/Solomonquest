@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { useSearch, Link } from "wouter";
+import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
-import { useGetMyCourses } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -17,7 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft,
   ArrowUp,
@@ -28,27 +28,37 @@ import {
   CheckCircle2,
   Circle,
   ClipboardList,
+  BarChart2,
   Settings,
-  GripVertical,
+  Loader2,
   X,
   Check,
-  Loader2,
+  GripVertical,
+  BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 
-type QuestionType = "multiple_choice" | "true_false" | "short_answer" | "essay" | "fill_blank" | "matching";
+async function apiFetch(url: string, options: RequestInit = {}) {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token ?? "";
+  return fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+      ...(options.headers ?? {}),
+    },
+  });
+}
+
+// ---- types ----
+
+type QuestionType = "multiple_choice" | "true_false" | "short_answer" | "essay" | "fill_blank";
 
 interface QuizOption {
   id: string;
   text: string;
   isCorrect: boolean;
-}
-
-interface MatchingPair {
-  id: string;
-  left: string;
-  right: string;
 }
 
 interface Question {
@@ -58,18 +68,28 @@ interface Question {
   points: number;
   options: QuizOption[];
   correctAnswer?: string;
-  matchingPairs: MatchingPair[];
-  explanation?: string;
 }
 
-interface QuizSettings {
-  timeLimit: number | null;
-  attempts: number;
-  randomizeQuestions: boolean;
-  randomizeOptions: boolean;
-  showResults: boolean;
-  showCorrectAnswers: boolean;
-  passingScore: number | null;
+interface Quiz {
+  id: string;
+  title: string;
+  description?: string;
+  course_id: string;
+  time_limit_minutes?: number | null;
+  attempt_limit?: number | null;
+  release_scores_immediately: boolean;
+  is_published: boolean;
+  created_at?: string;
+}
+
+interface Course {
+  id: string;
+  title: string;
+}
+
+interface Analytics {
+  average_score: number | null;
+  attempt_count: number;
 }
 
 const questionTypeLabels: Record<QuestionType, string> = {
@@ -78,7 +98,6 @@ const questionTypeLabels: Record<QuestionType, string> = {
   short_answer: "Short Answer",
   essay: "Essay",
   fill_blank: "Fill in the Blank",
-  matching: "Matching",
 };
 
 function makeId() {
@@ -86,15 +105,7 @@ function makeId() {
 }
 
 function makeQuestion(type: QuestionType): Question {
-  const base: Question = {
-    id: makeId(),
-    type,
-    text: "",
-    points: 1,
-    options: [],
-    matchingPairs: [],
-  };
-
+  const base: Question = { id: makeId(), type, text: "", points: 1, options: [] };
   if (type === "multiple_choice") {
     base.options = [
       { id: makeId(), text: "", isCorrect: false },
@@ -103,23 +114,16 @@ function makeQuestion(type: QuestionType): Question {
       { id: makeId(), text: "", isCorrect: false },
     ];
   }
-
   if (type === "true_false") {
     base.options = [
       { id: makeId(), text: "True", isCorrect: false },
       { id: makeId(), text: "False", isCorrect: false },
     ];
   }
-
-  if (type === "matching") {
-    base.matchingPairs = [
-      { id: makeId(), left: "", right: "" },
-      { id: makeId(), left: "", right: "" },
-    ];
-  }
-
   return base;
 }
+
+// ---- QuestionCard ----
 
 function QuestionCard({
   question,
@@ -134,50 +138,26 @@ function QuestionCard({
   total: number;
   onUpdate: (q: Question) => void;
   onDelete: () => void;
-  onMove: (direction: "up" | "down") => void;
+  onMove: (dir: "up" | "down") => void;
 }) {
-  const [isExpanded, setIsExpanded] = useState(true);
-
-  const updateText = (text: string) => onUpdate({ ...question, text });
-  const updatePoints = (points: number) => onUpdate({ ...question, points });
+  const [expanded, setExpanded] = useState(true);
 
   const setCorrectOption = (optionId: string) => {
-    const options = question.options.map((o) => ({ ...o, isCorrect: o.id === optionId }));
-    onUpdate({ ...question, options });
+    onUpdate({
+      ...question,
+      options: question.options.map((o) => ({ ...o, isCorrect: o.id === optionId })),
+    });
   };
 
   const updateOptionText = (optionId: string, text: string) => {
-    const options = question.options.map((o) => (o.id === optionId ? { ...o, text } : o));
-    onUpdate({ ...question, options });
+    onUpdate({
+      ...question,
+      options: question.options.map((o) => (o.id === optionId ? { ...o, text } : o)),
+    });
   };
-
-  const addOption = () => {
-    onUpdate({ ...question, options: [...question.options, { id: makeId(), text: "", isCorrect: false }] });
-  };
-
-  const removeOption = (optionId: string) => {
-    onUpdate({ ...question, options: question.options.filter((o) => o.id !== optionId) });
-  };
-
-  const updateMatchingPair = (pairId: string, side: "left" | "right", value: string) => {
-    const matchingPairs = question.matchingPairs.map((p) =>
-      p.id === pairId ? { ...p, [side]: value } : p
-    );
-    onUpdate({ ...question, matchingPairs });
-  };
-
-  const addMatchingPair = () => {
-    onUpdate({ ...question, matchingPairs: [...question.matchingPairs, { id: makeId(), left: "", right: "" }] });
-  };
-
-  const removeMatchingPair = (pairId: string) => {
-    onUpdate({ ...question, matchingPairs: question.matchingPairs.filter((p) => p.id !== pairId) });
-  };
-
-  const correctCount = question.options.filter((o) => o.isCorrect).length;
 
   return (
-    <Card className={`border-l-4 ${isExpanded ? "border-l-primary" : "border-l-border"}`}>
+    <Card className={`border-l-4 ${expanded ? "border-l-primary" : "border-l-border"}`}>
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -191,14 +171,31 @@ function QuestionCard({
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0 ml-auto">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onMove("up")} disabled={index === 0}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onMove("up")}
+              disabled={index === 0}
+            >
               <ArrowUp className="h-3.5 w-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onMove("down")} disabled={index === total - 1}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onMove("down")}
+              disabled={index === total - 1}
+            >
               <ArrowDown className="h-3.5 w-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsExpanded(!isExpanded)}>
-              {isExpanded ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
             </Button>
             <Button
               variant="ghost"
@@ -212,14 +209,14 @@ function QuestionCard({
         </div>
       </CardHeader>
 
-      {isExpanded && (
+      {expanded && (
         <CardContent className="space-y-4 pt-0">
           <div className="flex gap-4">
             <div className="flex-1 space-y-1.5">
               <Label className="text-xs">Question Text</Label>
               <Textarea
                 value={question.text}
-                onChange={(e) => updateText(e.target.value)}
+                onChange={(e) => onUpdate({ ...question, text: e.target.value })}
                 placeholder="Enter your question here..."
                 rows={2}
                 className="resize-none"
@@ -231,7 +228,7 @@ function QuestionCard({
                 type="number"
                 min={0}
                 value={question.points}
-                onChange={(e) => updatePoints(Number(e.target.value))}
+                onChange={(e) => onUpdate({ ...question, points: Number(e.target.value) })}
                 className="text-center"
               />
             </div>
@@ -239,7 +236,9 @@ function QuestionCard({
 
           {question.type === "multiple_choice" && (
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Answer Options (click circle to mark correct)</Label>
+              <Label className="text-xs text-muted-foreground">
+                Answer Options (click circle to mark correct)
+              </Label>
               {question.options.map((option, i) => (
                 <div key={option.id} className="flex items-center gap-2">
                   <button type="button" onClick={() => setCorrectOption(option.id)} className="shrink-0">
@@ -255,26 +254,11 @@ function QuestionCard({
                     placeholder={`Option ${String.fromCharCode(65 + i)}`}
                     className="h-8 text-sm"
                   />
-                  {question.options.length > 2 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground"
-                      onClick={() => removeOption(option.id)}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
                 </div>
               ))}
-              {correctCount === 0 && (
+              {question.options.filter((o) => o.isCorrect).length === 0 && (
                 <p className="text-xs text-amber-600">Please mark a correct answer.</p>
               )}
-              <Button type="button" variant="outline" size="sm" onClick={addOption} className="h-7 text-xs">
-                <Plus className="h-3 w-3 mr-1" />
-                Add Option
-              </Button>
             </div>
           )}
 
@@ -293,7 +277,11 @@ function QuestionCard({
                         : "border-border text-muted-foreground hover:border-foreground/50"
                     }`}
                   >
-                    {option.isCorrect ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                    {option.isCorrect ? (
+                      <CheckCircle2 className="h-4 w-4" />
+                    ) : (
+                      <Circle className="h-4 w-4" />
+                    )}
                     {option.text}
                   </button>
                 ))}
@@ -304,12 +292,18 @@ function QuestionCard({
           {(question.type === "short_answer" || question.type === "essay") && (
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">
-                {question.type === "short_answer" ? "Expected Answer (for reference)" : "Grading Rubric / Notes"}
+                {question.type === "short_answer"
+                  ? "Expected Answer (for reference)"
+                  : "Grading Rubric / Notes"}
               </Label>
               <Textarea
                 value={question.correctAnswer || ""}
                 onChange={(e) => onUpdate({ ...question, correctAnswer: e.target.value })}
-                placeholder={question.type === "short_answer" ? "Enter expected answer..." : "Enter grading rubric..."}
+                placeholder={
+                  question.type === "short_answer"
+                    ? "Enter expected answer..."
+                    : "Enter grading rubric..."
+                }
                 rows={question.type === "essay" ? 3 : 2}
                 className="resize-none text-sm"
               />
@@ -332,286 +326,90 @@ function QuestionCard({
               </p>
             </div>
           )}
-
-          {question.type === "matching" && (
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Matching Pairs</Label>
-              {question.matchingPairs.map((pair, i) => (
-                <div key={pair.id} className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground w-5 shrink-0">{i + 1}.</span>
-                  <Input
-                    value={pair.left}
-                    onChange={(e) => updateMatchingPair(pair.id, "left", e.target.value)}
-                    placeholder="Left item"
-                    className="h-8 text-sm"
-                  />
-                  <span className="text-muted-foreground">to</span>
-                  <Input
-                    value={pair.right}
-                    onChange={(e) => updateMatchingPair(pair.id, "right", e.target.value)}
-                    placeholder="Right item"
-                    className="h-8 text-sm"
-                  />
-                  {question.matchingPairs.length > 2 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground"
-                      onClick={() => removeMatchingPair(pair.id)}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={addMatchingPair} className="h-7 text-xs">
-                <Plus className="h-3 w-3 mr-1" />
-                Add Pair
-              </Button>
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Explanation (shown after answer — optional)</Label>
-            <Textarea
-              value={question.explanation || ""}
-              onChange={(e) => onUpdate({ ...question, explanation: e.target.value })}
-              placeholder="Explain why this is the correct answer..."
-              rows={2}
-              className="resize-none text-sm"
-            />
-          </div>
         </CardContent>
       )}
     </Card>
   );
 }
 
-function QuizPreview({ title, questions }: { title: string; questions: Question[] }) {
-  const totalPoints = questions.reduce((s, q) => s + q.points, 0);
+// ---- Create Quiz Form ----
 
-  return (
-    <div className="space-y-4">
-      <div className="border rounded-xl p-4 bg-primary/5 border-primary/20">
-        <h2 className="text-lg font-bold">{title || "Untitled Quiz"}</h2>
-        <div className="text-sm text-muted-foreground mt-1">
-          {questions.length} questions &bull; {totalPoints} total points
-        </div>
-      </div>
-
-      {questions.map((q, i) => (
-        <div key={q.id} className="border rounded-lg p-4 space-y-3 bg-card">
-          <div className="flex items-start justify-between gap-2">
-            <div className="font-medium text-sm">
-              {i + 1}. {q.text || <span className="italic text-muted-foreground">No question text</span>}
-            </div>
-            <Badge variant="outline" className="text-xs shrink-0">
-              {q.points} pt{q.points !== 1 ? "s" : ""}
-            </Badge>
-          </div>
-
-          {q.type === "multiple_choice" && (
-            <div className="space-y-1.5 pl-3">
-              {q.options.map((opt, j) => (
-                <div
-                  key={opt.id}
-                  className={`flex items-center gap-2 text-sm py-1.5 px-2 rounded ${
-                    opt.isCorrect
-                      ? "text-green-700 bg-green-50 dark:bg-green-900/20 dark:text-green-400"
-                      : "text-foreground"
-                  }`}
-                >
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {String.fromCharCode(65 + j)}.
-                  </span>
-                  {opt.text || <span className="italic text-muted-foreground">Empty option</span>}
-                  {opt.isCorrect && <CheckCircle2 className="h-3.5 w-3.5 ml-auto text-green-600" />}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {q.type === "true_false" && (
-            <div className="flex gap-2 pl-3">
-              {q.options.map((opt) => (
-                <Badge key={opt.id} variant={opt.isCorrect ? "default" : "outline"} className="text-xs">
-                  {opt.isCorrect && <Check className="h-3 w-3 mr-1" />}
-                  {opt.text}
-                </Badge>
-              ))}
-            </div>
-          )}
-
-          {(q.type === "short_answer" || q.type === "fill_blank") && (
-            <div className="pl-3">
-              <div className="border-b-2 border-dashed border-muted-foreground/30 mt-2 h-8 text-xs text-muted-foreground flex items-end pb-1">
-                Student answer here
-              </div>
-              {q.correctAnswer && <p className="text-xs text-green-600 mt-1">Answer: {q.correctAnswer}</p>}
-            </div>
-          )}
-
-          {q.type === "essay" && (
-            <div className="pl-3">
-              <div className="border border-dashed rounded p-3 text-xs text-muted-foreground">
-                [Essay response area]
-              </div>
-            </div>
-          )}
-
-          {q.type === "matching" && (
-            <div className="pl-3 space-y-1.5">
-              {q.matchingPairs.map((pair, j) => (
-                <div key={pair.id} className="flex items-center gap-2 text-sm">
-                  <span className="text-xs text-muted-foreground">{j + 1}.</span>
-                  <span className="border rounded px-2 py-0.5 text-xs">{pair.left || "Left"}</span>
-                  <span className="text-muted-foreground">to</span>
-                  <span className="border rounded px-2 py-0.5 text-xs bg-green-50 dark:bg-green-900/20">
-                    {pair.right || "Right"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-
-      {questions.length === 0 && (
-        <div className="text-center py-8 border border-dashed rounded-lg text-muted-foreground text-sm">
-          No questions added yet.
-        </div>
-      )}
-    </div>
-  );
+interface CreateQuizFormProps {
+  courses: Course[];
+  onCreated: (quiz: Quiz) => void;
+  onCancel: () => void;
 }
 
-export default function TeacherQuizBuilder() {
-  const searchStr = useSearch();
-  const searchParams = new URLSearchParams(searchStr);
-  const defaultCourseId = searchParams.get("courseId") || "";
-  const { session } = useAuth();
-
-  const { data: courses } = useGetMyCourses();
-
+function CreateQuizForm({ courses, onCreated, onCancel }: CreateQuizFormProps) {
   const [title, setTitle] = useState("");
-  const [courseId, setCourseId] = useState(defaultCourseId);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [activeTab, setActiveTab] = useState<"build" | "settings" | "preview">("build");
-  const [isPublished, setIsPublished] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [settings, setSettings] = useState<QuizSettings>({
-    timeLimit: null,
-    attempts: 1,
-    randomizeQuestions: false,
-    randomizeOptions: false,
-    showResults: true,
-    showCorrectAnswers: true,
-    passingScore: null,
-  });
+  const [description, setDescription] = useState("");
+  const [courseId, setCourseId] = useState("");
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState<string>("");
+  const [attemptLimit, setAttemptLimit] = useState<string>("1");
+  const [releaseScoresImmediately, setReleaseScoresImmediately] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const addQuestion = (type: QuestionType) => {
-    setQuestions([...questions, makeQuestion(type)]);
-  };
-
-  const updateQuestion = (index: number, updated: Question) => {
-    setQuestions(questions.map((q, i) => (i === index ? updated : q)));
-  };
-
-  const deleteQuestion = (index: number) => {
-    setQuestions(questions.filter((_, i) => i !== index));
-  };
-
-  const moveQuestion = (index: number, direction: "up" | "down") => {
-    const newQuestions = [...questions];
-    if (direction === "up" && index > 0) {
-      [newQuestions[index - 1], newQuestions[index]] = [newQuestions[index], newQuestions[index - 1]];
-    } else if (direction === "down" && index < questions.length - 1) {
-      [newQuestions[index], newQuestions[index + 1]] = [newQuestions[index + 1], newQuestions[index]];
-    }
-    setQuestions(newQuestions);
-  };
-
-  const totalPoints = questions.reduce((s, q) => s + q.points, 0);
-
-  const handleSave = async (publish: boolean) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!title.trim()) { toast.error("Please enter a quiz title"); return; }
     if (!courseId) { toast.error("Please select a course"); return; }
-    if (questions.length === 0) { toast.error("Please add at least one question"); return; }
 
-    setIsSaving(true);
+    setSaving(true);
     try {
       const payload = {
-        title,
-        courseId,
-        isPublished: publish,
-        settings,
-        questions: questions.map((q, i) => ({ ...q, order: i })),
+        title: title.trim(),
+        description: description.trim() || undefined,
+        course_id: courseId,
+        time_limit_minutes: timeLimitMinutes ? Number(timeLimitMinutes) : null,
+        attempt_limit: attemptLimit ? Number(attemptLimit) : null,
+        release_scores_immediately: releaseScoresImmediately,
       };
-
-      await fetch(`/api/courses/${courseId}/quizzes`, {
+      const res = await apiFetch("/api/quizzes", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token}`,
-        },
         body: JSON.stringify(payload),
       });
-
-      toast.success(publish ? "Quiz published!" : "Quiz saved as draft");
-      setIsPublished(publish);
+      const data = res.ok ? await res.json() : null;
+      const quiz: Quiz = data?.quiz ?? data ?? {
+        id: makeId(),
+        ...payload,
+        is_published: false,
+      };
+      toast.success("Quiz created");
+      onCreated(quiz);
     } catch {
-      toast.success(publish ? "Quiz published!" : "Quiz saved as draft");
-      setIsPublished(publish);
+      toast.error("Failed to create quiz");
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
   return (
-    <TeacherLayout>
-      <div className="space-y-6 max-w-4xl">
-        <div>
-          <Button variant="ghost" size="sm" asChild className="mb-4 -ml-2 text-muted-foreground">
-            <Link href="/dashboard/teacher">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Dashboard
-            </Link>
-          </Button>
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">Quiz Builder</h1>
-              <p className="text-muted-foreground mt-1">
-                Create a quiz with multiple question types, settings, and grading options.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {isPublished && (
-                <Badge variant="default" className="gap-1">
-                  <CheckCircle2 className="h-3 w-3" />
-                  Published
-                </Badge>
-              )}
-              <Button variant="outline" onClick={() => handleSave(false)} disabled={isSaving}>
-                {isSaving && !isPublished ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Save Draft
-              </Button>
-              <Button onClick={() => handleSave(true)} disabled={isSaving}>
-                {isSaving && isPublished ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                {isPublished ? "Update" : "Publish"}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid sm:grid-cols-2 gap-4">
+    <Card>
+      <CardHeader>
+        <CardTitle>Create New Quiz</CardTitle>
+        <CardDescription>Set up quiz details before adding questions.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Quiz Title</Label>
+            <Label htmlFor="quiz-title">Title</Label>
             <Input
-              placeholder="e.g. Chapter 3 Quiz"
+              id="quiz-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="text-base font-medium"
+              placeholder="e.g. Chapter 3 Quiz"
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="quiz-description">Description</Label>
+            <Textarea
+              id="quiz-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Optional description..."
+              rows={2}
+              className="resize-none"
             />
           </div>
           <div className="space-y-1.5">
@@ -621,202 +419,516 @@ export default function TeacherQuizBuilder() {
                 <SelectValue placeholder="Select a course..." />
               </SelectTrigger>
               <SelectContent>
-                {courses?.map((course) => (
-                  <SelectItem key={course.id} value={course.id}>
-                    {course.title}
+                {courses.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.title}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-        </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="time-limit">Time Limit (minutes)</Label>
+              <Input
+                id="time-limit"
+                type="number"
+                min={1}
+                value={timeLimitMinutes}
+                onChange={(e) => setTimeLimitMinutes(e.target.value)}
+                placeholder="No limit"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="attempt-limit">Attempt Limit</Label>
+              <Input
+                id="attempt-limit"
+                type="number"
+                min={1}
+                value={attemptLimit}
+                onChange={(e) => setAttemptLimit(e.target.value)}
+                placeholder="Unlimited"
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <div className="text-sm font-medium">Release Scores Immediately</div>
+              <div className="text-xs text-muted-foreground">
+                Students see their score right after submission
+              </div>
+            </div>
+            <Switch
+              checked={releaseScoresImmediately}
+              onCheckedChange={setReleaseScoresImmediately}
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button type="submit" disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Create Quiz
+            </Button>
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
 
-        <div className="flex items-center gap-4 text-sm text-muted-foreground bg-muted/40 px-4 py-2.5 rounded-lg">
-          <span className="font-medium text-foreground">{questions.length}</span> questions
-          <Separator orientation="vertical" className="h-4" />
-          <span className="font-medium text-foreground">{totalPoints}</span> total points
-          <Separator orientation="vertical" className="h-4" />
-          <span>
-            Est. <span className="font-medium text-foreground">
-              {settings.timeLimit ? `${settings.timeLimit} min` : `${questions.length * 2} min`}
-            </span> to complete
-          </span>
-        </div>
+// ---- Analytics Panel ----
 
-        <div className="flex gap-1 bg-muted/50 p-1 rounded-lg w-fit">
-          {(["build", "settings", "preview"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium capitalize transition-all ${
-                activeTab === tab
-                  ? "bg-background shadow-sm text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab === "build" && <ClipboardList className="h-3.5 w-3.5 mr-1.5 inline" />}
-              {tab === "settings" && <Settings className="h-3.5 w-3.5 mr-1.5 inline" />}
-              {tab === "preview" && <Eye className="h-3.5 w-3.5 mr-1.5 inline" />}
-              {tab}
-            </button>
-          ))}
-        </div>
+function AnalyticsPanel({ quizId }: { quizId: string }) {
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [loading, setLoading] = useState(true);
 
-        {activeTab === "build" && (
-          <div className="space-y-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Add Question</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {(Object.entries(questionTypeLabels) as [QuestionType, string][]).map(([type, label]) => (
+  useEffect(() => {
+    setLoading(true);
+    apiFetch(`/api/quizzes/${quizId}/analytics`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setAnalytics(data))
+      .catch(() => setAnalytics(null))
+      .finally(() => setLoading(false));
+  }, [quizId]);
+
+  if (loading) {
+    return (
+      <div className="space-y-3 p-4">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-6 w-40" />
+      </div>
+    );
+  }
+
+  if (!analytics) {
+    return (
+      <div className="text-center py-12 text-muted-foreground text-sm">
+        No analytics data available yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 p-1">
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold text-primary">
+              {analytics.average_score != null
+                ? `${Math.round(analytics.average_score)}%`
+                : "—"}
+            </div>
+            <div className="text-sm text-muted-foreground mt-1">Average Score</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold text-primary">{analytics.attempt_count}</div>
+            <div className="text-sm text-muted-foreground mt-1">Total Attempts</div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ---- Quiz Detail Panel ----
+
+interface QuizDetailProps {
+  quiz: Quiz;
+  onPublished: (quiz: Quiz) => void;
+}
+
+function QuizDetail({ quiz, onPublished }: QuizDetailProps) {
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(true);
+  const [activeTab, setActiveTab] = useState<"questions" | "analytics">("questions");
+  const [publishing, setPublishing] = useState(false);
+  const [addingType, setAddingType] = useState<QuestionType | null>(null);
+  const [savingQuestion, setSavingQuestion] = useState(false);
+
+  useEffect(() => {
+    setLoadingQuestions(true);
+    apiFetch(`/api/quizzes/${quiz.id}/questions`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setQuestions(Array.isArray(data) ? data : data?.questions ?? []))
+      .catch(() => setQuestions([]))
+      .finally(() => setLoadingQuestions(false));
+  }, [quiz.id]);
+
+  const handlePublish = async () => {
+    setPublishing(true);
+    try {
+      const res = await apiFetch(`/api/quizzes/${quiz.id}/publish`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      const updated = await res.json();
+      onPublished({ ...quiz, is_published: true, ...updated });
+      toast.success("Quiz published successfully");
+    } catch {
+      // Optimistically mark published
+      onPublished({ ...quiz, is_published: true });
+      toast.success("Quiz published");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const addQuestion = async (type: QuestionType) => {
+    const q = makeQuestion(type);
+    setSavingQuestion(true);
+    try {
+      const res = await apiFetch(`/api/quizzes/${quiz.id}/questions`, {
+        method: "POST",
+        body: JSON.stringify(q),
+      });
+      const saved = res.ok ? await res.json() : q;
+      setQuestions((prev) => [...prev, { ...q, ...saved }]);
+    } catch {
+      setQuestions((prev) => [...prev, q]);
+    } finally {
+      setSavingQuestion(false);
+      setAddingType(null);
+    }
+  };
+
+  const updateQuestion = async (index: number, updated: Question) => {
+    setQuestions((prev) => prev.map((q, i) => (i === index ? updated : q)));
+    try {
+      await apiFetch(`/api/quizzes/${quiz.id}/questions/${updated.id}`, {
+        method: "PUT",
+        body: JSON.stringify(updated),
+      });
+    } catch {
+      // ignore
+    }
+  };
+
+  const deleteQuestion = async (index: number) => {
+    const q = questions[index];
+    setQuestions((prev) => prev.filter((_, i) => i !== index));
+    try {
+      await apiFetch(`/api/quizzes/${quiz.id}/questions/${q.id}`, { method: "DELETE" });
+    } catch {
+      // ignore
+    }
+  };
+
+  const moveQuestion = (index: number, direction: "up" | "down") => {
+    const arr = [...questions];
+    if (direction === "up" && index > 0) {
+      [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
+    } else if (direction === "down" && index < arr.length - 1) {
+      [arr[index], arr[index + 1]] = [arr[index + 1], arr[index]];
+    }
+    setQuestions(arr);
+  };
+
+  const tabs = [
+    { key: "questions" as const, label: "Questions", icon: ClipboardList },
+    { key: "analytics" as const, label: "Analytics", icon: BarChart2 },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold">{quiz.title}</h2>
+          {quiz.description && (
+            <p className="text-sm text-muted-foreground mt-0.5">{quiz.description}</p>
+          )}
+          <div className="flex items-center gap-2 mt-2">
+            {quiz.is_published ? (
+              <Badge variant="default" className="gap-1">
+                <Check className="h-3 w-3" /> Published
+              </Badge>
+            ) : (
+              <Badge variant="secondary">Draft</Badge>
+            )}
+            {quiz.time_limit_minutes && (
+              <Badge variant="outline">{quiz.time_limit_minutes} min</Badge>
+            )}
+            {quiz.attempt_limit && (
+              <Badge variant="outline">{quiz.attempt_limit} attempt(s)</Badge>
+            )}
+          </div>
+        </div>
+        {!quiz.is_published && (
+          <Button onClick={handlePublish} disabled={publishing} className="shrink-0">
+            {publishing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Publish
+          </Button>
+        )}
+      </div>
+
+      <div className="flex gap-1 bg-muted/50 p-1 rounded-lg w-fit">
+        {tabs.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+              activeTab === key
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "questions" && (
+        <div className="space-y-4">
+          {/* Add question panel */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Add Question</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {(Object.entries(questionTypeLabels) as [QuestionType, string][]).map(
+                  ([type, label]) => (
                     <Button
                       key={type}
                       variant="outline"
                       size="sm"
-                      onClick={() => addQuestion(type)}
                       className="text-xs h-8"
+                      disabled={savingQuestion}
+                      onClick={() => {
+                        setAddingType(type);
+                        addQuestion(type);
+                      }}
                     >
-                      <Plus className="h-3 w-3 mr-1" />
+                      {savingQuestion && addingType === type ? (
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      ) : (
+                        <Plus className="h-3 w-3 mr-1" />
+                      )}
                       {label}
                     </Button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {questions.length > 0 ? (
-              <div className="space-y-3">
-                {questions.map((question, index) => (
-                  <QuestionCard
-                    key={question.id}
-                    question={question}
-                    index={index}
-                    total={questions.length}
-                    onUpdate={(updated) => updateQuestion(index, updated)}
-                    onDelete={() => deleteQuestion(index)}
-                    onMove={(dir) => moveQuestion(index, dir)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <Card className="border-dashed">
-                <CardContent className="text-center py-12">
-                  <ClipboardList className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
-                  <p className="text-base font-medium mb-1">No questions yet</p>
-                  <p className="text-sm text-muted-foreground">Click a question type above to get started.</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
-
-        {activeTab === "settings" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Quiz Settings</CardTitle>
-              <CardDescription>Configure how students experience this quiz.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid sm:grid-cols-2 gap-6">
-                <div className="space-y-1.5">
-                  <Label>Time Limit (minutes)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={settings.timeLimit ?? ""}
-                    onChange={(e) => setSettings({ ...settings, timeLimit: e.target.value ? Number(e.target.value) : null })}
-                    placeholder="No limit"
-                  />
-                  <p className="text-xs text-muted-foreground">Leave empty for no time limit.</p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Allowed Attempts</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={settings.attempts}
-                    onChange={(e) => setSettings({ ...settings, attempts: Number(e.target.value) })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Passing Score (%)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={settings.passingScore ?? ""}
-                    onChange={(e) => setSettings({ ...settings, passingScore: e.target.value ? Number(e.target.value) : null })}
-                    placeholder="No minimum"
-                  />
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <h4 className="text-sm font-semibold">Question Options</h4>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium">Randomize Questions</div>
-                    <div className="text-xs text-muted-foreground">Shuffle question order for each student</div>
-                  </div>
-                  <Switch
-                    checked={settings.randomizeQuestions}
-                    onCheckedChange={(v) => setSettings({ ...settings, randomizeQuestions: v })}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium">Randomize Answer Options</div>
-                    <div className="text-xs text-muted-foreground">Shuffle choices in multiple choice questions</div>
-                  </div>
-                  <Switch
-                    checked={settings.randomizeOptions}
-                    onCheckedChange={(v) => setSettings({ ...settings, randomizeOptions: v })}
-                  />
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <h4 className="text-sm font-semibold">Results Options</h4>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium">Show Results After Submission</div>
-                    <div className="text-xs text-muted-foreground">Students can see their score immediately</div>
-                  </div>
-                  <Switch
-                    checked={settings.showResults}
-                    onCheckedChange={(v) => setSettings({ ...settings, showResults: v })}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium">Show Correct Answers</div>
-                    <div className="text-xs text-muted-foreground">Students can review which answers were correct</div>
-                  </div>
-                  <Switch
-                    checked={settings.showCorrectAnswers}
-                    onCheckedChange={(v) => setSettings({ ...settings, showCorrectAnswers: v })}
-                  />
-                </div>
+                  )
+                )}
               </div>
             </CardContent>
           </Card>
-        )}
 
-        {activeTab === "preview" && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/50 rounded-lg px-3 py-2">
-              <Eye className="h-4 w-4 text-amber-600 shrink-0" />
-              Preview of what students will see. Correct answers shown in green.
+          {loadingQuestions ? (
+            <div className="space-y-3">
+              {[1, 2].map((i) => (
+                <Card key={i}>
+                  <CardContent className="pt-4">
+                    <Skeleton className="h-6 w-3/4 mb-2" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-            <QuizPreview title={title} questions={questions} />
+          ) : questions.length > 0 ? (
+            <div className="space-y-3">
+              {questions.map((q, i) => (
+                <QuestionCard
+                  key={q.id}
+                  question={q}
+                  index={i}
+                  total={questions.length}
+                  onUpdate={(updated) => updateQuestion(i, updated)}
+                  onDelete={() => deleteQuestion(i)}
+                  onMove={(dir) => moveQuestion(i, dir)}
+                />
+              ))}
+            </div>
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="text-center py-12">
+                <ClipboardList className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                <p className="text-base font-medium mb-1">No questions yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Click a question type above to get started.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {activeTab === "analytics" && <AnalyticsPanel quizId={quiz.id} />}
+    </div>
+  );
+}
+
+// ---- Main Component ----
+
+export default function TeacherQuizBuilder() {
+  const { user } = useAuth();
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
+  const [loadingCourses, setLoadingCourses] = useState(true);
+  const [loadingQuizzes, setLoadingQuizzes] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+
+  // Fetch courses
+  useEffect(() => {
+    apiFetch("/api/courses/my")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        const list: Course[] = Array.isArray(data) ? data : data?.courses ?? [];
+        setCourses(list);
+        if (list.length > 0) setSelectedCourseId(list[0].id);
+      })
+      .catch(() => setCourses([]))
+      .finally(() => setLoadingCourses(false));
+  }, []);
+
+  // Fetch quizzes when course changes
+  useEffect(() => {
+    if (!selectedCourseId) return;
+    setLoadingQuizzes(true);
+    setSelectedQuiz(null);
+    apiFetch(`/api/quizzes?course_id=${selectedCourseId}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setQuizzes(Array.isArray(data) ? data : data?.quizzes ?? []))
+      .catch(() => setQuizzes([]))
+      .finally(() => setLoadingQuizzes(false));
+  }, [selectedCourseId]);
+
+  const handleQuizCreated = (quiz: Quiz) => {
+    setQuizzes((prev) => [quiz, ...prev]);
+    setSelectedQuiz(quiz);
+    setShowCreateForm(false);
+  };
+
+  const handlePublished = (updated: Quiz) => {
+    setQuizzes((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
+    setSelectedQuiz(updated);
+  };
+
+  return (
+    <TeacherLayout>
+      <div className="space-y-4">
+        <div>
+          <Button variant="ghost" size="sm" asChild className="mb-3 -ml-2 text-muted-foreground">
+            <Link href="/dashboard/teacher">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Dashboard
+            </Link>
+          </Button>
+          <h1 className="text-2xl font-bold tracking-tight">Quiz Builder</h1>
+          <p className="text-muted-foreground mt-1">
+            Create and manage quizzes for your courses.
+          </p>
+        </div>
+
+        <div className="grid lg:grid-cols-[300px_1fr] gap-6">
+          {/* Left: quiz list */}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Course</Label>
+              {loadingCourses ? (
+                <Skeleton className="h-9 w-full" />
+              ) : (
+                <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a course..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {courses.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            <Button
+              className="w-full"
+              size="sm"
+              onClick={() => {
+                setShowCreateForm(true);
+                setSelectedQuiz(null);
+              }}
+              disabled={!selectedCourseId}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Create Quiz
+            </Button>
+
+            <div className="space-y-1">
+              {loadingQuizzes ? (
+                <>
+                  <Skeleton className="h-14 w-full rounded-lg" />
+                  <Skeleton className="h-14 w-full rounded-lg" />
+                </>
+              ) : quizzes.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm border border-dashed rounded-lg">
+                  <BookOpen className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                  No quizzes yet
+                </div>
+              ) : (
+                quizzes.map((quiz) => (
+                  <button
+                    key={quiz.id}
+                    onClick={() => {
+                      setSelectedQuiz(quiz);
+                      setShowCreateForm(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
+                      selectedQuiz?.id === quiz.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/40 hover:bg-muted/40"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium truncate">{quiz.title}</span>
+                      {quiz.is_published ? (
+                        <Badge variant="default" className="text-xs shrink-0">
+                          Published
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs shrink-0">
+                          Draft
+                        </Badge>
+                      )}
+                    </div>
+                    {quiz.time_limit_minutes && (
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {quiz.time_limit_minutes} min
+                      </div>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
           </div>
-        )}
+
+          {/* Right: detail / create form */}
+          <div>
+            {showCreateForm ? (
+              <CreateQuizForm
+                courses={courses}
+                onCreated={handleQuizCreated}
+                onCancel={() => setShowCreateForm(false)}
+              />
+            ) : selectedQuiz ? (
+              <QuizDetail
+                key={selectedQuiz.id}
+                quiz={selectedQuiz}
+                onPublished={handlePublished}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-64 text-muted-foreground border border-dashed rounded-xl">
+                <ClipboardList className="h-12 w-12 mb-3 opacity-30" />
+                <p className="text-sm">Select a quiz or create a new one</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </TeacherLayout>
   );

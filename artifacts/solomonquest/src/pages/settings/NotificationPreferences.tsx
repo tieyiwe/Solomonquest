@@ -1,10 +1,37 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Bell,
+  Mail,
+  MessageSquare,
+  BookOpen,
+  Star,
+  FileText,
+  Users,
+  Layers,
+} from "lucide-react";
 import { toast } from "sonner";
-import { Bell, Mail, MessageSquare, BookOpen, Star, FileText, Users } from "lucide-react";
+
+async function apiFetch(url: string, options: RequestInit = {}) {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token ?? "";
+  return fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+      ...(options.headers ?? {}),
+    },
+  });
+}
+
+// ---- types ----
 
 interface NotificationPrefs {
   inApp: boolean;
@@ -28,162 +55,7 @@ const defaultPrefs: NotificationPrefs = {
   applicationStatusUpdates: true,
 };
 
-export default function NotificationPreferences() {
-  const { user } = useAuth();
-  const [prefs, setPrefs] = useState<NotificationPrefs>(defaultPrefs);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    const fetchPrefs = async () => {
-      try {
-        const res = await fetch("/api/users/me/notification-prefs");
-        if (!res.ok) throw new Error("Failed to fetch preferences");
-        const data = await res.json();
-        setPrefs({ ...defaultPrefs, ...data });
-      } catch {
-        toast.error("Could not load notification preferences.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchPrefs();
-  }, []);
-
-  const toggle = (key: keyof NotificationPrefs) => {
-    setPrefs((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch("/api/users/me/notification-prefs", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(prefs),
-      });
-      if (!res.ok) throw new Error("Failed to save preferences");
-      toast.success("Notification preferences saved.");
-    } catch {
-      toast.error("Could not save notification preferences.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[200px]">
-        <p className="text-muted-foreground text-sm">Loading preferences...</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Notification Preferences</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Control how and when you receive notifications.
-        </p>
-      </div>
-
-      {/* Master Toggles */}
-      <div className="rounded-lg border bg-card p-6 mb-4">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">
-          Delivery Channels
-        </h2>
-        <div className="space-y-4">
-          <PreferenceRow
-            id="inApp"
-            label="In-App Notifications"
-            description="Receive notifications inside the app."
-            icon={<Bell className="h-4 w-4" />}
-            checked={prefs.inApp}
-            onToggle={() => toggle("inApp")}
-          />
-          <div className="border-t" />
-          <PreferenceRow
-            id="email"
-            label="Email Notifications"
-            description="Receive notifications via email."
-            icon={<Mail className="h-4 w-4" />}
-            checked={prefs.email}
-            onToggle={() => toggle("email")}
-          />
-        </div>
-      </div>
-
-      {/* Activity Toggles */}
-      <div className="rounded-lg border bg-card p-6 mb-6">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">
-          Activity Types
-        </h2>
-        <div className="space-y-4">
-          <PreferenceRow
-            id="chatMessages"
-            label="Chat Messages"
-            description="Notifications for new chat messages."
-            icon={<MessageSquare className="h-4 w-4" />}
-            checked={prefs.chatMessages}
-            onToggle={() => toggle("chatMessages")}
-          />
-          <div className="border-t" />
-          <PreferenceRow
-            id="forumActivity"
-            label="Forum Activity"
-            description="Comments and reactions on forum posts."
-            icon={<Users className="h-4 w-4" />}
-            checked={prefs.forumActivity}
-            onToggle={() => toggle("forumActivity")}
-          />
-          <div className="border-t" />
-          <PreferenceRow
-            id="assignmentUpdates"
-            label="Assignment Updates"
-            description="Notifications about assignment changes and deadlines."
-            icon={<FileText className="h-4 w-4" />}
-            checked={prefs.assignmentUpdates}
-            onToggle={() => toggle("assignmentUpdates")}
-          />
-          <div className="border-t" />
-          <PreferenceRow
-            id="gradeNotifications"
-            label="Grade Notifications"
-            description="Alerts when grades or feedback are posted."
-            icon={<Star className="h-4 w-4" />}
-            checked={prefs.gradeNotifications}
-            onToggle={() => toggle("gradeNotifications")}
-          />
-          <div className="border-t" />
-          <PreferenceRow
-            id="newResources"
-            label="New Resources"
-            description="Notifications when new learning resources are added."
-            icon={<BookOpen className="h-4 w-4" />}
-            checked={prefs.newResources}
-            onToggle={() => toggle("newResources")}
-          />
-          <div className="border-t" />
-          <PreferenceRow
-            id="applicationStatusUpdates"
-            label="Application Status Updates"
-            description="Updates on the status of your applications."
-            icon={<Bell className="h-4 w-4" />}
-            checked={prefs.applicationStatusUpdates}
-            onToggle={() => toggle("applicationStatusUpdates")}
-          />
-        </div>
-      </div>
-
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? "Saving..." : "Save Preferences"}
-        </Button>
-      </div>
-    </div>
-  );
-}
+// ---- PreferenceRow ----
 
 interface PreferenceRowProps {
   id: string;
@@ -191,14 +63,23 @@ interface PreferenceRowProps {
   description: string;
   icon: React.ReactNode;
   checked: boolean;
+  disabled?: boolean;
   onToggle: () => void;
 }
 
-function PreferenceRow({ id, label, description, icon, checked, onToggle }: PreferenceRowProps) {
+function PreferenceRow({
+  id,
+  label,
+  description,
+  icon,
+  checked,
+  disabled,
+  onToggle,
+}: PreferenceRowProps) {
   return (
     <div className="flex items-center justify-between gap-4">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 text-muted-foreground">{icon}</span>
+        <span className="mt-0.5 text-muted-foreground shrink-0">{icon}</span>
         <div>
           <Label htmlFor={id} className="text-sm font-medium cursor-pointer">
             {label}
@@ -206,7 +87,223 @@ function PreferenceRow({ id, label, description, icon, checked, onToggle }: Pref
           <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
         </div>
       </div>
-      <Switch id={id} checked={checked} onCheckedChange={onToggle} />
+      <Switch id={id} checked={checked} onCheckedChange={onToggle} disabled={disabled} />
+    </div>
+  );
+}
+
+function RowSkeleton() {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex items-start gap-3 flex-1">
+        <Skeleton className="h-4 w-4 mt-0.5 shrink-0 rounded" />
+        <div className="flex-1 space-y-1">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-3 w-48" />
+        </div>
+      </div>
+      <Skeleton className="h-6 w-11 rounded-full shrink-0" />
+    </div>
+  );
+}
+
+// ---- Main Component ----
+
+export default function NotificationPreferences() {
+  const { user } = useAuth();
+  const [prefs, setPrefs] = useState<NotificationPrefs>(defaultPrefs);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    apiFetch("/api/users/me/notification-prefs")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setPrefs({ ...defaultPrefs, ...data });
+      })
+      .catch(() => {
+        toast.error("Could not load notification preferences.");
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const savePrefs = async (updated: NotificationPrefs) => {
+    setSaving(true);
+    try {
+      const res = await apiFetch("/api/users/me/notification-prefs", {
+        method: "PUT",
+        body: JSON.stringify(updated),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Preferences saved");
+    } catch {
+      toast.error("Could not save preferences.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggle = (key: keyof NotificationPrefs) => {
+    setPrefs((prev) => {
+      const updated = { ...prev, [key]: !prev[key] };
+      // Debounce saves to avoid flooding the API on rapid toggles
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      saveTimeout.current = setTimeout(() => savePrefs(updated), 300);
+      return updated;
+    });
+  };
+
+  const deliveryItems: {
+    id: keyof NotificationPrefs;
+    label: string;
+    description: string;
+    icon: React.ReactNode;
+  }[] = [
+    {
+      id: "inApp",
+      label: "In-App Notifications",
+      description: "Receive notifications inside the app.",
+      icon: <Bell className="h-4 w-4" />,
+    },
+    {
+      id: "email",
+      label: "Email Notifications",
+      description: "Receive notifications via email.",
+      icon: <Mail className="h-4 w-4" />,
+    },
+  ];
+
+  const activityItems: {
+    id: keyof NotificationPrefs;
+    label: string;
+    description: string;
+    icon: React.ReactNode;
+  }[] = [
+    {
+      id: "chatMessages",
+      label: "Chat Messages",
+      description: "Notifications for new direct and channel messages.",
+      icon: <MessageSquare className="h-4 w-4" />,
+    },
+    {
+      id: "forumActivity",
+      label: "Forum Activity",
+      description: "Comments and reactions on forum posts.",
+      icon: <Users className="h-4 w-4" />,
+    },
+    {
+      id: "assignmentUpdates",
+      label: "Assignments",
+      description: "Notifications about assignment changes and deadlines.",
+      icon: <FileText className="h-4 w-4" />,
+    },
+    {
+      id: "gradeNotifications",
+      label: "Grades",
+      description: "Alerts when grades or feedback are posted.",
+      icon: <Star className="h-4 w-4" />,
+    },
+    {
+      id: "newResources",
+      label: "Resources",
+      description: "Notifications when new learning resources are added.",
+      icon: <BookOpen className="h-4 w-4" />,
+    },
+    {
+      id: "applicationStatusUpdates",
+      label: "Applications",
+      description: "Updates on the status of your applications.",
+      icon: <Layers className="h-4 w-4" />,
+    },
+  ];
+
+  return (
+    <div className="max-w-2xl mx-auto py-8 px-4 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Notification Preferences</h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          Control how and when you receive notifications.
+          {saving && <span className="ml-2 text-primary">Saving...</span>}
+        </p>
+      </div>
+
+      {/* Delivery Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Delivery
+          </CardTitle>
+          <CardDescription>Choose how you want to receive notifications.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loading ? (
+            <>
+              <RowSkeleton />
+              <div className="border-t" />
+              <RowSkeleton />
+            </>
+          ) : (
+            deliveryItems.map((item, i) => (
+              <div key={item.id}>
+                {i > 0 && <div className="border-t" />}
+                <div className={i > 0 ? "pt-4" : ""}>
+                  <PreferenceRow
+                    id={item.id}
+                    label={item.label}
+                    description={item.description}
+                    icon={item.icon}
+                    checked={prefs[item.id]}
+                    disabled={saving}
+                    onToggle={() => toggle(item.id)}
+                  />
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Notify me about Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Notify Me About
+          </CardTitle>
+          <CardDescription>Select which types of activity should trigger notifications.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loading ? (
+            <>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i}>
+                  {i > 0 && <div className="border-t" />}
+                  <div className={i > 0 ? "pt-4" : ""}>
+                    <RowSkeleton />
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : (
+            activityItems.map((item, i) => (
+              <div key={item.id}>
+                {i > 0 && <div className="border-t" />}
+                <div className={i > 0 ? "pt-4" : ""}>
+                  <PreferenceRow
+                    id={item.id}
+                    label={item.label}
+                    description={item.description}
+                    icon={item.icon}
+                    checked={prefs[item.id]}
+                    disabled={saving}
+                    onToggle={() => toggle(item.id)}
+                  />
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

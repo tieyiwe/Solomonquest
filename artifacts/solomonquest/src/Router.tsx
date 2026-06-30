@@ -28,6 +28,7 @@ const TeacherResources = lazy(() => import("@/pages/teacher/TeacherResources"));
 const StudentOverview = lazy(() => import("@/pages/student/StudentOverview"));
 const StudentCourseDetail = lazy(() => import("@/pages/student/StudentCourseDetail"));
 const StudentAssignments = lazy(() => import("@/pages/student/StudentAssignments"));
+const StudentQuizTake = lazy(() => import("@/pages/student/StudentQuizTake"));
 
 const LoadingFallback = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -105,6 +106,9 @@ export function Router() {
         </Route>
         <Route path="/dashboard/student/assignments">
           <ProtectedRoute allowedRoles={["student", "staff"]}><StudentAssignments /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/student/quiz/:id">
+          <ProtectedRoute allowedRoles={["student", "staff"]}><StudentQuizTake /></ProtectedRoute>
         </Route>
 
         <Route component={NotFound} />

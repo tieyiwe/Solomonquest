@@ -190,6 +190,8 @@ function mapProfile(p: Record<string, unknown>, email?: string | null) {
     avatarUrl: p.avatar_url,
     bio: p.bio,
     email: email ?? null,
+    internalEmail: p.internal_email ?? null,
+    uniqueStudentId: p.unique_student_id ?? null,
   };
 }
 
@@ -286,7 +288,7 @@ router.get("/users/search", requireAuth, async (req: AuthenticatedRequest, res):
   // Always scope search to caller's school (ignore client-supplied school_id to prevent cross-school enumeration)
   let dbQuery = supabaseAdmin
     .from("profiles")
-    .select("id, first_name, last_name, unique_student_id, avatar_url, role");
+    .select("id, first_name, last_name, unique_student_id, internal_email, avatar_url, role");
 
   if (req.userRole === "super_admin") {
     // super_admin may optionally filter by a specific school

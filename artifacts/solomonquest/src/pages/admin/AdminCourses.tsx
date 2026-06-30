@@ -8,6 +8,7 @@ import {
   useListUsers,
   getListCoursesQueryKey,
 } from "@workspace/api-client-react";
+import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -59,6 +60,8 @@ import {
   Loader2,
   Users,
   GraduationCap,
+  UserPlus,
+  Radio,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -71,6 +74,9 @@ interface CourseFormData {
   description: string;
   teacherId: string;
   isPublished: boolean;
+  isLive: boolean;
+  classDate: string;
+  classEndTime: string;
 }
 
 const defaultForm: CourseFormData = {
@@ -80,7 +86,32 @@ const defaultForm: CourseFormData = {
   description: "",
   teacherId: "",
   isPublished: false,
+  isLive: false,
+  classDate: "",
+  classEndTime: "",
 };
+
+async function updateLiveSettings(
+  courseId: string,
+  payload: { is_live: boolean; class_date?: string; class_end_time?: string }
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const res = await fetch(`/api/courses/${courseId}/live-settings`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session?.access_token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || "Failed to update live settings");
+  }
+  return res.json();
+}
 
 function CourseFormDialog({
   mode,
@@ -107,30 +138,38 @@ function CourseFormDialog({
           description: course.description || "",
           teacherId: course.teacherId || "",
           isPublished: course.isPublished || false,
+          isLive: (course as any).isLive || false,
+          classDate: (course as any).classDate || "",
+          classEndTime: (course as any).classEndTime || "",
         }
       : defaultForm
   );
+  const [isSaving, setIsSaving] = useState(false);
 
   const set = (key: keyof CourseFormData, value: string | boolean) =>
     setForm((f) => ({ ...f, [key]: value }));
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.title.trim()) {
       toast.error("Course title is required");
       return;
     }
-    const payload = {
+
+    const corePayload = {
       title: form.title,
       code: form.code || undefined,
       term: form.term || undefined,
       description: form.description || undefined,
       teacherId: form.teacherId || undefined,
       isPublished: form.isPublished,
+      isLive: form.isLive,
+      classDate: form.isLive && form.classDate ? form.classDate : undefined,
+      classEndTime: form.isLive && form.classEndTime ? form.classEndTime : undefined,
     };
 
     if (mode === "create") {
       createCourse.mutate(
-        { data: payload },
+        { data: corePayload },
         {
           onSuccess: () => {
             toast.success("Course created");
@@ -142,25 +181,38 @@ function CourseFormDialog({
         }
       );
     } else if (course) {
-      updateCourse.mutate(
-        { id: course.id, data: payload },
-        {
-          onSuccess: () => {
-            toast.success("Course updated");
-            queryClient.invalidateQueries({ queryKey: getListCoursesQueryKey() });
-            onOpenChange(false);
-          },
-          onError: (err: any) => toast.error(err.message || "Failed to update course"),
-        }
-      );
+      setIsSaving(true);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          updateCourse.mutate(
+            { id: course.id, data: corePayload },
+            {
+              onSuccess: () => resolve(),
+              onError: (err: any) => reject(err),
+            }
+          );
+        });
+        await updateLiveSettings(course.id, {
+          is_live: form.isLive,
+          class_date: form.isLive && form.classDate ? form.classDate : undefined,
+          class_end_time: form.isLive && form.classEndTime ? form.classEndTime : undefined,
+        });
+        toast.success("Course updated");
+        queryClient.invalidateQueries({ queryKey: getListCoursesQueryKey() });
+        onOpenChange(false);
+      } catch (err: any) {
+        toast.error(err.message || "Failed to update course");
+      } finally {
+        setIsSaving(false);
+      }
     }
   };
 
-  const isPending = createCourse.isPending || updateCourse.isPending;
+  const isPending = createCourse.isPending || updateCourse.isPending || isSaving;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{mode === "create" ? "Create New Course" : "Edit Course"}</DialogTitle>
         </DialogHeader>
@@ -171,6 +223,15 @@ function CourseFormDialog({
               placeholder="Introduction to Mathematics"
               value={form.title}
               onChange={(e) => set("title", e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Description</Label>
+            <Textarea
+              placeholder="Brief description of the course..."
+              rows={3}
+              value={form.description}
+              onChange={(e) => set("description", e.target.value)}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -192,15 +253,6 @@ function CourseFormDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea
-              placeholder="Brief description of the course..."
-              rows={3}
-              value={form.description}
-              onChange={(e) => set("description", e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
             <Label>Assign Teacher</Label>
             <Select value={form.teacherId} onValueChange={(v) => set("teacherId", v)}>
               <SelectTrigger>
@@ -216,6 +268,43 @@ function CourseFormDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Live Class Toggle */}
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Live Class</p>
+              <p className="text-xs text-muted-foreground">
+                Enable to schedule a live session for this course
+              </p>
+            </div>
+            <Switch
+              checked={form.isLive}
+              onCheckedChange={(v) => set("isLive", v)}
+            />
+          </div>
+
+          {/* Live Class Date/Time (conditional) */}
+          {form.isLive && (
+            <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+              <div className="space-y-1.5">
+                <Label>Class Date &amp; Time</Label>
+                <Input
+                  type="datetime-local"
+                  value={form.classDate}
+                  onChange={(e) => set("classDate", e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>End Time</Label>
+                <Input
+                  type="datetime-local"
+                  value={form.classEndTime}
+                  onChange={(e) => set("classEndTime", e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>
               <p className="text-sm font-medium">Published</p>
@@ -236,6 +325,84 @@ function CourseFormDialog({
           <Button onClick={handleSubmit} disabled={isPending}>
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {mode === "create" ? "Create Course" : "Save Changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function InviteTeacherDialog() {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleInvite = async () => {
+    if (!email.trim()) {
+      toast.error("Email is required");
+      return;
+    }
+    setLoading(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const res = await fetch("/api/invitations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ email: email.trim(), role: "teacher" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to send invitation");
+      }
+      toast.success(`Invitation sent to ${email.trim()}`);
+      setEmail("");
+      setOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send invitation");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <UserPlus className="mr-2 h-4 w-4" />
+          Invite Teacher
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Invite Teacher</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <p className="text-sm text-muted-foreground">
+            Enter the teacher's email address. They'll receive an invitation link to join your school.
+          </p>
+          <div className="space-y-1.5">
+            <Label>Email Address</Label>
+            <Input
+              type="email"
+              placeholder="teacher@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleInvite()}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+            Cancel
+          </Button>
+          <Button onClick={handleInvite} disabled={loading}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Send Invitation
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -280,10 +447,13 @@ export default function AdminCourses() {
               Create, edit and manage all school courses.
             </p>
           </div>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Course
-          </Button>
+          <div className="flex items-center gap-2">
+            <InviteTeacherDialog />
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Course
+            </Button>
+          </div>
         </div>
 
         {/* Search */}
@@ -341,109 +511,124 @@ export default function AdminCourses() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((course) => (
-                    <TableRow key={course.id} className="hover:bg-gray-50/50">
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="h-9 w-9 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
-                            <BookOpen className="h-4 w-4 text-violet-600" />
+                  {filtered.map((course) => {
+                    const isLive = !!(course as any).isLive;
+                    return (
+                      <TableRow key={course.id} className="hover:bg-gray-50/50">
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
+                              <BookOpen className="h-4 w-4 text-violet-600" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium text-gray-900 text-sm">{course.title}</p>
+                                {isLive ? (
+                                  <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs gap-1">
+                                    <Radio className="h-3 w-3" />
+                                    Live
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-gray-100 text-gray-500 border-gray-200 border text-xs">
+                                    Non-Live
+                                  </Badge>
+                                )}
+                              </div>
+                              {course.description && (
+                                <p className="text-xs text-muted-foreground line-clamp-1 max-w-xs">
+                                  {course.description}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium text-gray-900 text-sm">{course.title}</p>
-                            {course.description && (
-                              <p className="text-xs text-muted-foreground line-clamp-1 max-w-xs">
-                                {course.description}
-                              </p>
+                        </TableCell>
+                        <TableCell>
+                          {course.teacherName ? (
+                            <div className="flex items-center gap-1.5 text-sm">
+                              <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span>{course.teacherName}</span>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-muted-foreground italic">Unassigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {course.code && (
+                              <Badge variant="outline" className="text-xs font-mono">
+                                {course.code}
+                              </Badge>
+                            )}
+                            {course.term && (
+                              <span className="text-xs text-muted-foreground">{course.term}</span>
+                            )}
+                            {!course.code && !course.term && (
+                              <span className="text-xs text-muted-foreground">—</span>
                             )}
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {course.teacherName ? (
-                          <div className="flex items-center gap-1.5 text-sm">
-                            <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{course.teacherName}</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <GraduationCap className="h-3.5 w-3.5" />
+                            <span>{course.studentCount ?? 0}</span>
                           </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground italic">Unassigned</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {course.code && (
-                            <Badge variant="outline" className="text-xs font-mono">
-                              {course.code}
-                            </Badge>
-                          )}
-                          {course.term && (
-                            <span className="text-xs text-muted-foreground">{course.term}</span>
-                          )}
-                          {!course.code && !course.term && (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                          <GraduationCap className="h-3.5 w-3.5" />
-                          <span>{course.studentCount ?? 0}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={
-                            course.isPublished
-                              ? "bg-green-100 text-green-700 border-green-200 border"
-                              : "bg-gray-100 text-gray-600 border-gray-200 border"
-                          }
-                        >
-                          {course.isPublished ? "Published" : "Draft"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                            onClick={() => setEditCourse(course)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={
+                              course.isPublished
+                                ? "bg-green-100 text-green-700 border-green-200 border"
+                                : "bg-gray-100 text-gray-600 border-gray-200 border"
+                            }
                           >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
-                                disabled={deleteCourse.isPending}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Course?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete{" "}
-                                  <strong>{course.title}</strong>? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  className="bg-red-600 hover:bg-red-700"
-                                  onClick={() => handleDelete(course.id, course.title)}
+                            {course.isPublished ? "Published" : "Draft"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => setEditCourse(course)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                  disabled={deleteCourse.isPending}
                                 >
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete Course?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to delete{" "}
+                                    <strong>{course.title}</strong>? This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    className="bg-red-600 hover:bg-red-700"
+                                    onClick={() => handleDelete(course.id, course.title)}
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -464,7 +649,9 @@ export default function AdminCourses() {
           mode="edit"
           course={editCourse}
           open={!!editCourse}
-          onOpenChange={(v) => { if (!v) setEditCourse(null); }}
+          onOpenChange={(v) => {
+            if (!v) setEditCourse(null);
+          }}
         />
       )}
     </AdminLayout>
