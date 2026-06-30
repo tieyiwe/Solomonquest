@@ -1,14 +1,27 @@
-import { useParams, Link } from "wouter";
+import { useState } from "react";
+import { useParams, Link, useLocation } from "wouter";
 import { useGetSchoolBySlug, useListPrograms, useListCourses } from "@workspace/api-client-react";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function SchoolPublicPage() {
   const params = useParams();
   const slug = params.slug || "";
+  const [, navigate] = useLocation();
+  const { user } = useAuth();
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
 
   const { data: school, isLoading: isSchoolLoading } = useGetSchoolBySlug(slug, {
     query: {
@@ -73,8 +86,19 @@ export default function SchoolPublicPage() {
               <p className="text-xl opacity-90">Welcome to our academic community.</p>
             </div>
           </div>
-          <Button size="lg" variant="secondary" className="mt-4" asChild>
-            <Link href={`/schools/${school.slug}/apply`}>Apply Now</Link>
+          <Button
+            size="lg"
+            variant="secondary"
+            className="mt-4"
+            onClick={() => {
+              if (user) {
+                navigate(`/schools/${school.slug}/apply`);
+              } else {
+                setShowAuthDialog(true);
+              }
+            }}
+          >
+            Apply Now
           </Button>
         </div>
       </div>
@@ -95,7 +119,12 @@ export default function SchoolPublicPage() {
                 <CardHeader>
                   <div className="flex justify-between items-start mb-2">
                     <Badge variant="outline">{course.code}</Badge>
-                    {course.term && <Badge variant="secondary" className="bg-secondary/20">{course.term}</Badge>}
+                    <div className="flex gap-2">
+                      {course.is_live && (
+                        <Badge className="bg-red-500 text-white hover:bg-red-600">Live Class</Badge>
+                      )}
+                      {course.term && <Badge variant="secondary" className="bg-secondary/20">{course.term}</Badge>}
+                    </div>
                   </div>
                   <CardTitle className="text-xl">{course.title}</CardTitle>
                   {course.teacherName && (
@@ -106,6 +135,22 @@ export default function SchoolPublicPage() {
                   <p className="text-muted-foreground text-sm line-clamp-3">
                     {course.description || "No description available."}
                   </p>
+                  {course.class_date && (
+                    <p className="text-sm text-primary font-medium mt-3">
+                      Next class:{" "}
+                      {new Date(course.class_date).toLocaleDateString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}{" "}
+                      at{" "}
+                      {new Date(course.class_date).toLocaleTimeString("en-US", {
+                        hour: "numeric",
+                        minute: "2-digit",
+                        hour12: true,
+                      })}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -116,6 +161,24 @@ export default function SchoolPublicPage() {
           </div>
         )}
       </div>
+      <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create an account to apply to {school.name}</DialogTitle>
+            <DialogDescription>
+              You need an account to apply to this school. Sign up for free or log in to continue.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:flex-row flex-col">
+            <Button variant="outline" asChild onClick={() => setShowAuthDialog(false)}>
+              <Link href="/auth/login">Log In</Link>
+            </Button>
+            <Button asChild onClick={() => setShowAuthDialog(false)}>
+              <Link href="/auth/register">Sign Up</Link>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PublicLayout>
   );
 }

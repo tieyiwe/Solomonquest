@@ -5,6 +5,12 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 const router: IRouter = Router();
 
 // ---------------------------------------------------------------------------
+// Content length limits
+// ---------------------------------------------------------------------------
+const TITLE_MAX_LENGTH = 255;
+const CONTENT_MAX_LENGTH = 10000;
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -117,15 +123,39 @@ router.post(
   "/forum/topics",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    if (req.userRole !== "teacher" && req.userRole !== "admin") {
+    // Role check: only teachers and admins (including super_admin) may create topics
+    if (
+      req.userRole !== "teacher" &&
+      req.userRole !== "admin" &&
+      req.userRole !== "super_admin"
+    ) {
       res.status(403).json({ error: "Only teachers and admins can create topics" });
       return;
     }
 
-    const { title, content, courseId, isPinned } = req.body;
+    const { courseId, isPinned } = req.body;
+
+    // Content sanitization: trim and enforce length limits
+    const title: string = typeof req.body.title === "string" ? req.body.title.trim() : "";
+    const content: string =
+      typeof req.body.content === "string" ? req.body.content.trim() : "";
 
     if (!title) {
       res.status(400).json({ error: "title is required" });
+      return;
+    }
+
+    if (title.length > TITLE_MAX_LENGTH) {
+      res.status(400).json({
+        error: `title must be at most ${TITLE_MAX_LENGTH} characters`,
+      });
+      return;
+    }
+
+    if (content.length > CONTENT_MAX_LENGTH) {
+      res.status(400).json({
+        error: `content must be at most ${CONTENT_MAX_LENGTH} characters`,
+      });
       return;
     }
 
@@ -134,7 +164,7 @@ router.post(
       .insert({
         school_id: req.schoolId,
         title,
-        content: content ?? null,
+        content: content || null,
         course_id: courseId ?? null,
         is_pinned: isPinned ?? false,
         posted_by: req.userId,
@@ -219,16 +249,30 @@ router.get(
 
 // ---------------------------------------------------------------------------
 // POST /forum/topics/:topicId/comments — add comment
+// Any authenticated user may comment (open participation).
+// NOTE: Rate limiting should be enforced at the infrastructure/middleware level
+// (e.g. express-rate-limit) to prevent comment spam. Consider limiting to
+// ~10 comments per user per minute per topic.
 // ---------------------------------------------------------------------------
 router.post(
   "/forum/topics/:topicId/comments",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { topicId } = req.params;
-    const { content } = req.body;
+
+    // Content sanitization: trim and enforce length limit
+    const content: string =
+      typeof req.body.content === "string" ? req.body.content.trim() : "";
 
     if (!content) {
       res.status(400).json({ error: "content is required" });
+      return;
+    }
+
+    if (content.length > CONTENT_MAX_LENGTH) {
+      res.status(400).json({
+        error: `content must be at most ${CONTENT_MAX_LENGTH} characters`,
+      });
       return;
     }
 
@@ -430,7 +474,7 @@ router.delete(
       return;
     }
 
-    const isAdmin = req.userRole === "admin";
+    const isAdmin = req.userRole === "admin" || req.userRole === "super_admin";
     const isOwnerTeacher =
       req.userRole === "teacher" && topic.posted_by === req.userId;
 
@@ -473,7 +517,7 @@ router.delete(
       return;
     }
 
-    const isAdmin = req.userRole === "admin";
+    const isAdmin = req.userRole === "admin" || req.userRole === "super_admin";
     const isPoster = comment.posted_by === req.userId;
 
     if (!isAdmin && !isPoster) {

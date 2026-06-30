@@ -55,7 +55,7 @@ export default function Login() {
       });
 
       if (error) throw error;
-      
+
       toast.success("Successfully logged in");
       // Let AuthContext handle redirect based on role
     } catch (error: unknown) {
@@ -72,8 +72,8 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen grid md:grid-cols-2">
-      <div className="flex items-center justify-center p-8 bg-background">
+    <div className="min-h-screen flex flex-col md:grid md:grid-cols-2">
+      <div className="flex items-center justify-center p-8 bg-background flex-1">
         <div className="w-full max-w-md space-y-8">
           <div className="space-y-2 text-center md:text-left">
             <Link href="/">
@@ -92,7 +92,13 @@ export default function Login() {
                   <FormItem>
                     <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input placeholder="name@example.com" type="email" {...field} />
+                      <Input
+                        placeholder="name@example.com"
+                        type="email"
+                        autoComplete="email"
+                        className="min-h-[44px]"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -105,13 +111,19 @@ export default function Login() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input placeholder="••••••••" type="password" {...field} />
+                      <Input
+                        placeholder="••••••••"
+                        type="password"
+                        autoComplete="current-password"
+                        className="min-h-[44px]"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full min-h-[48px] text-base" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Sign In
               </Button>
