@@ -16,6 +16,9 @@ import {
   LogOut,
   ChevronRight,
   HelpCircle,
+  BarChart2,
+  Bell,
+  AlertTriangle,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
@@ -27,7 +30,10 @@ const adminLinks = [
   { href: "/dashboard/admin/courses", label: "Courses", icon: BookOpen },
   { href: "/dashboard/admin/admissions", label: "Admissions", icon: CheckSquare },
   { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
+  { href: "/dashboard/admin/analytics", label: "Analytics", icon: BarChart2 },
+  { href: "/dashboard/admin/reminders", label: "Reminders", icon: Bell },
   { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard/admin/danger-zone", label: "Danger Zone", icon: AlertTriangle },
   { href: "/help", label: "Help Center", icon: HelpCircle },
 ];
 

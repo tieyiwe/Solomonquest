@@ -18,6 +18,8 @@ import {
   GraduationCap,
   MessageSquare,
   X,
+  Scroll,
+  ClipboardList,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -50,8 +52,10 @@ export function StudentLayout({ children }: StudentLayoutProps) {
   const navLinks = [
     { href: "/dashboard/student", label: "Overview", icon: LayoutDashboard, exact: true },
     { href: "/dashboard/student/assignments", label: "Assignments", icon: FileText, exact: false },
+    { href: "/dashboard/student/quizzes", label: "Quizzes", icon: ClipboardList, exact: false },
     { href: "/dashboard/student/resources", label: "Resources", icon: FolderOpen, exact: false },
     { href: "/dashboard/student/forum", label: "Forum", icon: MessageSquare, exact: false },
+    { href: "/dashboard/student/transcript", label: "Transcript", icon: Scroll, exact: false },
   ];
 
   const isActive = (href: string, exact: boolean) => {
