@@ -110,7 +110,10 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
           </button>
         </Link>
 
-        {settingsOpen && (
+        <div
+          className="overflow-hidden transition-all duration-200 ease-in-out"
+          style={{ maxHeight: settingsOpen ? "200px" : "0px", opacity: settingsOpen ? 1 : 0 }}
+        >
           <div className="mt-0.5 ml-3 pl-3 border-l border-white/10 flex flex-col gap-0.5">
             {settingsSubLinks.map((link) => {
               const Icon = link.icon;
@@ -133,7 +136,7 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
               );
             })}
           </div>
-        )}
+        </div>
       </div>
     </nav>
   );
