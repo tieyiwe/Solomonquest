@@ -4,182 +4,157 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-type Role = "teacher" | "student" | "staff";
-type Feature = "chat" | "forum" | "video" | "resources" | "quizzes" | "assignments" | "announcements" | "applications";
-
-const ALL_FEATURES: Feature[] = [
+const DEFAULT_FEATURES = [
   "chat",
   "forum",
-  "video",
-  "resources",
   "quizzes",
+  "resources",
+  "video",
   "assignments",
   "announcements",
+  "grades",
   "applications",
 ];
 
-const ALL_ROLES: Role[] = ["teacher", "student", "staff"];
+// GET /permissions/my - get current user's permissions based on their role and school
+router.get("/my", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
 
-const DEFAULT_PERMISSIONS: Record<Role, Feature[]> = {
-  teacher: ["chat", "forum", "video", "resources", "quizzes", "assignments", "announcements"],
-  student: ["chat", "forum", "video", "resources", "quizzes", "assignments"],
-  staff: ["chat", "forum", "resources", "announcements"],
-};
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("role, school_id")
+      .eq("id", user.id)
+      .single();
 
-interface RolePermissionRow {
-  role: Role;
-  feature: Feature;
-  is_enabled: boolean;
-}
-
-type PermissionsMap = Record<Role, Record<Feature, boolean>>;
-
-function buildDefaultPermissions(): PermissionsMap {
-  const result = {} as PermissionsMap;
-  for (const role of ALL_ROLES) {
-    result[role] = {} as Record<Feature, boolean>;
-    for (const feature of ALL_FEATURES) {
-      result[role][feature] = DEFAULT_PERMISSIONS[role].includes(feature);
+    if (profileError) {
+      return res.status(500).json({ error: profileError.message });
     }
-  }
-  return result;
-}
 
-function mergeWithDefaults(rows: RolePermissionRow[]): PermissionsMap {
-  const permissions = buildDefaultPermissions();
-  for (const row of rows) {
-    if (ALL_ROLES.includes(row.role) && ALL_FEATURES.includes(row.feature)) {
-      permissions[row.role][row.feature] = row.is_enabled;
+    if (!profile) {
+      return res.status(404).json({ error: "User profile not found" });
     }
+
+    const { role, school_id } = profile;
+
+    const { data: rolePermissions, error: permError } = await supabaseAdmin
+      .from("role_permissions")
+      .select("feature, enabled")
+      .eq("school_id", school_id)
+      .eq("role", role);
+
+    if (permError) {
+      return res.status(500).json({ error: permError.message });
+    }
+
+    const permissions: Record<string, boolean> = {};
+
+    // Initialize all default features to false
+    for (const feature of DEFAULT_FEATURES) {
+      permissions[feature] = false;
+    }
+
+    // Override with stored permissions
+    for (const perm of rolePermissions ?? []) {
+      permissions[perm.feature] = perm.enabled;
+    }
+
+    return res.json({ permissions });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
   }
-  return permissions;
-}
-
-// GET /permissions — get school's full permission settings (admin only)
-router.get("/permissions", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  if (req.userRole !== "admin") {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-
-  const schoolId = req.schoolId ?? "";
-
-  const { data, error } = await supabaseAdmin
-    .from("role_permissions")
-    .select("role, feature, is_enabled")
-    .eq("school_id", schoolId);
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
-  }
-
-  const permissions = mergeWithDefaults((data ?? []) as RolePermissionRow[]);
-  res.json(permissions);
 });
 
-// PATCH /permissions — update a single role+feature toggle (admin only)
-router.patch("/permissions", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  if (req.userRole !== "admin") {
-    res.status(403).json({ error: "Forbidden" });
-    return;
+// GET /permissions?school_id=X - get all permissions for a school (admin only)
+router.get("/", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    const { school_id } = req.query;
+
+    if (!school_id) {
+      return res.status(400).json({ error: "school_id query parameter is required" });
+    }
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError) {
+      return res.status(500).json({ error: profileError.message });
+    }
+
+    if (!profile || profile.role !== "admin") {
+      return res.status(403).json({ error: "Forbidden: admin access required" });
+    }
+
+    const { data: rolePermissions, error: permError } = await supabaseAdmin
+      .from("role_permissions")
+      .select("role, feature, enabled")
+      .eq("school_id", school_id);
+
+    if (permError) {
+      return res.status(500).json({ error: permError.message });
+    }
+
+    // Group permissions by role
+    const grouped: Record<string, Record<string, boolean>> = {};
+
+    for (const perm of rolePermissions ?? []) {
+      if (!grouped[perm.role]) {
+        grouped[perm.role] = {};
+      }
+      grouped[perm.role][perm.feature] = perm.enabled;
+    }
+
+    return res.json({ permissions: grouped });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
   }
-
-  const { role, feature, isEnabled } = req.body as {
-    role: Role;
-    feature: Feature;
-    isEnabled: boolean;
-  };
-
-  if (!role || !feature || typeof isEnabled !== "boolean") {
-    res.status(400).json({ error: "role, feature, and isEnabled are required" });
-    return;
-  }
-
-  if (!ALL_ROLES.includes(role)) {
-    res.status(400).json({ error: `Invalid role. Must be one of: ${ALL_ROLES.join(", ")}` });
-    return;
-  }
-
-  if (!ALL_FEATURES.includes(feature)) {
-    res.status(400).json({ error: `Invalid feature. Must be one of: ${ALL_FEATURES.join(", ")}` });
-    return;
-  }
-
-  const schoolId = req.schoolId ?? "";
-
-  const { error: upsertError } = await supabaseAdmin
-    .from("role_permissions")
-    .upsert(
-      {
-        school_id: schoolId,
-        role,
-        feature,
-        is_enabled: isEnabled,
-      },
-      { onConflict: "school_id,role,feature" }
-    );
-
-  if (upsertError) {
-    res.status(500).json({ error: upsertError.message });
-    return;
-  }
-
-  // Return full updated permissions map
-  const { data, error: fetchError } = await supabaseAdmin
-    .from("role_permissions")
-    .select("role, feature, is_enabled")
-    .eq("school_id", schoolId);
-
-  if (fetchError) {
-    res.status(500).json({ error: fetchError.message });
-    return;
-  }
-
-  const permissions = mergeWithDefaults((data ?? []) as RolePermissionRow[]);
-  res.json(permissions);
 });
 
-// GET /permissions/my — get current user's feature permissions for their role
-router.get("/permissions/my", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  const role = req.userRole as Role | undefined;
-  const schoolId = req.schoolId ?? "";
+// PUT /permissions - upsert a permission (admin only)
+router.put("/", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    const { school_id, role, feature, enabled } = req.body;
 
-  if (!role || !ALL_ROLES.includes(role)) {
-    // Non-standard roles (e.g. admin) get all features
-    const allEnabled: Record<Feature, boolean> = {} as Record<Feature, boolean>;
-    for (const feature of ALL_FEATURES) {
-      allEnabled[feature] = true;
+    if (!school_id || !role || !feature || enabled === undefined) {
+      return res.status(400).json({ error: "school_id, role, feature, and enabled are required" });
     }
-    res.json(allEnabled);
-    return;
-  }
 
-  const { data, error } = await supabaseAdmin
-    .from("role_permissions")
-    .select("feature, is_enabled")
-    .eq("school_id", schoolId)
-    .eq("role", role);
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
 
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
-  }
-
-  // Start from defaults for this role
-  const featureMap: Record<Feature, boolean> = {} as Record<Feature, boolean>;
-  for (const feature of ALL_FEATURES) {
-    featureMap[feature] = DEFAULT_PERMISSIONS[role].includes(feature);
-  }
-
-  // Override with stored rows
-  for (const row of (data ?? []) as Array<{ feature: Feature; is_enabled: boolean }>) {
-    if (ALL_FEATURES.includes(row.feature)) {
-      featureMap[row.feature] = row.is_enabled;
+    if (profileError) {
+      return res.status(500).json({ error: profileError.message });
     }
-  }
 
-  res.json(featureMap);
+    if (!profile || profile.role !== "admin") {
+      return res.status(403).json({ error: "Forbidden: admin access required" });
+    }
+
+    const { data, error: upsertError } = await supabaseAdmin
+      .from("role_permissions")
+      .upsert(
+        { school_id, role, feature, enabled },
+        { onConflict: "school_id,role,feature" }
+      )
+      .select()
+      .single();
+
+    if (upsertError) {
+      return res.status(500).json({ error: upsertError.message });
+    }
+
+    return res.json(data);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 export default router;
