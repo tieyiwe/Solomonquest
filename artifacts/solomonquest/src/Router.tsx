@@ -35,6 +35,8 @@ const StudentCourseDetail = lazy(() => import("@/pages/student/StudentCourseDeta
 const StudentAssignments = lazy(() => import("@/pages/student/StudentAssignments"));
 const StudentQuizTake = lazy(() => import("@/pages/student/StudentQuizTake"));
 const StudentTranscript = lazy(() => import("@/pages/student/StudentTranscript"));
+const TranscriptVerifyPage = lazy(() => import("@/pages/transcripts/TranscriptVerifyPage"));
+const StudentProfilePage = lazy(() => import("@/pages/dashboard/StudentProfilePage"));
 
 const ChatPage = lazy(() => import("@/pages/chat/ChatPage"));
 const ForumPage = lazy(() => import("@/pages/forum/ForumPage"));
@@ -248,6 +250,14 @@ export function Router() {
         <Route path="/settings/notifications">
           <ProtectedRoute><NotificationPreferences /></ProtectedRoute>
         </Route>
+
+        {/* Student Profile Route */}
+        <Route path="/dashboard/student/profile">
+          <ProtectedRoute allowedRoles={["student", "staff"]}><StudentProfilePage /></ProtectedRoute>
+        </Route>
+
+        {/* Public Transcript Verification Route */}
+        <Route path="/transcript" component={TranscriptVerifyPage} />
 
         <Route component={NotFound} />
       </Switch>
