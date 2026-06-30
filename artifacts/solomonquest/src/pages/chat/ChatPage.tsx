@@ -32,8 +32,6 @@ import {
   CalendarCheck,
   AlarmClock,
   Scroll,
-  ChevronLeft,
-  ChevronRightIcon,
   GraduationCap,
 } from "lucide-react";
 import {
@@ -841,9 +839,11 @@ function DashboardRail({ role }: { role?: string | null }) {
     <div
       className="flex-shrink-0 flex flex-col h-full overflow-hidden transition-all duration-200"
       style={{ width: expanded ? 200 : 52, backgroundColor: "#0f1117" }}
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
     >
-      {/* Toggle + logo */}
-      <div className="flex items-center justify-between px-2 py-3 border-b border-white/10 flex-shrink-0">
+      {/* Logo */}
+      <div className="flex items-center px-2 py-3 border-b border-white/10 flex-shrink-0 gap-2">
         <Link href={dashboardHref}>
           <div
             className="h-7 w-7 rounded-md flex items-center justify-center shrink-0 cursor-pointer"
@@ -854,19 +854,8 @@ function DashboardRail({ role }: { role?: string | null }) {
           </div>
         </Link>
         {expanded && (
-          <span className="text-white/60 text-xs font-medium ml-2 flex-1 truncate">Dashboard</span>
+          <span className="text-white/60 text-xs font-medium truncate">Dashboard</span>
         )}
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="ml-auto p-1 rounded text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-          title={expanded ? "Collapse" : "Expand"}
-        >
-          {expanded ? (
-            <ChevronLeft className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronRightIcon className="h-3.5 w-3.5" />
-          )}
-        </button>
       </div>
 
       {/* Nav links */}
