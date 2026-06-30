@@ -1193,22 +1193,31 @@ export default function ChatPage() {
   }
 
   async function openDmWith(userId: string, name: string) {
-    // Check if DM already exists in local state
-    const existing = directChannels.find((c) => c.name === name);
-    if (existing) { selectChannel(existing); return; }
     try {
       const res = await apiFetch("/api/chat/channels", {
         method: "POST",
         body: JSON.stringify({ name, type: "direct", memberIds: [userId] }),
       });
+      const body = await res.json();
       if (res.status === 409) {
-        // Already exists — fetch fresh channel list and open it
-        await fetchChannels();
+        // DM already exists — find it in state or re-fetch then select it
+        const existingId: string = body.channelId;
+        const local = channels.find((c) => c.id === existingId);
+        if (local) {
+          selectChannel(local);
+        } else {
+          const r2 = await apiFetch("/api/chat/channels");
+          if (r2.ok) {
+            const all: Channel[] = await r2.json();
+            setChannels(all);
+            const found = all.find((c) => c.id === existingId);
+            if (found) selectChannel(found);
+          }
+        }
         return;
       }
-      if (!res.ok) throw new Error();
-      const ch: Channel = await res.json();
-      handleChannelCreated(ch);
+      if (!res.ok) throw new Error(body.error ?? "Failed");
+      handleChannelCreated(body as Channel);
     } catch {
       toast.error("Failed to open conversation");
     }
