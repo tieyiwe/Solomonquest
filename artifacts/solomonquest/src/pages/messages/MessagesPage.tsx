@@ -621,7 +621,6 @@ export default function MessagesPage() {
                     alignItems: "flex-start",
                     gap: 10,
                     padding: "12px 16px",
-                    borderBottom: "1px solid #f1f5f9",
                     background: isSelected
                       ? "#eef2ff"
                       : isUnread

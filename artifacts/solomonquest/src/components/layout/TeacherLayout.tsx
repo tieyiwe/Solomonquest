@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -244,10 +245,13 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background has-bottom-nav md:pb-6">
           {children}
         </main>
       </div>
+
+      {/* Mobile Bottom Nav */}
+      <BottomNav links={navLinks} />
 
       <HelpButton onClick={() => setHelpOpen(true)} />
       {helpOpen && (

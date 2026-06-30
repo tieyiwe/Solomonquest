@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Bell, Menu, LogOut, LayoutDashboard, Users, BookOpen, Settings, CheckSquare, GraduationCap, ClipboardList, FolderOpen } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useGetMySchool } from "@workspace/api-client-react";
+import { BottomNav } from "@/components/layout/BottomNav";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
@@ -152,10 +153,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background has-bottom-nav md:pb-6">
           {children}
         </main>
       </div>
+
+      {/* Mobile Bottom Nav */}
+      <BottomNav links={links} onItemClick={() => setIsMobileMenuOpen(false)} />
 
       <HelpButton onClick={() => setHelpOpen(true)} />
       {helpOpen && (

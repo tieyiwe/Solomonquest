@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
+import { BottomNav } from "@/components/layout/BottomNav";
 
 const adminLinks = [
   { href: "/dashboard/admin", label: "Overview", icon: LayoutDashboard },
@@ -184,9 +185,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto">
-          <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8">{children}</div>
+          <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 has-bottom-nav md:pb-8">{children}</div>
         </main>
       </div>
+
+      {/* Mobile Bottom Nav */}
+      <BottomNav links={adminLinks} />
 
       {/* Floating help button */}
       <HelpButton onClick={() => setHelpOpen(true)} />

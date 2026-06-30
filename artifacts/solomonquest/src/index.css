@@ -363,3 +363,20 @@
     inset: -1px;
   }
 }
+
+/* ─── Mobile-native feel ──────────────────────────────────────────────────── */
+html, body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-y;
+}
+
+/* Bottom nav safe area */
+.bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Content area offset when bottom nav is shown */
+.has-bottom-nav {
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+}

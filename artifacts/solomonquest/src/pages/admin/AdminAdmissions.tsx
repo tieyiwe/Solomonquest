@@ -4,8 +4,23 @@ import {
   useListApplications,
   useUpdateApplicationStatus,
   getListApplicationsQueryKey,
+  useGetMySchool,
 } from "@workspace/api-client-react";
 import type { Application } from "@workspace/api-client-react";
+import { supabase } from "@/lib/supabase";
+
+async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  return fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+}
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -38,6 +53,8 @@ import {
   BookOpen,
   Loader2,
   FileText,
+  Globe,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -298,6 +315,28 @@ export default function AdminAdmissions() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
+  const [publishing, setPublishing] = useState(false);
+
+  const { data: school, refetch: refetchSchool } = useGetMySchool();
+  const isOpen = (school as any)?.applicationsOpen ?? false;
+
+  const togglePublish = async () => {
+    if (!school?.id) return;
+    setPublishing(true);
+    try {
+      await apiFetch(`/api/schools/${school.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applicationsOpen: !isOpen }),
+      });
+      await refetchSchool();
+      toast.success(isOpen ? "Applications closed." : "Applications are now live!");
+    } catch {
+      toast.error("Failed to update application status.");
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   const { data: applications, isLoading } = useListApplications(
     statusFilter !== "all" ? { status: statusFilter } : undefined
@@ -335,11 +374,33 @@ export default function AdminAdmissions() {
     <AdminLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Admissions</h1>
-          <p className="text-muted-foreground mt-0.5">
-            Review and manage student applications.
-          </p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Admissions</h1>
+            <p className="text-muted-foreground mt-0.5">
+              Review and manage student applications.
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <Button
+              onClick={togglePublish}
+              disabled={publishing}
+              variant={isOpen ? "outline" : "default"}
+              className={isOpen ? "border-green-300 text-green-700 hover:bg-green-50" : ""}
+            >
+              {publishing ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : isOpen ? (
+                <Lock className="h-4 w-4 mr-2" />
+              ) : (
+                <Globe className="h-4 w-4 mr-2" />
+              )}
+              {isOpen ? "Close Applications" : "Publish Now"}
+            </Button>
+            <span className={`text-xs font-medium ${isOpen ? "text-green-600" : "text-muted-foreground"}`}>
+              {isOpen ? "Applications are LIVE" : "Applications are closed"}
+            </span>
+          </div>
         </div>
 
         {/* Summary cards */}

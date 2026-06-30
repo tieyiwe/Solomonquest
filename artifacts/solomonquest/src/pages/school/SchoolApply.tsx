@@ -301,6 +301,25 @@ export default function SchoolApply() {
     );
   }
 
+  if (!(school as any).applicationsOpen) {
+    return (
+      <PublicLayout>
+        <div className="container mx-auto px-4 py-32 text-center max-w-lg">
+          <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="h-8 w-8 text-amber-500" />
+          </div>
+          <h1 className="text-2xl font-bold mb-3">Applications Are Currently Closed</h1>
+          <p className="text-muted-foreground mb-8">
+            {school.name} is not accepting applications at this time. Check back later or contact the school for more information.
+          </p>
+          <Button asChild variant="outline">
+            <Link href={`/schools/${school.slug}`}>Back to {school.name}</Link>
+          </Button>
+        </div>
+      </PublicLayout>
+    );
+  }
+
   return (
     <PublicLayout>
       <div className="container mx-auto px-4 py-12 max-w-3xl">

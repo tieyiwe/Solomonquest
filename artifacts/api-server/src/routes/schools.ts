@@ -248,7 +248,7 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
 // Update school
 router.patch("/schools/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { name, primaryColor, secondaryColor, logoUrl, isActive, applicationsOpen } = req.body;
+  const { name, primaryColor, secondaryColor, logoUrl, isActive, applicationsOpen, assignment_routing } = req.body;
 
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name;
@@ -257,6 +257,7 @@ router.patch("/schools/:id", requireAuth, async (req: AuthenticatedRequest, res)
   if (logoUrl !== undefined) updates.logo_url = logoUrl;
   if (isActive !== undefined) updates.is_active = isActive;
   if (applicationsOpen !== undefined) updates.applications_open = applicationsOpen;
+  if (assignment_routing !== undefined) updates.assignment_routing = assignment_routing;
 
   const { data, error } = await supabaseAdmin
     .from("schools")
@@ -428,6 +429,7 @@ function mapSchool(s: Record<string, unknown>) {
     isActive: s.is_active,
     createdAt: s.created_at,
     applicationsOpen: s.applications_open ?? false,
+    assignment_routing: s.assignment_routing ?? null,
   };
 }
 

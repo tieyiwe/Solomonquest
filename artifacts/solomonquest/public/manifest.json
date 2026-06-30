@@ -1,0 +1,18 @@
+{
+  "name": "SolomonQuest LMS",
+  "short_name": "SolomonQuest",
+  "description": "The modern LMS for schools",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#6E5238",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

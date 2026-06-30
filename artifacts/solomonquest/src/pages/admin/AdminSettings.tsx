@@ -29,7 +29,16 @@ import {
   ChevronDown,
   Save,
   Info,
+  BookCheck,
+  User,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -439,6 +448,10 @@ function SchoolSettingsTab() {
   const updateSchool = useUpdateSchool();
 
   const [form, setForm] = useState({ name: "", logoUrl: "", description: "" });
+  const [assignmentRouting, setAssignmentRouting] = useState<"teacher" | "staff" | "admin">("teacher");
+  const [assignmentReviewerId, setAssignmentReviewerId] = useState<string>("");
+  const [staffMembers, setStaffMembers] = useState<Array<{ id: string; full_name: string; email: string }>>([]);
+  const [routingSaving, setRoutingSaving] = useState(false);
 
   useEffect(() => {
     if (school) {
@@ -447,8 +460,44 @@ function SchoolSettingsTab() {
         logoUrl: (school as any).logoUrl || "",
         description: (school as any).description || "",
       });
+      const meta = (school as any).assignment_routing;
+      if (meta) {
+        setAssignmentRouting(meta.mode ?? "teacher");
+        setAssignmentReviewerId(meta.reviewer_id ?? "");
+      }
     }
   }, [school]);
+
+  useEffect(() => {
+    if (!school?.id) return;
+    apiFetch(`/api/users?school_id=${school.id}&role=staff`)
+      .then((r) => r.json())
+      .then((data) => setStaffMembers(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, [school?.id]);
+
+  const saveRouting = async () => {
+    if (!school?.id) return;
+    setRoutingSaving(true);
+    try {
+      await apiFetch(`/api/schools/${school.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignment_routing: {
+            mode: assignmentRouting,
+            reviewer_id: assignmentRouting !== "teacher" ? assignmentReviewerId : null,
+          },
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: getGetMySchoolQueryKey() });
+      toast.success("Assignment routing saved.");
+    } catch {
+      toast.error("Failed to save routing settings.");
+    } finally {
+      setRoutingSaving(false);
+    }
+  };
 
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -541,6 +590,84 @@ function SchoolSettingsTab() {
           <Save className="mr-2 h-4 w-4" />
         )}
         Save Changes
+      </Button>
+
+      {/* Assignment Routing */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <BookCheck className="h-4 w-4 text-primary" />
+            Assignment Submission Routing
+          </CardTitle>
+          <CardDescription>
+            Choose who receives student submissions first. You can optionally assign a staff member or yourself
+            to review before it reaches the teacher.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>First Reviewer</Label>
+            <Select value={assignmentRouting} onValueChange={(v) => setAssignmentRouting(v as any)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="teacher">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Direct to Teacher (default)
+                  </div>
+                </SelectItem>
+                <SelectItem value="staff">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Staff Member (reviews before teacher)
+                  </div>
+                </SelectItem>
+                <SelectItem value="admin">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Admin / Self (you review before teacher)
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {assignmentRouting === "staff" && (
+            <div className="space-y-1.5">
+              <Label>Select Staff Member</Label>
+              {staffMembers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No staff members found. Add staff first.</p>
+              ) : (
+                <Select value={assignmentReviewerId} onValueChange={setAssignmentReviewerId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a staff member" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {staffMembers.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.full_name || s.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
+
+          {assignmentRouting !== "teacher" && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+              Submissions will be held for review before being visible to the teacher.
+              The reviewer will mark submissions as checked to forward them.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Button onClick={saveRouting} disabled={routingSaving}>
+        {routingSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+        Save Routing
       </Button>
     </div>
   );
