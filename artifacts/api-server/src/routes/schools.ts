@@ -272,6 +272,144 @@ router.patch("/schools/:id", requireAuth, async (req: AuthenticatedRequest, res)
   res.json(mapSchool(data));
 });
 
+// POST /schools/:id/request-deletion — school admin initiates deletion request
+router.post("/schools/:id/request-deletion", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  // Verify caller is admin of this school
+  const { data: callerProfile } = await supabaseAdmin
+    .from("profiles")
+    .select("role, school_id")
+    .eq("id", req.userId)
+    .single();
+
+  if (!callerProfile || callerProfile.role !== "admin" || callerProfile.school_id !== id) {
+    res.status(403).json({ error: "You must be an admin of this school to request deletion." });
+    return;
+  }
+
+  // Fetch school record
+  const { data: school, error: schoolErr } = await supabaseAdmin
+    .from("schools")
+    .select("id, name")
+    .eq("id", id)
+    .single();
+
+  if (schoolErr || !school) {
+    res.status(404).json({ error: "School not found." });
+    return;
+  }
+
+  // Prerequisite 1: active students
+  const { count: studentCount } = await supabaseAdmin
+    .from("profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("school_id", id)
+    .eq("role", "student");
+
+  if ((studentCount ?? 0) > 0) {
+    res.status(400).json({
+      error: `Cannot request deletion: school has ${studentCount} active students. Please unenroll all students first.`,
+    });
+    return;
+  }
+
+  // Prerequisite 2: teachers
+  const { count: teacherCount } = await supabaseAdmin
+    .from("profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("school_id", id)
+    .eq("role", "teacher");
+
+  if ((teacherCount ?? 0) > 0) {
+    res.status(400).json({
+      error: `Cannot request deletion: school has ${teacherCount} teachers. Please remove all teachers first.`,
+    });
+    return;
+  }
+
+  // Prerequisite 3: active courses
+  const { count: courseCount } = await supabaseAdmin
+    .from("courses")
+    .select("id", { count: "exact", head: true })
+    .eq("school_id", id);
+
+  if ((courseCount ?? 0) > 0) {
+    res.status(400).json({
+      error: `Cannot request deletion: school has ${courseCount} active courses. Please delete all courses first.`,
+    });
+    return;
+  }
+
+  const { reason } = req.body;
+
+  // Insert deletion request
+  const { data: deletionRequest, error: insertErr } = await supabaseAdmin
+    .from("school_deletion_requests")
+    .insert({
+      school_id: id,
+      school_name: school.name,
+      requested_by: req.userId,
+      reason: reason ?? null,
+      status: "pending",
+    })
+    .select("id, status, created_at")
+    .single();
+
+  if (insertErr || !deletionRequest) {
+    logger.error({ error: insertErr }, "Failed to insert school_deletion_requests");
+    res.status(500).json({ error: "Failed to create deletion request." });
+    return;
+  }
+
+  // Audit log
+  await supabaseAdmin.from("platform_audit_log").insert({
+    action: "deletion_requested",
+    target_type: "school",
+    target_id: id,
+    target_name: school.name,
+    performed_by: req.userId,
+  });
+
+  // Notify super_admins
+  const { data: superAdmins } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("role", "super_admin");
+
+  if (superAdmins && superAdmins.length > 0) {
+    const notifications = superAdmins.map((sa: { id: string }) => ({
+      user_id: sa.id,
+      type: "school_deletion_requested",
+      title: "School Deletion Request",
+      message: `School "${school.name}" has submitted a deletion request.`,
+      metadata: { school_id: id, request_id: deletionRequest.id },
+      read: false,
+    }));
+    await supabaseAdmin.from("notifications").insert(notifications);
+  }
+
+  res.status(201).json({
+    message: "Deletion request submitted. The platform team will review and contact you.",
+    request_id: deletionRequest.id,
+  });
+});
+
+// GET /schools/:id/deletion-status — check if a deletion request exists
+router.get("/schools/:id/deletion-status", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const { data: request } = await supabaseAdmin
+    .from("school_deletion_requests")
+    .select("id, status, created_at, reason")
+    .eq("school_id", id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  res.json({ request: request ?? null });
+});
+
 function mapSchool(s: Record<string, unknown>) {
   return {
     id: s.id,

@@ -3,6 +3,8 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { NotificationBell } from "@/components/NotificationBell";
 import {
@@ -25,6 +27,7 @@ import {
   UserPlus,
   ClipboardList,
   Loader2,
+  Send,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +38,15 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 
@@ -298,6 +310,30 @@ export default function AdminOverview() {
 
   const [teachers, setTeachers] = useState<UserRow[]>([]);
   const [teachersLoading, setTeachersLoading] = useState(true);
+
+  // Release Transcripts dialog state
+  const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
+  const [releaseSemester, setReleaseSemester] = useState("");
+  const [releaseMessage, setReleaseMessage] = useState("");
+  const [releasing, setReleasing] = useState(false);
+
+  async function handleReleaseTranscripts() {
+    setReleasing(true);
+    try {
+      const result = await apiFetch<{ success: boolean; notified: number }>("/api/grading/transcripts/release", {
+        method: "POST",
+        body: JSON.stringify({ semester: releaseSemester || undefined, message: releaseMessage || undefined }),
+      });
+      toast.success(`Transcripts released. ${result.notified} student(s) notified.`);
+      setReleaseDialogOpen(false);
+      setReleaseSemester("");
+      setReleaseMessage("");
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to release transcripts");
+    } finally {
+      setReleasing(false);
+    }
+  }
 
   useEffect(() => {
     apiFetch<DashboardStats>("/api/dashboard")
@@ -709,8 +745,70 @@ export default function AdminOverview() {
             </Card>
 
           </div>
+
+          {/* Release Transcripts Card */}
+          <div className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <GraduationCap className="h-4 w-4" />
+                  Transcripts
+                </CardTitle>
+                <CardDescription>Notify all students that their transcripts are available.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button onClick={() => setReleaseDialogOpen(true)} className="gap-2">
+                  <Send className="h-4 w-4" />
+                  Release Transcripts
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
         </main>
       </div>
+
+      {/* Release Transcripts Dialog */}
+      <Dialog open={releaseDialogOpen} onOpenChange={setReleaseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Release Transcripts</DialogTitle>
+            <DialogDescription>
+              Send a notification to all students that their transcripts are available.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label htmlFor="semester">Semester (optional)</Label>
+              <Input
+                id="semester"
+                placeholder="e.g. Spring 2026"
+                value={releaseSemester}
+                onChange={(e) => setReleaseSemester(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="release-message">Custom Message (optional)</Label>
+              <Textarea
+                id="release-message"
+                placeholder="Your transcript is now available..."
+                value={releaseMessage}
+                onChange={(e) => setReleaseMessage(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReleaseDialogOpen(false)} disabled={releasing}>
+              Cancel
+            </Button>
+            <Button onClick={handleReleaseTranscripts} disabled={releasing} className="gap-2">
+              {releasing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {releasing ? "Releasing..." : "Release"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

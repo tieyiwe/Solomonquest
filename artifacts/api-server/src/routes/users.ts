@@ -45,157 +45,6 @@ router.get("/users", requireAuth, async (req: AuthenticatedRequest, res): Promis
   res.json(profiles);
 });
 
-// Get single user — must be same school (or self), unless super_admin
-router.get("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (error || !data) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
-
-  // super_admin can view any user; others must share school or be viewing themselves
-  if (req.userRole !== "super_admin") {
-    if (data.school_id !== req.schoolId && req.userId !== id) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-  }
-
-  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(id);
-  res.json(mapProfile(data, userData?.user?.email));
-});
-
-// Update user profile — self or admin of same school; role changes are never allowed here
-router.patch("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-
-  // Ownership check: must be the user themselves OR an admin/super_admin
-  const isSelf = req.userId === id;
-  const isAdmin = req.userRole === "admin" || req.userRole === "super_admin";
-
-  if (!isSelf && !isAdmin) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-
-  // Admins (non-super_admin) may only update users in the same school
-  if (isAdmin && req.userRole !== "super_admin") {
-    const { data: targetProfile } = await supabaseAdmin
-      .from("profiles")
-      .select("school_id")
-      .eq("id", id)
-      .single();
-
-    if (!targetProfile || targetProfile.school_id !== req.schoolId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-  }
-
-  // Only allow safe profile fields — never role
-  const { firstName, lastName, avatarUrl, bio } = req.body;
-
-  const updates: Record<string, unknown> = {};
-  if (firstName !== undefined) updates.first_name = firstName;
-  if (lastName !== undefined) updates.last_name = lastName;
-  if (avatarUrl !== undefined) updates.avatar_url = avatarUrl;
-  if (bio !== undefined) updates.bio = bio;
-
-  if (Object.keys(updates).length === 0) {
-    res.status(400).json({ error: "No valid fields to update" });
-    return;
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error || !data) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
-
-  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(id);
-  res.json(mapProfile(data, userData?.user?.email));
-});
-
-// Update user role — admin/super_admin only, same-school constraint for admin
-router.patch("/users/:id/role", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-
-  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-
-  const { role } = req.body;
-
-  if (!role) {
-    res.status(400).json({ error: "role is required" });
-    return;
-  }
-
-  const validRoles = ["super_admin", "admin", "teacher", "staff", "student"];
-  if (!validRoles.includes(role)) {
-    res.status(400).json({ error: "Invalid role" });
-    return;
-  }
-
-  // Admins (non-super_admin) may only change roles for users in the same school
-  if (req.userRole !== "super_admin") {
-    const { data: targetProfile } = await supabaseAdmin
-      .from("profiles")
-      .select("school_id")
-      .eq("id", id)
-      .single();
-
-    if (!targetProfile || targetProfile.school_id !== req.schoolId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .update({ role })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error || !data) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
-
-  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(id);
-  res.json(mapProfile(data, userData?.user?.email));
-});
-
-function mapProfile(p: Record<string, unknown>, email?: string | null) {
-  return {
-    id: p.id,
-    schoolId: p.school_id,
-    role: p.role,
-    firstName: p.first_name,
-    lastName: p.last_name,
-    avatarUrl: p.avatar_url,
-    bio: p.bio,
-    email: email ?? null,
-    internalEmail: p.internal_email ?? null,
-    uniqueStudentId: p.unique_student_id ?? null,
-  };
-}
-
 // GET /users/me/notification-prefs - get current user's notification preferences
 router.get("/users/me/notification-prefs", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (!req.userId) {
@@ -362,6 +211,157 @@ router.post("/users/me/avatar", requireAuth, async (req: AuthenticatedRequest, r
   const { data: userData } = await supabaseAdmin.auth.admin.getUserById(req.userId);
   res.json(mapProfile(data, userData?.user?.email));
 });
+
+// Get single user — must be same school (or self), unless super_admin
+router.get("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error || !data) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  // super_admin can view any user; others must share school or be viewing themselves
+  if (req.userRole !== "super_admin") {
+    if (data.school_id !== req.schoolId && req.userId !== id) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
+
+  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(id);
+  res.json(mapProfile(data, userData?.user?.email));
+});
+
+// Update user profile — self or admin of same school; role changes are never allowed here
+router.patch("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  // Ownership check: must be the user themselves OR an admin/super_admin
+  const isSelf = req.userId === id;
+  const isAdmin = req.userRole === "admin" || req.userRole === "super_admin";
+
+  if (!isSelf && !isAdmin) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  // Admins (non-super_admin) may only update users in the same school
+  if (isAdmin && req.userRole !== "super_admin") {
+    const { data: targetProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("school_id")
+      .eq("id", id)
+      .single();
+
+    if (!targetProfile || targetProfile.school_id !== req.schoolId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
+
+  // Only allow safe profile fields — never role
+  const { firstName, lastName, avatarUrl, bio } = req.body;
+
+  const updates: Record<string, unknown> = {};
+  if (firstName !== undefined) updates.first_name = firstName;
+  if (lastName !== undefined) updates.last_name = lastName;
+  if (avatarUrl !== undefined) updates.avatar_url = avatarUrl;
+  if (bio !== undefined) updates.bio = bio;
+
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ error: "No valid fields to update" });
+    return;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error || !data) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(id);
+  res.json(mapProfile(data, userData?.user?.email));
+});
+
+// Update user role — admin/super_admin only, same-school constraint for admin
+router.patch("/users/:id/role", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const { role } = req.body;
+
+  if (!role) {
+    res.status(400).json({ error: "role is required" });
+    return;
+  }
+
+  const validRoles = ["super_admin", "admin", "teacher", "staff", "student"];
+  if (!validRoles.includes(role)) {
+    res.status(400).json({ error: "Invalid role" });
+    return;
+  }
+
+  // Admins (non-super_admin) may only change roles for users in the same school
+  if (req.userRole !== "super_admin") {
+    const { data: targetProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("school_id")
+      .eq("id", id)
+      .single();
+
+    if (!targetProfile || targetProfile.school_id !== req.schoolId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ role })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error || !data) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(id);
+  res.json(mapProfile(data, userData?.user?.email));
+});
+
+function mapProfile(p: Record<string, unknown>, email?: string | null) {
+  return {
+    id: p.id,
+    schoolId: p.school_id,
+    role: p.role,
+    firstName: p.first_name,
+    lastName: p.last_name,
+    avatarUrl: p.avatar_url,
+    bio: p.bio,
+    email: email ?? null,
+    internalEmail: p.internal_email ?? null,
+    uniqueStudentId: p.unique_student_id ?? null,
+  };
+}
 
 // POST /users/:id/reset-password - admin sends password reset email to user
 router.post("/users/:id/reset-password", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {

@@ -434,4 +434,66 @@ router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res) => 
   }
 });
 
+// POST /transcripts/release — admin sends transcript-available notifications to all students
+router.post("/transcripts/release", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" }); return;
+  }
+  if (!req.schoolId) { res.status(403).json({ error: "No school" }); return; }
+
+  const { semester, message } = req.body;
+
+  // Get all students in school
+  const { data: students } = await supabaseAdmin
+    .from("profiles").select("id").eq("school_id", req.schoolId).eq("role", "student");
+
+  if (students && students.length > 0) {
+    const notifications = students.map((s: { id: string }) => ({
+      user_id: s.id,
+      type: "transcript_available",
+      title: `Transcript Available${semester ? ` - ${semester}` : ""}`,
+      message: message || "Your transcript for the semester is now available. Use your platform email and unique ID to access it.",
+      is_read: false,
+    }));
+    await supabaseAdmin.from("notifications").insert(notifications);
+  }
+
+  res.json({ success: true, notified: students?.length ?? 0 });
+});
+
+// POST /transcripts/verify — public endpoint; verifies internal_email + unique_student_id and returns transcript
+router.post("/transcripts/verify", async (req, res): Promise<void> => {
+  const { internal_email, unique_student_id } = req.body;
+  if (!internal_email || !unique_student_id) {
+    res.status(400).json({ error: "internal_email and unique_student_id are required" }); return;
+  }
+
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("id, first_name, last_name, unique_student_id, internal_email, school_id, role")
+    .eq("internal_email", (internal_email as string).toLowerCase())
+    .eq("unique_student_id", unique_student_id)
+    .single();
+
+  if (!profile) {
+    res.status(404).json({ error: "No student found with those credentials" }); return;
+  }
+
+  // Get transcript data
+  const { data: transcript } = await supabaseAdmin
+    .from("transcripts")
+    .select("*, courses(title)")
+    .eq("student_id", profile.id)
+    .order("created_at", { ascending: false });
+
+  res.json({
+    student: {
+      name: `${profile.first_name} ${profile.last_name}`,
+      uniqueId: profile.unique_student_id,
+      internalEmail: profile.internal_email,
+    },
+    transcript: transcript ?? [],
+  });
+});
+
 export default router;

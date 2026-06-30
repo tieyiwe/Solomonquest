@@ -41,6 +41,8 @@ const ForumPage = lazy(() => import("@/pages/forum/ForumPage"));
 const ForumTopicPage = lazy(() => import("@/pages/forum/ForumTopicPage"));
 const NotificationPreferences = lazy(() => import("@/pages/settings/NotificationPreferences"));
 const MessagesPage = lazy(() => import("@/pages/messages/MessagesPage"));
+const SuperAdminDashboard = lazy(() => import("@/pages/super-admin/SuperAdminDashboard"));
+const AdminDangerZone = lazy(() => import("@/pages/admin/AdminDangerZone"));
 
 function InviteAcceptPage({ token }: { token: string }) {
   const [, setLocation] = useLocation();
@@ -232,6 +234,14 @@ export function Router() {
         {/* Messages Route */}
         <Route path="/messages">
           <ProtectedRoute><MessagesPage /></ProtectedRoute>
+        </Route>
+
+        {/* Super Admin Routes */}
+        <Route path="/platform">
+          <ProtectedRoute allowedRoles={["super_admin"]}><SuperAdminDashboard /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/admin/danger-zone">
+          <ProtectedRoute allowedRoles={["admin","super_admin"]}><AdminDangerZone /></ProtectedRoute>
         </Route>
 
         {/* Settings Routes */}

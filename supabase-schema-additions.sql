@@ -266,3 +266,58 @@ CREATE POLICY "messages_rls" ON internal_messages FOR ALL USING (
   auth.uid() = from_user_id OR auth.uid() = to_user_id
 );
 ALTER PUBLICATION supabase_realtime ADD TABLE internal_messages;
+
+-- ─── Role-based unique ID prefix support ──────────────────────────────────────
+
+-- Function to generate prefixed unique ID based on role
+CREATE OR REPLACE FUNCTION generate_unique_id_for_role(
+  p_role TEXT,
+  p_school_initials TEXT
+) RETURNS TEXT AS $$
+DECLARE
+  prefix TEXT := '';
+  id_num BIGINT;
+BEGIN
+  IF p_role = 'teacher' THEN prefix := 'T-';
+  ELSIF p_role = 'staff' THEN prefix := 'S-';
+  END IF;
+  id_num := EXTRACT(EPOCH FROM NOW())::BIGINT % 100000000;
+  RETURN prefix || p_school_initials || '-' || LPAD(id_num::TEXT, 8, '0');
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to update unique_student_id prefix when role changes
+CREATE OR REPLACE FUNCTION handle_role_change_id() RETURNS TRIGGER AS $$
+DECLARE
+  school_initials TEXT := 'SQ';
+  school_name TEXT;
+BEGIN
+  IF OLD.role IS DISTINCT FROM NEW.role AND NEW.unique_student_id IS NOT NULL THEN
+    -- Get school initials
+    SELECT UPPER(LEFT(REGEXP_REPLACE(name, '[^A-Za-z ]', '', 'g'), 2))
+    INTO school_initials
+    FROM schools WHERE id = NEW.school_id;
+    IF school_initials IS NULL OR school_initials = '' THEN school_initials := 'SQ'; END IF;
+
+    -- Rewrite prefix based on new role, keep existing number portion
+    DECLARE
+      num_part TEXT := REGEXP_REPLACE(NEW.unique_student_id, '^[TSts]-?[A-Z]+-', '');
+    BEGIN
+      IF NEW.role = 'teacher' THEN
+        NEW.unique_student_id := 'T-' || school_initials || '-' || num_part;
+      ELSIF NEW.role = 'staff' THEN
+        NEW.unique_student_id := 'S-' || school_initials || '-' || num_part;
+      ELSE
+        -- student or other: no prefix
+        NEW.unique_student_id := school_initials || '-' || num_part;
+      END IF;
+    END;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_role_change_update_id ON profiles;
+CREATE TRIGGER on_role_change_update_id
+  BEFORE UPDATE ON profiles
+  FOR EACH ROW EXECUTE FUNCTION handle_role_change_id();
