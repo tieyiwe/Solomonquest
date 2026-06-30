@@ -142,3 +142,25 @@ CREATE TABLE IF NOT EXISTS reminders (
 ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "reminders_all" ON reminders;
 CREATE POLICY "reminders_all" ON reminders FOR ALL USING (true);
+
+-- ─── Internal messaging ───────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS internal_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid REFERENCES schools,
+  from_user_id uuid REFERENCES profiles NOT NULL,
+  to_user_id uuid REFERENCES profiles NOT NULL,
+  subject text NOT NULL,
+  body text NOT NULL,
+  is_read boolean DEFAULT false,
+  read_at timestamptz,
+  parent_id uuid REFERENCES internal_messages,
+  thread_id uuid,
+  deleted_by jsonb DEFAULT '[]',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE internal_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "messages_all" ON internal_messages;
+CREATE POLICY "messages_all" ON internal_messages FOR ALL USING (
+  auth.uid() = from_user_id OR auth.uid() = to_user_id
+);
+ALTER PUBLICATION supabase_realtime ADD TABLE internal_messages;

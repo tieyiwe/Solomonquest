@@ -24,6 +24,7 @@ import gradingRouter from "./grading";
 import invitationsRouter from "./invitations";
 import analyticsRouter from "./analytics";
 import remindersRouter from "./reminders";
+import messagesRouter from "./messages";
 
 const router: IRouter = Router();
 
@@ -52,5 +53,6 @@ router.use(gradingRouter);
 router.use(invitationsRouter);
 router.use(analyticsRouter);
 router.use(remindersRouter);
+router.use(messagesRouter);
 
 export default router;

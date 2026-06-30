@@ -16,13 +16,18 @@ const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
 const AdminCourses = lazy(() => import("@/pages/admin/AdminCourses"));
 const AdminAdmissions = lazy(() => import("@/pages/admin/AdminAdmissions"));
 const AdminSettings = lazy(() => import("@/pages/admin/AdminSettings"));
+const AdminAnalytics = lazy(() => import("@/pages/admin/AdminAnalytics"));
 const AdminResources = lazy(() => import("@/pages/admin/AdminResources"));
+const AdminReminders = lazy(() => import("@/pages/admin/AdminReminders"));
 
 const TeacherOverview = lazy(() => import("@/pages/teacher/TeacherOverview"));
 const TeacherCourseDetail = lazy(() => import("@/pages/teacher/TeacherCourseDetail"));
 const TeacherAssignments = lazy(() => import("@/pages/teacher/TeacherAssignments"));
 const TeacherGradebook = lazy(() => import("@/pages/teacher/TeacherGradebook"));
 const TeacherQuizBuilder = lazy(() => import("@/pages/teacher/TeacherQuizBuilder"));
+const TeacherAnalytics = lazy(() => import("@/pages/teacher/TeacherAnalytics"));
+const TeacherAttendance = lazy(() => import("@/pages/teacher/TeacherAttendance"));
+const TeacherReminders = lazy(() => import("@/pages/teacher/TeacherReminders"));
 const TeacherResources = lazy(() => import("@/pages/teacher/TeacherResources"));
 
 const StudentOverview = lazy(() => import("@/pages/student/StudentOverview"));
@@ -130,6 +135,12 @@ export function Router() {
         <Route path="/dashboard/admin/resources">
           <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminResources /></ProtectedRoute>
         </Route>
+        <Route path="/dashboard/admin/analytics">
+          <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminAnalytics /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/admin/reminders">
+          <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminReminders /></ProtectedRoute>
+        </Route>
         <Route path="/dashboard/admin/settings">
           <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminSettings /></ProtectedRoute>
         </Route>
@@ -152,6 +163,15 @@ export function Router() {
         </Route>
         <Route path="/dashboard/teacher/quiz-builder">
           <ProtectedRoute allowedRoles={["teacher"]}><TeacherQuizBuilder /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/teacher/analytics">
+          <ProtectedRoute allowedRoles={["teacher"]}><TeacherAnalytics /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/teacher/attendance">
+          <ProtectedRoute allowedRoles={["teacher"]}><TeacherAttendance /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/teacher/reminders">
+          <ProtectedRoute allowedRoles={["teacher"]}><TeacherReminders /></ProtectedRoute>
         </Route>
         <Route path="/dashboard/teacher/resources">
           <ProtectedRoute allowedRoles={["teacher"]}><TeacherResources /></ProtectedRoute>
