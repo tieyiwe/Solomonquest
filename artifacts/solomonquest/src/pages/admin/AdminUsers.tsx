@@ -352,19 +352,24 @@ function statusBadge(status: string) {
 function InvitationsTab({ refreshKey }: { refreshKey: number }) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setFetchError("");
     supabase.auth.getSession().then(({ data: { session } }) => {
       fetch("/api/invitations", {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       })
         .then((r) => r.json())
         .then((data) => {
-          if (!cancelled) setInvitations(data.invitations ?? []);
+          if (!cancelled) {
+            if (data.error) setFetchError(data.error);
+            else setInvitations(data.invitations ?? []);
+          }
         })
-        .catch(() => {})
+        .catch(() => { if (!cancelled) setFetchError("Failed to load invitations"); })
         .finally(() => { if (!cancelled) setLoading(false); });
     });
     return () => { cancelled = true; };
@@ -374,6 +379,14 @@ function InvitationsTab({ refreshKey }: { refreshKey: number }) {
     return (
       <div className="p-6 space-y-3">
         {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <p className="text-sm text-red-500">{fetchError}</p>
       </div>
     );
   }
