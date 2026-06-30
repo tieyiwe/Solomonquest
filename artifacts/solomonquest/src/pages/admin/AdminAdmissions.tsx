@@ -55,7 +55,9 @@ import {
   FileText,
   Globe,
   Lock,
+  ArrowLeft,
 } from "lucide-react";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
@@ -372,6 +374,14 @@ export default function AdminAdmissions() {
 
   return (
     <AdminLayout>
+      <div className="px-6 pt-4 pb-0">
+        <Link href="/dashboard/admin">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
+      </div>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
