@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { StudentLayout } from "@/components/layout/StudentLayout";
+import { RequiredVideoPlayer } from "@/components/video/RequiredVideoPlayer";
 import {
   useListPendingAssignments,
   useSubmitAssignment,
@@ -34,6 +35,10 @@ import {
   BookOpen,
   Star,
   ExternalLink,
+  Video,
+  Lock,
+  Upload,
+  Send,
 } from "lucide-react";
 import { format, isPast, isToday, isWithinInterval, addDays } from "date-fns";
 import { toast } from "sonner";
@@ -92,26 +97,29 @@ function SubmitDialog({
   const submitAssignment = useSubmitAssignment();
   const [fileUrl, setFileUrl] = useState("");
   const [comment, setComment] = useState("");
+  const [videoWatched, setVideoWatched] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const isVideoType = (assignment as any).assignmentType === "video";
+  const requireFullWatch = (assignment as any).requireFullWatch === true;
+  const videoUrl = (assignment as any).videoUrl as string | undefined;
+  const canSubmit = !isVideoType || !requireFullWatch || videoWatched;
 
   const handleSubmit = () => {
-    if (!fileUrl.trim() && !comment.trim()) {
-      toast.error("Please provide a file URL or comment");
-      return;
-    }
     submitAssignment.mutate(
       {
         assignmentId: assignment.id,
         data: {
           content: [fileUrl.trim() ? `File: ${fileUrl.trim()}` : "", comment.trim()]
             .filter(Boolean)
-            .join("\n\n"),
+            .join("\n\n") || "Video watched",
         },
       },
       {
         onSuccess: () => {
-          toast.success("Assignment submitted successfully!");
+          setSubmitted(true);
           queryClient.invalidateQueries({ queryKey: getListPendingAssignmentsQueryKey() });
-          onClose();
+          setTimeout(onClose, 2000);
         },
         onError: (err: any) => {
           toast.error(err.message || "Failed to submit assignment");
@@ -122,15 +130,42 @@ function SubmitDialog({
 
   const priority = getDuePriority(assignment.dueDate);
 
+  if (submitted) {
+    return (
+      <DialogContent className="max-w-md">
+        <div className="flex flex-col items-center justify-center py-10 text-center gap-4">
+          <div className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center">
+            <CheckCircle2 className="h-10 w-10 text-green-500" />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">Submitted! 🎉</h3>
+            <p className="text-gray-500 mt-1 text-sm">
+              Your work for <strong>{assignment.title}</strong> has been sent to your teacher.
+              You'll be notified when it's graded.
+            </p>
+          </div>
+        </div>
+      </DialogContent>
+    );
+  }
+
   return (
-    <DialogContent className="max-w-lg">
+    <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
       <DialogHeader>
-        <DialogTitle>{assignment.title}</DialogTitle>
-        {assignment.courseTitle && (
-          <p className="text-sm text-primary font-medium">{assignment.courseTitle}</p>
-        )}
+        <div className="flex items-start gap-3">
+          <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${isVideoType ? "bg-blue-100" : "bg-primary/10"}`}>
+            {isVideoType ? <Video className="h-5 w-5 text-blue-600" /> : <FileText className="h-5 w-5 text-primary" />}
+          </div>
+          <div>
+            <DialogTitle className="leading-tight">{assignment.title}</DialogTitle>
+            {assignment.courseTitle && (
+              <p className="text-sm text-primary font-medium mt-0.5">{assignment.courseTitle}</p>
+            )}
+          </div>
+        </div>
       </DialogHeader>
 
+      {/* Due date banner */}
       {assignment.dueDate && (
         <div
           className={cn(
@@ -138,20 +173,24 @@ function SubmitDialog({
             priority === "overdue"
               ? "bg-destructive/10 text-destructive"
               : priority === "today"
-              ? "bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400"
-              : "bg-muted text-muted-foreground"
+              ? "bg-orange-50 text-orange-700"
+              : "bg-muted/50 text-muted-foreground"
           )}
         >
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          {priority === "overdue" ? "Overdue since " : "Due: "}
+          <Clock className="h-4 w-4 shrink-0" />
+          {priority === "overdue" ? "⚠️ Overdue since " : "Due: "}
           {format(new Date(assignment.dueDate), "EEEE, MMMM d, yyyy 'at' h:mm a")}
+          {assignment.pointsPossible != null && (
+            <span className="ml-auto font-semibold">{assignment.pointsPossible} pts</span>
+          )}
         </div>
       )}
 
+      {/* Instructions */}
       {assignment.description && (
-        <div className="bg-muted/40 rounded-lg p-4">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-            Description
+        <div className="bg-muted/40 rounded-lg p-4 border border-border/50">
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+            Instructions
           </p>
           <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
             {assignment.description}
@@ -159,50 +198,88 @@ function SubmitDialog({
         </div>
       )}
 
-      <div className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="file_url">File URL (optional)</Label>
-          <Input
-            id="file_url"
-            type="url"
-            placeholder="https://drive.google.com/..."
-            value={fileUrl}
-            onChange={(e) => setFileUrl(e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">
-            Link to your Google Drive file, Supabase storage URL, or any shareable document link.
-          </p>
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="comment">Comment (optional)</Label>
-            {assignment.pointsPossible != null && (
-              <span className="text-xs text-muted-foreground">
-                {assignment.pointsPossible} points possible
+      {/* Video player for video assignments */}
+      {isVideoType && videoUrl && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <Video className="h-4 w-4 text-blue-500" />
+            Watch the video
+            {requireFullWatch && (
+              <span className="flex items-center gap-1 text-xs text-orange-600 font-normal ml-auto">
+                <Lock className="h-3 w-3" /> Must watch in full to submit
               </span>
             )}
           </div>
-          <Textarea
-            id="comment"
-            placeholder="Add a note to your teacher..."
-            className="min-h-[100px] resize-none text-sm"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
+          <RequiredVideoPlayer
+            src={videoUrl}
+            onComplete={() => setVideoWatched(true)}
           />
+          {requireFullWatch && !videoWatched && (
+            <p className="text-xs text-muted-foreground text-center">
+              Watch the entire video to unlock the submit button.
+            </p>
+          )}
+          {videoWatched && (
+            <div className="flex items-center gap-2 text-xs text-green-600 font-semibold bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+              <CheckCircle2 className="h-4 w-4" />
+              Video fully watched — you may now submit.
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
-      <DialogFooter>
+      {/* Submission inputs (hidden for video-only if requireFullWatch but no extra submission) */}
+      {(!isVideoType || !requireFullWatch || videoWatched) && (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="file_url" className="flex items-center gap-1.5">
+              <Upload className="h-3.5 w-3.5" />
+              File / Document URL
+              {!isVideoType && <span className="text-muted-foreground font-normal text-xs">(optional)</span>}
+            </Label>
+            <Input
+              id="file_url"
+              type="url"
+              placeholder="https://drive.google.com/... or Supabase URL"
+              value={fileUrl}
+              onChange={(e) => setFileUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Paste a shareable link to your document, Google Drive file, or uploaded file.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="comment">
+              Note to teacher
+              <span className="text-muted-foreground font-normal text-xs ml-1">(optional)</span>
+            </Label>
+            <Textarea
+              id="comment"
+              placeholder="Any notes or context for your teacher..."
+              className="min-h-[80px] resize-none text-sm"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
+      <DialogFooter className="gap-2">
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={submitAssignment.isPending || (!fileUrl.trim() && !comment.trim())}
+          disabled={submitAssignment.isPending || !canSubmit}
+          className="gap-2"
         >
-          {submitAssignment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Submit Assignment
+          {submitAssignment.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
+          Submit to Teacher
         </Button>
       </DialogFooter>
     </DialogContent>

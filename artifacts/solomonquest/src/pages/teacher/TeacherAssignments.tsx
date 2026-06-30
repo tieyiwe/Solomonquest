@@ -64,7 +64,10 @@ import {
   Trash2,
   ExternalLink,
   CheckCircle2,
+  Video,
+  Lock,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -77,6 +80,9 @@ interface AssignmentFormData {
   file_url: string;
   due_date: string;
   points: string;
+  assignment_type: "standard" | "video";
+  video_url: string;
+  require_full_watch: boolean;
 }
 
 const emptyForm: AssignmentFormData = {
@@ -86,6 +92,9 @@ const emptyForm: AssignmentFormData = {
   file_url: "",
   due_date: "",
   points: "100",
+  assignment_type: "standard",
+  video_url: "",
+  require_full_watch: true,
 };
 
 function toFormData(a: Assignment & { instructions?: string | null; fileUrl?: string | null }): AssignmentFormData {
@@ -96,6 +105,9 @@ function toFormData(a: Assignment & { instructions?: string | null; fileUrl?: st
     file_url: (a as any).fileUrl ?? "",
     due_date: a.dueDate ? a.dueDate.slice(0, 16) : "",
     points: String(a.pointsPossible ?? 100),
+    assignment_type: (a as any).assignmentType ?? "standard",
+    video_url: (a as any).videoUrl ?? "",
+    require_full_watch: (a as any).requireFullWatch ?? true,
   };
 }
 
@@ -269,6 +281,12 @@ function AssignmentFormDialog({
       return;
     }
 
+    const isVideo = form.assignment_type === "video";
+    if (isVideo && !form.video_url.trim()) {
+      toast.error("Video URL is required for video assignments");
+      return;
+    }
+
     const payload = {
       course_id: courseId,
       title: form.title.trim(),
@@ -277,10 +295,12 @@ function AssignmentFormDialog({
       file_url: form.file_url || undefined,
       due_date: form.due_date || undefined,
       points: form.points ? Number(form.points) : undefined,
+      assignment_type: form.assignment_type,
+      video_url: isVideo ? form.video_url.trim() : undefined,
+      require_full_watch: isVideo ? form.require_full_watch : undefined,
     };
 
     if (isEditing && editAssignment) {
-      // Use PATCH via existing hook but map to PUT-like semantics
       updateAssignment.mutate(
         {
           id: editAssignment.id,
@@ -289,6 +309,7 @@ function AssignmentFormDialog({
             description: payload.description,
             dueDate: payload.due_date,
             pointsPossible: payload.points,
+            ...(payload as any),
           },
         },
         {
@@ -309,6 +330,7 @@ function AssignmentFormDialog({
             description: payload.description,
             dueDate: payload.due_date,
             pointsPossible: payload.points,
+            ...(payload as any),
           },
         },
         {
@@ -333,6 +355,60 @@ function AssignmentFormDialog({
           <DialogTitle>{isEditing ? "Edit Assignment" : "Create Assignment"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Assignment Type Selector */}
+          <div className="space-y-1.5">
+            <Label>Assignment Type</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["standard", "video"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, assignment_type: type }))}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                    form.assignment_type === type
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/50"
+                  }`}
+                >
+                  {type === "video" ? <Video className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                  {type === "standard" ? "Standard" : "Video Watch"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Video URL + require full watch */}
+          {form.assignment_type === "video" && (
+            <div className="space-y-3 bg-muted/40 border border-dashed rounded-lg p-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="video_url">Video URL *</Label>
+                <Input
+                  id="video_url"
+                  type="url"
+                  placeholder="https://... (direct .mp4 link, or hosted video URL)"
+                  value={form.video_url}
+                  onChange={set("video_url")}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use a direct video file URL (e.g. from Supabase Storage). Skip-prevention works best with direct .mp4 links.
+                </p>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-orange-500" />
+                  <div>
+                    <p className="text-sm font-medium">Require full watch</p>
+                    <p className="text-xs text-muted-foreground">Students cannot skip ahead or proceed until the video ends</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={form.require_full_watch}
+                  onCheckedChange={(v) => setForm((f) => ({ ...f, require_full_watch: v }))}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label htmlFor="title">Title *</Label>
             <Input
@@ -471,6 +547,13 @@ function CourseAssignmentsPanel({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="font-medium text-sm">{assignment.title}</h4>
+                      {(assignment as any).assignmentType === "video" && (
+                        <Badge variant="outline" className="text-xs gap-1 border-blue-200 text-blue-600">
+                          <Video className="h-2.5 w-2.5" />
+                          Video
+                          {(assignment as any).requireFullWatch && <Lock className="h-2.5 w-2.5 ml-0.5" />}
+                        </Badge>
+                      )}
                       {!assignment.isPublished && (
                         <Badge variant="secondary" className="text-xs">
                           Draft

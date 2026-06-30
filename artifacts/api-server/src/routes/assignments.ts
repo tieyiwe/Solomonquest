@@ -116,7 +116,7 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
     return;
   }
 
-  const { course_id, title, description, due_date, points, file_url, instructions } = req.body;
+  const { course_id, title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch } = req.body;
 
   if (!course_id) {
     res.status(400).json({ error: "course_id is required" });
@@ -142,6 +142,9 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
       file_url: file_url ?? null,
       instructions: instructions ?? null,
       is_published: true,
+      assignment_type: assignment_type ?? "standard",
+      video_url: video_url ?? null,
+      require_full_watch: require_full_watch ?? false,
     })
     .select()
     .single();
@@ -201,7 +204,7 @@ router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
     }
   }
 
-  const { title, description, due_date, points, file_url, instructions } = req.body;
+  const { title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch } = req.body;
 
   if (due_date !== undefined && due_date !== null && isNaN(Date.parse(due_date))) {
     res.status(400).json({ error: "due_date must be a valid date" });
@@ -215,6 +218,9 @@ router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
   if (points !== undefined) updates.points_possible = points;
   if (file_url !== undefined) updates.file_url = file_url;
   if (instructions !== undefined) updates.instructions = instructions;
+  if (assignment_type !== undefined) updates.assignment_type = assignment_type;
+  if (video_url !== undefined) updates.video_url = video_url;
+  if (require_full_watch !== undefined) updates.require_full_watch = require_full_watch;
 
   const { data, error } = await supabaseAdmin
     .from("assignments")
@@ -337,7 +343,7 @@ router.get("/assignments/:id", requireAuth, async (req, res): Promise<void> => {
 // Update assignment (PATCH - legacy)
 router.patch("/assignments/:id", requireAuth, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { title, description, dueDate, pointsPossible, isPublished } = req.body;
+  const { title, description, dueDate, pointsPossible, isPublished, videoUrl, requireFullWatch, assignmentType } = req.body;
 
   const updates: Record<string, unknown> = {};
   if (title !== undefined) updates.title = title;
@@ -345,6 +351,9 @@ router.patch("/assignments/:id", requireAuth, async (req, res): Promise<void> =>
   if (dueDate !== undefined) updates.due_date = dueDate;
   if (pointsPossible !== undefined) updates.points_possible = pointsPossible;
   if (isPublished !== undefined) updates.is_published = isPublished;
+  if (assignmentType !== undefined) updates.assignment_type = assignmentType;
+  if (videoUrl !== undefined) updates.video_url = videoUrl;
+  if (requireFullWatch !== undefined) updates.require_full_watch = requireFullWatch;
 
   const { data, error } = await supabaseAdmin
     .from("assignments")
@@ -384,6 +393,9 @@ async function enrichAssignment(a: Record<string, unknown>) {
     pointsPossible: a.points_possible,
     isPublished: a.is_published,
     courseTitle,
+    assignmentType: (a.assignment_type as string) ?? "standard",
+    videoUrl: (a.video_url as string | null) ?? null,
+    requireFullWatch: (a.require_full_watch as boolean) ?? false,
   };
 }
 
