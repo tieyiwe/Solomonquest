@@ -12,6 +12,14 @@ import notificationsRouter from "./notifications";
 import applicationsRouter from "./applications";
 import attendanceRouter from "./attendance";
 import dashboardRouter from "./dashboard";
+import courseResourcesRouter from "./course-resources";
+import schoolResourcesRouter from "./school-resources";
+import chatRouter from "./chat";
+import forumRouter from "./forum";
+import videoRouter from "./video";
+import quizzesRouter from "./quizzes";
+import permissionsRouter from "./permissions";
+import formBuilderRouter from "./form-builder";
 
 const router: IRouter = Router();
 
@@ -28,5 +36,13 @@ router.use(notificationsRouter);
 router.use(applicationsRouter);
 router.use(attendanceRouter);
 router.use(dashboardRouter);
+router.use(courseResourcesRouter);
+router.use(schoolResourcesRouter);
+router.use(chatRouter);
+router.use(forumRouter);
+router.use(videoRouter);
+router.use(quizzesRouter);
+router.use(permissionsRouter);
+router.use(formBuilderRouter);
 
 export default router;

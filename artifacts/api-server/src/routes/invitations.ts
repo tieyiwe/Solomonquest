@@ -1,0 +1,256 @@
+import { Router, type IRouter, type Response } from "express";
+import { supabaseAdmin } from "../lib/supabase";
+import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { sendTeacherInvite } from "../lib/email";
+import crypto from "crypto";
+
+const router: IRouter = Router();
+
+// ─── POST /invitations — admin creates invite ─────────────────────────────────
+
+router.post(
+  "/invitations",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const { userRole, schoolId, userId } = req;
+
+    if (userRole !== "admin" && userRole !== "super_admin") {
+      res.status(403).json({ error: "Forbidden: admin access required" });
+      return;
+    }
+
+    const { email, role = "teacher" } = req.body as { email?: string; role?: string };
+
+    if (!email) {
+      res.status(400).json({ error: "email is required" });
+      return;
+    }
+
+    if (!schoolId) {
+      res.status(400).json({ error: "No school associated with this account" });
+      return;
+    }
+
+    // Generate a secure random token and set expiry (7 days)
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: invitation, error: insertError } = await supabaseAdmin
+      .from("invitations")
+      .insert({
+        email,
+        role,
+        token,
+        school_id: schoolId,
+        invited_by: userId,
+        status: "pending",
+        expires_at: expiresAt,
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error("[invitations] insert error:", insertError);
+      res.status(500).json({ error: "Failed to create invitation" });
+      return;
+    }
+
+    // Fetch school name and inviter name for the email
+    const [schoolResult, profileResult] = await Promise.all([
+      supabaseAdmin.from("schools").select("name").eq("id", schoolId).single(),
+      supabaseAdmin.from("profiles").select("full_name").eq("id", userId).single(),
+    ]);
+
+    const schoolName = schoolResult.data?.name ?? "SolomonQuest School";
+    const inviterName = profileResult.data?.full_name ?? "An administrator";
+
+    const inviteUrl = `${process.env.APP_URL ?? ""}/invite/${token}`;
+
+    try {
+      await sendTeacherInvite({ to: email, schoolName, inviterName, inviteUrl });
+    } catch (emailError) {
+      console.error("[invitations] email send error:", emailError);
+      // Do not fail the request — invitation is already created
+    }
+
+    res.status(201).json({ invitation });
+  }
+);
+
+// ─── GET /invitations — list school invitations ───────────────────────────────
+
+router.get(
+  "/invitations",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const { userRole, schoolId } = req;
+
+    if (userRole !== "admin" && userRole !== "super_admin") {
+      res.status(403).json({ error: "Forbidden: admin access required" });
+      return;
+    }
+
+    if (!schoolId) {
+      res.status(400).json({ error: "No school associated with this account" });
+      return;
+    }
+
+    const { data: invitations, error } = await supabaseAdmin
+      .from("invitations")
+      .select("id, email, role, status, created_at, expires_at")
+      .eq("school_id", schoolId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[invitations] list error:", error);
+      res.status(500).json({ error: "Failed to fetch invitations" });
+      return;
+    }
+
+    res.json({ invitations });
+  }
+);
+
+// ─── DELETE /invitations/:id — cancel/delete invitation ──────────────────────
+
+router.delete(
+  "/invitations/:id",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const { userRole, schoolId } = req;
+    const { id } = req.params;
+
+    if (userRole !== "admin" && userRole !== "super_admin") {
+      res.status(403).json({ error: "Forbidden: admin access required" });
+      return;
+    }
+
+    if (!schoolId) {
+      res.status(400).json({ error: "No school associated with this account" });
+      return;
+    }
+
+    const { error, count } = await supabaseAdmin
+      .from("invitations")
+      .delete({ count: "exact" })
+      .eq("id", id)
+      .eq("school_id", schoolId);
+
+    if (error) {
+      console.error("[invitations] delete error:", error);
+      res.status(500).json({ error: "Failed to delete invitation" });
+      return;
+    }
+
+    if (count === 0) {
+      res.status(404).json({ error: "Invitation not found" });
+      return;
+    }
+
+    res.json({ success: true });
+  }
+);
+
+// ─── GET /invitations/accept/:token — public: get invite details ──────────────
+
+router.get(
+  "/invitations/accept/:token",
+  async (req, res: Response): Promise<void> => {
+    const { token } = req.params;
+
+    const { data: invitation, error } = await supabaseAdmin
+      .from("invitations")
+      .select("id, email, role, status, expires_at, school_id")
+      .eq("token", token)
+      .single();
+
+    if (error || !invitation) {
+      res.status(404).json({ error: "Invitation not found" });
+      return;
+    }
+
+    if (invitation.status === "accepted") {
+      res.status(410).json({ error: "Invitation has already been accepted" });
+      return;
+    }
+
+    if (new Date(invitation.expires_at) < new Date()) {
+      res.status(410).json({ error: "Invitation has expired" });
+      return;
+    }
+
+    const { data: school } = await supabaseAdmin
+      .from("schools")
+      .select("name")
+      .eq("id", invitation.school_id)
+      .single();
+
+    res.json({
+      email: invitation.email,
+      role: invitation.role,
+      schoolName: school?.name ?? null,
+    });
+  }
+);
+
+// ─── POST /invitations/accept/:token — accept invitation ─────────────────────
+
+router.post(
+  "/invitations/accept/:token",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const { token } = req.params;
+    const { userId } = req;
+
+    const { data: invitation, error } = await supabaseAdmin
+      .from("invitations")
+      .select("id, email, role, status, expires_at, school_id")
+      .eq("token", token)
+      .single();
+
+    if (error || !invitation) {
+      res.status(404).json({ error: "Invitation not found" });
+      return;
+    }
+
+    if (invitation.status === "accepted") {
+      res.status(410).json({ error: "Invitation has already been accepted" });
+      return;
+    }
+
+    if (new Date(invitation.expires_at) < new Date()) {
+      res.status(410).json({ error: "Invitation has expired" });
+      return;
+    }
+
+    // Update the invitee's profile with the role and school from the invitation
+    const { error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .update({
+        role: invitation.role,
+        school_id: invitation.school_id,
+      })
+      .eq("id", userId);
+
+    if (profileError) {
+      console.error("[invitations] profile update error:", profileError);
+      res.status(500).json({ error: "Failed to update profile" });
+      return;
+    }
+
+    // Mark invitation as accepted
+    const { error: inviteUpdateError } = await supabaseAdmin
+      .from("invitations")
+      .update({ status: "accepted", accepted_at: new Date().toISOString() })
+      .eq("id", invitation.id);
+
+    if (inviteUpdateError) {
+      console.error("[invitations] status update error:", inviteUpdateError);
+      // Profile was already updated; log but don't block the response
+    }
+
+    res.json({ success: true, role: invitation.role, schoolId: invitation.school_id });
+  }
+);
+
+export default router;
