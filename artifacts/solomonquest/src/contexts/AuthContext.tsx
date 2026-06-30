@@ -60,7 +60,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: profile, isLoading: isLoadingProfile } = useGetMe({
     query: {
       enabled: !!session,
-      retry: false,
+      retry: 2,
+      retryDelay: 1000,
     },
   });
 

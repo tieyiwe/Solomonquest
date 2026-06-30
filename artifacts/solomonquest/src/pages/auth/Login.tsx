@@ -46,18 +46,46 @@ export default function Login() {
     },
   });
 
+  function redirectByRole(role: string | null | undefined) {
+    if (role === "admin" || role === "super_admin") {
+      setLocation("/dashboard/admin");
+    } else if (role === "teacher") {
+      setLocation("/dashboard/teacher");
+    } else if (role === "student" || role === "staff") {
+      setLocation("/dashboard/student");
+    } else {
+      setLocation("/onboarding/setup");
+    }
+  }
+
   async function onSubmit(data: LoginFormValues) {
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
       });
 
       if (error) throw error;
 
+      // Fetch profile directly with the new token so we can redirect immediately
+      // without waiting for the React Query chain to settle
+      try {
+        const token = authData.session?.access_token;
+        const res = await fetch("/api/me", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const profile = await res.json();
+          toast.success("Welcome back!");
+          redirectByRole(profile?.role);
+          return;
+        }
+      } catch {
+        // fall through to useEffect redirect below
+      }
+
       toast.success("Successfully logged in");
-      // Let AuthContext handle redirect based on role
     } catch (error: unknown) {
       const msg =
         error instanceof Error && error.message
