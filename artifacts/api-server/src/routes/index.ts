@@ -25,6 +25,7 @@ import invitationsRouter from "./invitations";
 import analyticsRouter from "./analytics";
 import remindersRouter from "./reminders";
 import messagesRouter from "./messages";
+import superAdminRouter from "./super-admin";
 
 const router: IRouter = Router();
 
@@ -54,5 +55,6 @@ router.use(invitationsRouter);
 router.use(analyticsRouter);
 router.use(remindersRouter);
 router.use(messagesRouter);
+router.use(superAdminRouter);
 
 export default router;
