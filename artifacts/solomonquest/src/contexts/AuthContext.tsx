@@ -5,6 +5,7 @@ import { useGetMe, setAuthTokenGetter } from "@workspace/api-client-react";
 import { logActivity } from "@/lib/activityLogger";
 import type { Profile } from "@workspace/api-client-react/src/generated/api.schemas";
 import { useLocation } from "wouter";
+import { queryClient } from "@/App";
 
 interface AuthContextType {
   user: Profile | null;
@@ -68,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     try { await logActivity({ action: "logout" }); } catch { /* non-blocking */ }
     await supabase.auth.signOut();
+    queryClient.clear();
     setLocation("/auth/login");
   };
 
