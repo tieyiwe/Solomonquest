@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -16,6 +17,24 @@ import {
   MessageSquare,
   ChevronRight,
   ChevronDown,
+  LayoutDashboard,
+  Users,
+  BookOpen,
+  Settings,
+  CheckSquare,
+  FolderOpen,
+  BarChart2,
+  Bell,
+  AlertTriangle,
+  HelpCircle,
+  FileText,
+  ClipboardList,
+  CalendarCheck,
+  AlarmClock,
+  Scroll,
+  ChevronLeft,
+  ChevronRightIcon,
+  GraduationCap,
 } from "lucide-react";
 import {
   Dialog,
@@ -767,6 +786,129 @@ function SidebarSection({
 // Main ChatPage
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Role-aware nav links for the icon rail
+// ---------------------------------------------------------------------------
+
+const ADMIN_LINKS = [
+  { href: "/dashboard/admin", label: "Overview", icon: LayoutDashboard },
+  { href: "/dashboard/admin/users", label: "Users", icon: Users },
+  { href: "/dashboard/admin/courses", label: "Courses", icon: BookOpen },
+  { href: "/dashboard/admin/admissions", label: "Admissions", icon: CheckSquare },
+  { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
+  { href: "/dashboard/admin/analytics", label: "Analytics", icon: BarChart2 },
+  { href: "/dashboard/admin/reminders", label: "Reminders", icon: Bell },
+  { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard/admin/danger-zone", label: "Danger Zone", icon: AlertTriangle },
+];
+const TEACHER_LINKS = [
+  { href: "/dashboard/teacher", label: "Overview", icon: LayoutDashboard },
+  { href: "/dashboard/teacher/assignments", label: "Assignments", icon: FileText },
+  { href: "/dashboard/teacher/gradebook", label: "Gradebook", icon: ClipboardList },
+  { href: "/dashboard/teacher/attendance", label: "Attendance", icon: CalendarCheck },
+  { href: "/dashboard/teacher/resources", label: "Resources", icon: FolderOpen },
+  { href: "/dashboard/teacher/analytics", label: "Analytics", icon: BarChart2 },
+  { href: "/dashboard/teacher/reminders", label: "Reminders", icon: AlarmClock },
+];
+const STUDENT_LINKS = [
+  { href: "/dashboard/student", label: "Overview", icon: LayoutDashboard },
+  { href: "/dashboard/student/assignments", label: "Assignments", icon: FileText },
+  { href: "/dashboard/student/quizzes", label: "Quizzes", icon: ClipboardList },
+  { href: "/dashboard/student/resources", label: "Resources", icon: FolderOpen },
+  { href: "/dashboard/student/forum", label: "Forum", icon: MessageSquare },
+  { href: "/dashboard/student/transcript", label: "Transcript", icon: Scroll },
+];
+
+function DashboardRail({ role }: { role?: string | null }) {
+  const [location] = useLocation();
+  const [expanded, setExpanded] = useState(false);
+
+  const links =
+    role === "admin" || role === "super_admin"
+      ? ADMIN_LINKS
+      : role === "teacher"
+      ? TEACHER_LINKS
+      : STUDENT_LINKS;
+
+  const dashboardHref =
+    role === "admin" || role === "super_admin"
+      ? "/dashboard/admin"
+      : role === "teacher"
+      ? "/dashboard/teacher"
+      : "/dashboard/student";
+
+  return (
+    <div
+      className="flex-shrink-0 flex flex-col h-full overflow-hidden transition-all duration-200"
+      style={{ width: expanded ? 200 : 52, backgroundColor: "#0f1117" }}
+    >
+      {/* Toggle + logo */}
+      <div className="flex items-center justify-between px-2 py-3 border-b border-white/10 flex-shrink-0">
+        <Link href={dashboardHref}>
+          <div
+            className="h-7 w-7 rounded-md flex items-center justify-center shrink-0 cursor-pointer"
+            style={{ backgroundColor: "#6366f1" }}
+            title="Go to Dashboard"
+          >
+            <GraduationCap className="h-4 w-4 text-white" />
+          </div>
+        </Link>
+        {expanded && (
+          <span className="text-white/60 text-xs font-medium ml-2 flex-1 truncate">Dashboard</span>
+        )}
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="ml-auto p-1 rounded text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+          title={expanded ? "Collapse" : "Expand"}
+        >
+          {expanded ? (
+            <ChevronLeft className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRightIcon className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
+
+      {/* Nav links */}
+      <nav className="flex-1 overflow-y-auto py-2 space-y-0.5 px-1.5">
+        {links.map((link) => {
+          const Icon = link.icon;
+          const isActive =
+            link.href === dashboardHref
+              ? location === link.href
+              : location.startsWith(link.href);
+          return (
+            <Link key={link.href} href={link.href}>
+              <div
+                title={!expanded ? link.label : undefined}
+                className={`flex items-center gap-2.5 px-1.5 py-2 rounded-md cursor-pointer transition-colors text-sm ${
+                  isActive
+                    ? "bg-white/15 text-white"
+                    : "text-white/50 hover:text-white hover:bg-white/8"
+                }`}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {expanded && <span className="truncate">{link.label}</span>}
+              </div>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Chat indicator at bottom */}
+      <div className="px-1.5 pb-3 flex-shrink-0">
+        <div
+          className="flex items-center gap-2.5 px-1.5 py-2 rounded-md bg-white/10 text-white text-sm"
+          title={!expanded ? "Chat" : undefined}
+        >
+          <MessageSquare className="h-4 w-4 shrink-0" />
+          {expanded && <span className="truncate">Chat</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const { user } = useAuth();
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -992,7 +1134,12 @@ export default function ChatPage() {
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* ------------------------------------------------------------------ */}
-      {/* Sidebar */}
+      {/* Dashboard icon rail (Supabase-style) */}
+      {/* ------------------------------------------------------------------ */}
+      <DashboardRail role={user?.role} />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Chat Sidebar */}
       {/* ------------------------------------------------------------------ */}
       <aside
         className="w-[240px] flex-shrink-0 flex flex-col overflow-hidden"
@@ -1000,7 +1147,7 @@ export default function ChatPage() {
       >
         {/* Workspace header */}
         <div className="px-4 py-4 border-b border-white/10 flex-shrink-0">
-          <h1 className="font-bold text-white text-base">SolomonQuest</h1>
+          <h1 className="font-bold text-white text-base">Chat</h1>
           <p className="text-[#b9bbbe] text-xs mt-0.5">Learning Community</p>
         </div>
 

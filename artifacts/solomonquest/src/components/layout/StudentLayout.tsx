@@ -56,6 +56,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
     { href: "/dashboard/student/resources", label: "Resources", icon: FolderOpen, exact: false },
     { href: "/dashboard/student/forum", label: "Forum", icon: MessageSquare, exact: false },
     { href: "/dashboard/student/transcript", label: "Transcript", icon: Scroll, exact: false },
+    { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
   ];
 
   const isActive = (href: string, exact: boolean) => {

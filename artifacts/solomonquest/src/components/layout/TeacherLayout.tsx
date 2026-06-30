@@ -56,6 +56,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
     { href: "/dashboard/teacher/resources", label: "Resources", icon: FolderOpen, exact: false },
     { href: "/dashboard/teacher/analytics", label: "Analytics", icon: BarChart2, exact: false },
     { href: "/dashboard/teacher/reminders", label: "Reminders", icon: AlarmClock, exact: false },
+    { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
   ];
 
   const isActive = (href: string, exact: boolean) => {

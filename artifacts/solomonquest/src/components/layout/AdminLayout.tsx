@@ -19,6 +19,7 @@ import {
   BarChart2,
   Bell,
   AlertTriangle,
+  MessageSquare,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
@@ -34,6 +35,7 @@ const adminLinks = [
   { href: "/dashboard/admin/reminders", label: "Reminders", icon: Bell },
   { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
   { href: "/dashboard/admin/danger-zone", label: "Danger Zone", icon: AlertTriangle },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/help", label: "Help Center", icon: HelpCircle },
 ];
 
