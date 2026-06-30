@@ -50,15 +50,15 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
           <Link key={link.href} href={link.href}>
             <button
               onClick={onClose}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 group ${
                 isActive
-                  ? "bg-white/15 text-white font-semibold"
-                  : "text-white/70 hover:bg-white/10 hover:text-white"
+                  ? "bg-white/15 text-white font-semibold border-l-2 border-white pl-[10px]"
+                  : "text-slate-300 font-medium hover:bg-white/8 hover:text-white"
               }`}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-white" : "text-slate-400"}`} />
               <span>{link.label}</span>
-              {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-white opacity-80" />}
+              {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-white/80" />}
             </button>
           </Link>
         );

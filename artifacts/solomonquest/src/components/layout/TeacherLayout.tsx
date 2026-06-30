@@ -86,8 +86,8 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
               className={cn(
                 "w-full justify-start h-9 px-3 text-sm font-medium",
                 active
-                  ? "bg-white/15 text-white font-semibold"
-                  : "text-white/70 hover:text-white hover:bg-white/10"
+                  ? "bg-white/15 text-white font-semibold border-l-2 border-white rounded-l-none"
+                  : "text-slate-300 hover:text-white hover:bg-white/8"
               )}
               asChild
               onClick={() => setIsMobileMenuOpen(false)}
@@ -132,8 +132,8 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
                       className={cn(
                         "w-full justify-start h-auto px-3 py-2 text-sm",
                         active
-                          ? "bg-white/15 text-white font-semibold"
-                          : "text-white/60 hover:text-white hover:bg-white/10"
+                          ? "bg-white/15 text-white font-semibold border-l-2 border-white rounded-l-none"
+                          : "text-slate-400 hover:text-white hover:bg-white/8"
                       )}
                       asChild
                       onClick={() => setIsMobileMenuOpen(false)}

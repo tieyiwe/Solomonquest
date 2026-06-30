@@ -209,6 +209,29 @@ export default function SuperAdminDashboard() {
   const [approveDialog, setApproveDialog] = useState<DeletionRequest | null>(null);
   const [executeDeletionDialog, setExecuteDeletionDialog] = useState<DeletionRequest | null>(null);
 
+  // Quick delete (empty schools)
+  const [quickDeleteDialog, setQuickDeleteDialog] = useState<{ id: string; name: string } | null>(null);
+  const [quickDeleting, setQuickDeleting] = useState(false);
+
+  const handleQuickDelete = async () => {
+    if (!quickDeleteDialog) return;
+    setQuickDeleting(true);
+    try {
+      const res = await apiFetch(`/api/super-admin/schools/${quickDeleteDialog.id}/quick-delete`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to delete");
+      }
+      toast.success(`"${quickDeleteDialog.name}" deleted.`);
+      setQuickDeleteDialog(null);
+      fetchSchools();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete school");
+    } finally {
+      setQuickDeleting(false);
+    }
+  };
+
   // Archive
   const [archive, setArchive] = useState<ArchiveEntry[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -815,6 +838,16 @@ export default function SuperAdminDashboard() {
                               >
                                 {school.status === "active" ? "Deactivate" : "Activate"}
                               </Button>
+                              {school.students === 0 && school.teachers === 0 && school.courses === 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-red-800 text-red-400 hover:bg-red-900/30"
+                                  onClick={() => setQuickDeleteDialog({ id: school.id, name: school.name })}
+                                >
+                                  Delete
+                                </Button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1273,6 +1306,26 @@ export default function SuperAdminDashboard() {
             </Button>
             <Button className="bg-blue-700 hover:bg-blue-600 text-white" onClick={handleChangeRole}>
               Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Delete Empty School */}
+      <Dialog open={!!quickDeleteDialog} onOpenChange={() => setQuickDeleteDialog(null)}>
+        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Delete School</DialogTitle>
+          </DialogHeader>
+          <p className="text-gray-300 text-sm">
+            Delete <strong>{quickDeleteDialog?.name}</strong>? This school has no students, teachers, or courses and will be permanently removed.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setQuickDeleteDialog(null)}>
+              Cancel
+            </Button>
+            <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleQuickDelete} disabled={quickDeleting}>
+              {quickDeleting ? "Deleting…" : "Delete School"}
             </Button>
           </DialogFooter>
         </DialogContent>

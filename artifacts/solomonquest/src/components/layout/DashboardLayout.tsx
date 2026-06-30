@@ -63,7 +63,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <Button
             key={link.href}
             variant="ghost"
-            className={`justify-start ${isActive ? "bg-white/15 text-white font-semibold hover:bg-white/20 hover:text-white" : "text-white/70 hover:bg-white/10 hover:text-white"}`}
+            className={`justify-start ${isActive ? "bg-white/15 text-white font-semibold border-l-2 border-white rounded-l-none hover:bg-white/20 hover:text-white" : "text-slate-300 hover:bg-white/8 hover:text-white"}`}
             asChild
             onClick={() => setIsMobileMenuOpen(false)}
           >

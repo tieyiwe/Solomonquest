@@ -240,6 +240,63 @@ router.get(
   }
 );
 
+// ─── Quick Delete (empty schools only) ───────────────────────────────────────
+router.delete(
+  "/super-admin/schools/:id/quick-delete",
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+
+      const { data: school, error: schoolErr } = await supabaseAdmin
+        .from("schools")
+        .select("id, name")
+        .eq("id", id)
+        .single();
+
+      if (schoolErr || !school) {
+        res.status(404).json({ error: "School not found" });
+        return;
+      }
+
+      const [studentsRes, teachersRes, coursesRes] = await Promise.all([
+        supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("school_id", id).eq("role", "student"),
+        supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("school_id", id).eq("role", "teacher"),
+        supabaseAdmin.from("courses").select("id", { count: "exact", head: true }).eq("school_id", id),
+      ]);
+
+      const students = studentsRes.count ?? 0;
+      const teachers = teachersRes.count ?? 0;
+      const courses = coursesRes.count ?? 0;
+
+      if (students > 0 || teachers > 0 || courses > 0) {
+        res.status(400).json({
+          error: `School is not empty (${students} students, ${teachers} teachers, ${courses} courses). Use the standard deletion workflow.`,
+        });
+        return;
+      }
+
+      await supabaseAdmin.from("schools").update({ is_active: false, deleted_at: new Date().toISOString() }).eq("id", id);
+
+      await auditLog({
+        actorId: req.userId,
+        action: "school_quick_deleted",
+        targetType: "school",
+        targetId: id,
+        targetName: school.name,
+        details: { reason: "empty_school_quick_delete" },
+        ipAddress: req.ip,
+      });
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Quick delete error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
 // ─── School Detail ────────────────────────────────────────────────────────────
 router.get(
   "/super-admin/schools/:id",

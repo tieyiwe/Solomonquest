@@ -1,7 +1,9 @@
 import { Router, type IRouter } from "express";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
-import pdfParse from "pdf-parse";
+import * as pdfParseModule from "pdf-parse";
+const pdfParse: (buf: Buffer) => Promise<{ text: string; numpages: number }> =
+  (pdfParseModule as any).default ?? (pdfParseModule as any);
 import multer from "multer";
 
 const router: IRouter = Router();
