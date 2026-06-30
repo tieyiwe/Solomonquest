@@ -63,12 +63,12 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="p-5 border-b border-sidebar-border flex items-center gap-2 h-16">
-        <div className="h-7 w-7 rounded-lg bg-sidebar-primary flex items-center justify-center shrink-0">
-          <GraduationCap className="h-4 w-4 text-sidebar-primary-foreground" />
+      <div className="p-5 border-b border-white/10 flex items-center gap-2 h-16">
+        <div className="h-7 w-7 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+          <GraduationCap className="h-4 w-4 text-white" />
         </div>
         <Link href="/">
-          <span className="text-base font-bold text-sidebar-primary tracking-tight truncate">
+          <span className="text-base font-bold text-white tracking-tight truncate">
             {school?.name || "SolomonQuest"}
           </span>
         </Link>
@@ -86,8 +86,8 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
               className={cn(
                 "w-full justify-start h-9 px-3 text-sm font-medium",
                 active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent/60"
+                  ? "bg-white/15 text-white font-semibold"
+                  : "text-white/70 hover:text-white hover:bg-white/10"
               )}
               asChild
               onClick={() => setIsMobileMenuOpen(false)}
@@ -104,7 +104,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
         <div className="pt-3">
           <button
             onClick={() => setCoursesExpanded(!coursesExpanded)}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50 hover:text-sidebar-foreground/80 transition-colors"
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-white/40 hover:text-white/70 transition-colors"
           >
             <span>My Courses</span>
             {coursesExpanded ? (
@@ -132,8 +132,8 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
                       className={cn(
                         "w-full justify-start h-auto px-3 py-2 text-sm",
                         active
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                          : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+                          ? "bg-white/15 text-white font-semibold"
+                          : "text-white/60 hover:text-white hover:bg-white/10"
                       )}
                       asChild
                       onClick={() => setIsMobileMenuOpen(false)}
@@ -157,7 +157,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
                   );
                 })
               ) : (
-                <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
+                <div className="px-3 py-2 text-xs text-white/40">
                   No courses assigned
                 </div>
               )}
@@ -167,26 +167,26 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
       </nav>
 
       {/* User Footer */}
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="p-3 border-t border-white/10">
         <div className="flex items-center gap-3 mb-3 px-2 py-2 rounded-lg">
-          <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
+          <Avatar className="h-8 w-8 border border-white/20 shrink-0">
             <AvatarImage src={user?.avatarUrl || ""} />
-            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
+            <AvatarFallback className="bg-white/20 text-white text-xs">
               {getInitials(user?.firstName, user?.lastName)}
             </AvatarFallback>
           </Avatar>
           <div className="flex flex-col overflow-hidden flex-1 min-w-0">
-            <span className="text-sm font-medium text-sidebar-foreground truncate">
+            <span className="text-sm font-medium text-white truncate">
               {user?.firstName} {user?.lastName}
             </span>
-            <Badge variant="outline" className="w-fit text-xs py-0 border-sidebar-border text-sidebar-foreground/60">
+            <Badge variant="outline" className="w-fit text-xs py-0 border-white/30 text-white/60">
               Teacher
             </Badge>
           </div>
         </div>
         <Button
           variant="ghost"
-          className="w-full justify-start text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/10 h-9 text-sm"
+          className="w-full justify-start text-white/60 hover:text-red-400 hover:bg-red-500/10 h-9 text-sm"
           onClick={signOut}
         >
           <LogOut className="mr-2.5 h-4 w-4" />
@@ -200,7 +200,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
   return (
     <div className="min-h-screen bg-background flex">
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-64 flex-col border-r bg-sidebar h-screen sticky top-0 shrink-0">
+      <aside className="hidden md:flex w-64 flex-col border-r bg-slate-900 h-screen sticky top-0 shrink-0">
         <SidebarContent />
       </aside>
 
@@ -216,7 +216,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0 bg-sidebar border-sidebar-border">
+              <SheetContent side="left" className="w-72 p-0 bg-slate-900 border-slate-700">
                 <SidebarContent />
               </SheetContent>
             </Sheet>

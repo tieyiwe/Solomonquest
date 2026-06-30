@@ -28,7 +28,9 @@ import {
   Star,
   Clock,
   Loader2,
+  ArrowLeft,
 } from "lucide-react";
+import { Link } from "wouter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -306,11 +308,56 @@ function SlugField({
   );
 }
 
+// ─── Logo Upload ──────────────────────────────────────────────────────────────
+
+function LogoUploadButton({ onUploaded, schoolId }: { onUploaded: (url: string) => void; schoolId?: string }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !schoolId) return;
+    if (file.size > 2 * 1024 * 1024) { toast.error("File must be under 2 MB"); return; }
+
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop() ?? "png";
+      const path = `school-logos/${schoolId}/logo.${ext}`;
+      const { error } = await supabase.storage.from("school-assets").upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage.from("school-assets").getPublicUrl(path);
+      onUploaded(publicUrl + `?v=${Date.now()}`);
+      toast.success("Logo uploaded!");
+    } catch (err: any) {
+      toast.error(err.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  return (
+    <>
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={uploading || !schoolId}
+        onClick={() => inputRef.current?.click()}
+      >
+        {uploading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+        {uploading ? "Uploading…" : "Upload Logo"}
+      </Button>
+    </>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function AdminSchoolBranding() {
   const { user } = useAuth();
-  const schoolId = user?.school_id || "";
+  const schoolId = (user?.schoolId ?? (user as any)?.school_id) || "";
 
   const [branding, setBranding] = useState<Branding>(DEFAULT_BRANDING);
   const [loading, setLoading] = useState(true);
@@ -445,9 +492,16 @@ export default function AdminSchoolBranding() {
       {/* ── LEFT PANEL (60%) ── */}
       <div className="w-[60%] flex flex-col h-full border-r border-gray-200 bg-white">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">School Branding</h1>
-            <p className="text-sm text-gray-500">Customize your school's public page</p>
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard/admin">
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">School Branding</h1>
+              <p className="text-sm text-gray-500">Customize your school's public page</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             {branding.slug && (
@@ -488,18 +542,30 @@ export default function AdminSchoolBranding() {
               <TabsContent value="identity" className="space-y-6 mt-0">
                 <div>
                   <Label className="text-sm font-medium text-gray-700 mb-2 block">School Logo</Label>
-                  <Input
-                    placeholder="https://example.com/logo.png"
-                    value={branding.logo_url}
-                    onChange={(e) => update("logo_url", e.target.value)}
-                    className="mb-3"
-                  />
-                  <div className="w-24 h-24 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden">
-                    {branding.logo_url ? (
-                      <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" />
-                    ) : (
-                      <School className="w-10 h-10 text-gray-300" />
-                    )}
+                  <div className="flex items-center gap-4">
+                    <div className="w-24 h-24 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden shrink-0">
+                      {branding.logo_url ? (
+                        <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" />
+                      ) : (
+                        <School className="w-10 h-10 text-gray-300" />
+                      )}
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <LogoUploadButton
+                        onUploaded={(url) => update("logo_url", url)}
+                        schoolId={schoolId}
+                      />
+                      {branding.logo_url && (
+                        <button
+                          type="button"
+                          onClick={() => update("logo_url", "")}
+                          className="text-xs text-red-500 hover:text-red-700"
+                        >
+                          Remove logo
+                        </button>
+                      )}
+                      <p className="text-xs text-gray-400">PNG, JPG or SVG. Max 2 MB.</p>
+                    </div>
                   </div>
                 </div>
 

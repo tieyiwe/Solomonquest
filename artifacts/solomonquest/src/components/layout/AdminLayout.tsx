@@ -52,13 +52,13 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
               onClick={onClose}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
                 isActive
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-sidebar-foreground hover:bg-white/10"
+                  ? "bg-white/15 text-white font-semibold"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
               }`}
             >
               <Icon className="h-4 w-4 shrink-0" />
               <span>{link.label}</span>
-              {isActive && <ChevronRight className="h-3 w-3 ml-auto opacity-70" />}
+              {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-white opacity-80" />}
             </button>
           </Link>
         );
