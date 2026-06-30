@@ -2,7 +2,6 @@ import { Router, type IRouter, type Response } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { sendEnhancedInvite, sendWelcomeEmail } from "../lib/email";
-import crypto from "crypto";
 
 const router: IRouter = Router();
 
@@ -31,8 +30,6 @@ router.post(
       return;
     }
 
-    // Generate a secure random token and set expiry (7 days)
-    const token = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const { data: invitation, error: insertError } = await supabaseAdmin
@@ -40,7 +37,6 @@ router.post(
       .insert({
         email,
         role,
-        token,
         school_id: schoolId,
         invited_by: userId,
         status: "pending",
@@ -66,7 +62,7 @@ router.post(
       ? `${profileResult.data.first_name ?? ""} ${profileResult.data.last_name ?? ""}`.trim() || "An administrator"
       : "An administrator";
 
-    const inviteUrl = `${process.env.APP_URL ?? ""}/invite/${token}`;
+    const inviteUrl = `${process.env.APP_URL ?? ""}/invite/${invitation.token}`;
 
     try {
       await sendEnhancedInvite({ to: email, schoolName, inviterName, inviteUrl, role });
@@ -243,7 +239,7 @@ router.post(
     // Mark invitation as accepted
     const { error: inviteUpdateError } = await supabaseAdmin
       .from("invitations")
-      .update({ status: "accepted", accepted_at: new Date().toISOString() })
+      .update({ status: "accepted" })
       .eq("id", invitation.id);
 
     if (inviteUpdateError) {
