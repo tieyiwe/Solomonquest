@@ -50,6 +50,8 @@ async function buildAll() {
       "oracledb",
       "mongodb-client-encryption",
       "nodemailer",
+      "helmet",
+      "express-rate-limit",
       "handlebars",
       "knex",
       "typeorm",
