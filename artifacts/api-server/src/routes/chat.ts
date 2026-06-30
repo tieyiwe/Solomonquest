@@ -19,6 +19,14 @@ async function assertChannelMember(
   return data !== null;
 }
 
+/** Validate that a value looks like a UUID v4. */
+function isUUID(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
 // ─── GET /chat/channels ──────────────────────────────────────────────────────
 
 router.get(
@@ -94,6 +102,83 @@ router.post(
     if (!Array.isArray(memberIds)) {
       res.status(400).json({ error: "memberIds must be an array" });
       return;
+    }
+
+    // Validate all memberIds are UUID strings
+    for (const mid of memberIds) {
+      if (!isUUID(mid)) {
+        res.status(400).json({ error: `Invalid member id: ${mid}` });
+        return;
+      }
+    }
+
+    // Validate that all provided memberIds correspond to existing profiles
+    if (memberIds.length > 0) {
+      const { data: existingProfiles, error: profilesError } = await supabaseAdmin
+        .from("profiles")
+        .select("id")
+        .in("id", memberIds);
+
+      if (profilesError) {
+        res.status(500).json({ error: profilesError.message });
+        return;
+      }
+
+      const foundIds = new Set((existingProfiles ?? []).map((p: { id: string }) => p.id));
+      const missingId = memberIds.find((mid) => !foundIds.has(mid));
+      if (missingId) {
+        res.status(400).json({ error: `Member not found: ${missingId}` });
+        return;
+      }
+    }
+
+    // For DM channels: prevent duplicate DM channels between the same two users
+    if (type === "direct") {
+      const otherMembers = memberIds.filter((mid) => mid !== req.userId);
+      if (otherMembers.length !== 1) {
+        res.status(400).json({ error: "A direct message channel must have exactly one other member" });
+        return;
+      }
+
+      const otherId = otherMembers[0];
+
+      // Find existing DM channels where the current user is a member
+      const { data: callerMemberships, error: callerMembershipsError } = await supabaseAdmin
+        .from("chat_channel_members")
+        .select("channel_id")
+        .eq("user_id", req.userId!);
+
+      if (callerMembershipsError) {
+        res.status(500).json({ error: callerMembershipsError.message });
+        return;
+      }
+
+      const callerChannelIds = (callerMemberships ?? []).map(
+        (m: { channel_id: string }) => m.channel_id
+      );
+
+      if (callerChannelIds.length > 0) {
+        // Among those channels, find direct channels where the other user is also a member
+        const { data: sharedDmChannels, error: sharedError } = await supabaseAdmin
+          .from("chat_channel_members")
+          .select("channel_id, chat_channels!inner(type)")
+          .eq("user_id", otherId)
+          .in("channel_id", callerChannelIds)
+          .eq("chat_channels.type", "direct");
+
+        if (sharedError) {
+          res.status(500).json({ error: sharedError.message });
+          return;
+        }
+
+        if (sharedDmChannels && sharedDmChannels.length > 0) {
+          res.status(409).json({
+            error: "A direct message channel between these users already exists",
+            channelId: (sharedDmChannels[0] as any).channel_id,
+          });
+          return;
+        }
+      }
     }
 
     // Insert channel
@@ -252,6 +337,7 @@ router.post(
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { channelId } = req.params;
 
+    // Security: verify user is a member of the channel before allowing post
     const isMember = await assertChannelMember(channelId, req.userId!);
     if (!isMember) {
       res.status(403).json({ error: "Not a member of this channel" });
