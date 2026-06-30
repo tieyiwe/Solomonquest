@@ -534,4 +534,122 @@ router.post(
   }
 );
 
+// ─── GET /chat/users — list school members for DM creation ──────────────────
+
+router.get(
+  "/chat/users",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const schoolId = req.schoolId;
+    if (!schoolId) {
+      res.status(400).json({ error: "No school associated with this account" });
+      return;
+    }
+
+    const { data: profiles, error } = await supabaseAdmin
+      .from("profiles")
+      .select("id, first_name, last_name, role, avatar_url")
+      .eq("school_id", schoolId)
+      .neq("id", req.userId!);
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.json(
+      (profiles ?? []).map((p: Record<string, unknown>) => ({
+        id: p.id,
+        firstName: p.first_name,
+        lastName: p.last_name,
+        role: p.role,
+        avatarUrl: p.avatar_url,
+      }))
+    );
+  }
+);
+
 export default router;
+
+// ─── Exported helper — called from invitations.ts ────────────────────────────
+
+/**
+ * Ensure a "General" public channel exists for the school, then add the user
+ * to every public channel in that school they are not yet a member of.
+ * Also adds the creatorId (inviting admin) to the General channel if not present.
+ */
+export async function enrollUserInSchoolChannels(
+  userId: string,
+  schoolId: string,
+  creatorId?: string
+): Promise<void> {
+  // 1. Ensure General channel exists
+  let { data: general } = await supabaseAdmin
+    .from("chat_channels")
+    .select("id")
+    .eq("school_id", schoolId)
+    .eq("type", "public")
+    .eq("name", "General")
+    .maybeSingle();
+
+  if (!general) {
+    const { data: created, error: createErr } = await supabaseAdmin
+      .from("chat_channels")
+      .insert({
+        name: "General",
+        type: "public",
+        school_id: schoolId,
+        created_by: creatorId ?? userId,
+      })
+      .select("id")
+      .single();
+
+    if (createErr) {
+      console.error("[chat] Failed to create General channel:", createErr.message);
+      return;
+    }
+    general = created;
+  }
+
+  // 2. Fetch all public channels for this school
+  const { data: publicChannels } = await supabaseAdmin
+    .from("chat_channels")
+    .select("id")
+    .eq("school_id", schoolId)
+    .eq("type", "public");
+
+  const channelIds = (publicChannels ?? []).map((c: { id: string }) => c.id);
+  if (channelIds.length === 0) return;
+
+  // 3. Find which ones the user already belongs to
+  const { data: existing } = await supabaseAdmin
+    .from("chat_channel_members")
+    .select("channel_id")
+    .eq("user_id", userId)
+    .in("channel_id", channelIds);
+
+  const joined = new Set((existing ?? []).map((r: { channel_id: string }) => r.channel_id));
+  const toJoin = channelIds.filter((id) => !joined.has(id));
+
+  if (toJoin.length > 0) {
+    await supabaseAdmin
+      .from("chat_channel_members")
+      .insert(toJoin.map((cid) => ({ channel_id: cid, user_id: userId })));
+  }
+
+  // 4. Also add creatorId (admin) to General channel if not already there
+  if (creatorId && creatorId !== userId) {
+    const { data: adminMembership } = await supabaseAdmin
+      .from("chat_channel_members")
+      .select("id")
+      .eq("channel_id", general.id)
+      .eq("user_id", creatorId)
+      .maybeSingle();
+
+    if (!adminMembership) {
+      await supabaseAdmin
+        .from("chat_channel_members")
+        .insert({ channel_id: general.id, user_id: creatorId });
+    }
+  }
+}

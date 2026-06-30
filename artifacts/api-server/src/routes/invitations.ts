@@ -2,6 +2,7 @@ import { Router, type IRouter, type Response } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { sendEnhancedInvite, sendWelcomeEmail } from "../lib/email";
+import { enrollUserInSchoolChannels } from "./chat";
 
 const router: IRouter = Router();
 
@@ -202,7 +203,7 @@ router.post(
 
     const { data: invitation, error } = await supabaseAdmin
       .from("invitations")
-      .select("id, email, role, status, expires_at, school_id")
+      .select("id, email, role, status, expires_at, school_id, invited_by")
       .eq("token", token)
       .single();
 
@@ -235,6 +236,11 @@ router.post(
       res.status(500).json({ error: "Failed to update profile" });
       return;
     }
+
+    // Auto-enroll user in school's public chat channels (non-blocking)
+    enrollUserInSchoolChannels(userId!, invitation.school_id, invitation.invited_by).catch((e) =>
+      console.warn("[invitations] chat enroll error:", e)
+    );
 
     // Mark invitation as accepted
     const { error: inviteUpdateError } = await supabaseAdmin

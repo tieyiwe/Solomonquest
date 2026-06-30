@@ -120,14 +120,9 @@ router.put("/users/me/online", requireAuth, async (req: AuthenticatedRequest, re
   res.json({ success: true });
 });
 
-// GET /users/search - search users by unique_student_id or first/last name
-// Scoped to requester's school; admin/teacher only
+// GET /users/search - search users by name, email, or student ID
+// Scoped to requester's school; all authenticated users can search within their school
 router.get("/users/search", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-
   const queryParam = req.query.query as string | undefined;
 
   if (!queryParam) {
@@ -135,13 +130,12 @@ router.get("/users/search", requireAuth, async (req: AuthenticatedRequest, res):
     return;
   }
 
-  // Always scope search to caller's school (ignore client-supplied school_id to prevent cross-school enumeration)
+  // Always scope search to caller's school
   let dbQuery = supabaseAdmin
     .from("profiles")
     .select("id, first_name, last_name, unique_student_id, internal_email, avatar_url, role");
 
   if (req.userRole === "super_admin") {
-    // super_admin may optionally filter by a specific school
     const school_id = req.query.school_id as string | undefined;
     if (school_id) {
       dbQuery = dbQuery.eq("school_id", school_id);
@@ -154,11 +148,13 @@ router.get("/users/search", requireAuth, async (req: AuthenticatedRequest, res):
     dbQuery = dbQuery.eq("school_id", req.schoolId);
   }
 
+  // Search by name, student ID, or email
+  const q = queryParam.replace(/'/g, "");
   dbQuery = dbQuery.or(
-    `unique_student_id.ilike.%${queryParam}%,first_name.ilike.%${queryParam}%,last_name.ilike.%${queryParam}%`
+    `unique_student_id.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%,internal_email.ilike.%${q}%`
   );
 
-  const { data, error } = await dbQuery;
+  const { data, error } = await dbQuery.limit(20);
 
   if (error) {
     res.status(500).json({ error: "Search failed" });
