@@ -15,7 +15,7 @@ router.get("/schools", async (_req, res): Promise<void> => {
 
   if (error) {
     logger.error({ error }, "Supabase error listing schools");
-    res.status(500).json({ error: error.message, code: error.code });
+    res.status(500).json({ error: error.message });
     return;
   }
 
