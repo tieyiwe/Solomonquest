@@ -26,6 +26,7 @@ import {
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { ProfileMenu } from "@/components/layout/ProfileMenu";
 
 const adminLinks = [
   { href: "/dashboard/admin", label: "Overview", icon: LayoutDashboard },
@@ -249,17 +250,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           <div className="hidden md:block flex-1" />
 
           <div className="flex items-center gap-2 ml-auto">
-            <div className="hidden md:flex items-center gap-2 text-sm text-gray-600">
-              <Avatar className="h-7 w-7">
-                <AvatarImage src={user?.avatarUrl || ""} />
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                  {getInitials(user?.firstName, user?.lastName)}
-                </AvatarFallback>
-              </Avatar>
-              <span className="font-medium text-gray-800">
-                {user?.firstName} {user?.lastName}
-              </span>
-            </div>
+            <ProfileMenu />
           </div>
         </header>
 
