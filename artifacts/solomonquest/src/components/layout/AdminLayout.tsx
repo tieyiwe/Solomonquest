@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -58,8 +58,15 @@ const mainLinks = adminLinks.filter(
 
 function NavLinks({ onClose }: { onClose?: () => void }) {
   const [location] = useLocation();
-  const isInSettings = settingsSubLinks.some((l) => location.startsWith(l.href));
+  const isInSettings =
+    location.startsWith("/dashboard/admin/settings") ||
+    settingsSubLinks.some((l) => location.startsWith(l.href));
   const [settingsOpen, setSettingsOpen] = useState(isInSettings);
+
+  // Auto-open submenu when navigating into any settings area
+  useEffect(() => {
+    if (isInSettings) setSettingsOpen(true);
+  }, [isInSettings]);
 
   return (
     <nav className="flex flex-col gap-1 p-3">
