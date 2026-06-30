@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -236,14 +237,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
                 )}
               </Link>
             </Button>
-            <div className="md:hidden">
-              <Avatar className="h-8 w-8 border">
-                <AvatarImage src={user?.avatarUrl || ""} />
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                  {getInitials(user?.firstName, user?.lastName)}
-                </AvatarFallback>
-              </Avatar>
-            </div>
+            <ProfileMenu />
           </div>
         </header>
 

@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -240,14 +241,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
             <Button variant="ghost" size="icon" className="rounded-full relative">
               <Bell className="h-5 w-5 text-muted-foreground" />
             </Button>
-            <div className="md:hidden">
-              <Avatar className="h-8 w-8 border">
-                <AvatarImage src={user?.avatarUrl || ""} />
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                  {getInitials(user?.firstName, user?.lastName)}
-                </AvatarFallback>
-              </Avatar>
-            </div>
+            <ProfileMenu />
           </div>
         </header>
 
