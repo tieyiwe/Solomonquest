@@ -1,14 +1,16 @@
 import { useState } from "react";
-import { Link } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import {
   useGetMyCourses,
   useListAssignments,
   useCreateAssignment,
+  useUpdateAssignment,
+  useDeleteAssignment,
   useListSubmissions,
   useGradeSubmission,
   getListAssignmentsQueryKey,
 } from "@workspace/api-client-react";
+import type { Assignment } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +22,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -30,13 +32,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -45,51 +49,70 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
+import { Label } from "@/components/ui/label";
 import {
   Plus,
   Loader2,
   FileText,
   Clock,
-  ChevronDown,
-  ChevronRight,
   Users,
-  CheckCircle2,
   Eye,
   BookOpen,
   X,
   AlertCircle,
+  Pencil,
+  Trash2,
+  ExternalLink,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
-const assignmentSchema = z.object({
-  title: z.string().min(2, "Title is required"),
-  description: z.string().optional(),
-  dueDate: z.string().optional(),
-  pointsPossible: z.coerce.number().min(0).optional(),
-  courseId: z.string().min(1, "Please select a course"),
-});
+interface AssignmentFormData {
+  title: string;
+  description: string;
+  instructions: string;
+  file_url: string;
+  due_date: string;
+  points: string;
+}
 
-type AssignmentFormValues = z.infer<typeof assignmentSchema>;
+const emptyForm: AssignmentFormData = {
+  title: "",
+  description: "",
+  instructions: "",
+  file_url: "",
+  due_date: "",
+  points: "100",
+};
 
-function CourseAssignmentsPanel({ courseId, courseName }: { courseId: string; courseName: string }) {
-  const [isExpanded, setIsExpanded] = useState(true);
-  const [viewSubmissionsFor, setViewSubmissionsFor] = useState<string | null>(null);
-  const queryClient = useQueryClient();
+function toFormData(a: Assignment & { instructions?: string | null; fileUrl?: string | null }): AssignmentFormData {
+  return {
+    title: a.title ?? "",
+    description: a.description ?? "",
+    instructions: (a as any).instructions ?? "",
+    file_url: (a as any).fileUrl ?? "",
+    due_date: a.dueDate ? a.dueDate.slice(0, 16) : "",
+    points: String(a.pointsPossible ?? 100),
+  };
+}
 
-  const { data: assignments, isLoading } = useListAssignments(courseId, {
-    query: { enabled: !!courseId },
+function SubmissionsPanel({
+  assignmentId,
+  assignmentTitle,
+  pointsPossible,
+  onClose,
+}: {
+  assignmentId: string;
+  assignmentTitle: string;
+  pointsPossible?: number | null;
+  onClose: () => void;
+}) {
+  const { data: submissions, isLoading } = useListSubmissions(assignmentId, {
+    query: { enabled: !!assignmentId },
   });
-
-  const { data: submissions, isLoading: isLoadingSubmissions } = useListSubmissions(
-    viewSubmissionsFor || "",
-    { query: { enabled: !!viewSubmissionsFor } }
-  );
-
   const gradeSubmission = useGradeSubmission();
 
   const handleGrade = (submissionId: string, grade: number) => {
@@ -102,67 +125,385 @@ function CourseAssignmentsPanel({ courseId, courseName }: { courseId: string; co
     );
   };
 
+  return (
+    <Card className="border-primary/30 bg-primary/5">
+      <CardHeader className="pb-3 flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-sm">Submissions: {assignmentTitle}</CardTitle>
+          <CardDescription className="text-xs mt-0.5">
+            {submissions?.length ?? 0} submission{submissions?.length !== 1 ? "s" : ""}
+          </CardDescription>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : submissions && submissions.length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Student</TableHead>
+                <TableHead className="text-xs">File / Content</TableHead>
+                <TableHead className="text-xs">Status</TableHead>
+                <TableHead className="text-xs w-36">Grade</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {submissions.map((sub) => (
+                <TableRow key={sub.id}>
+                  <TableCell className="text-sm font-medium py-2">
+                    {sub.studentName || sub.studentId}
+                  </TableCell>
+                  <TableCell className="py-2">
+                    {(sub as any).fileUrl ? (
+                      <a
+                        href={(sub as any).fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary flex items-center gap-1 hover:underline"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Download
+                      </a>
+                    ) : sub.content ? (
+                      <span className="text-xs text-muted-foreground line-clamp-2 max-w-[180px]">
+                        {sub.content}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="py-2">
+                    <Badge
+                      variant={
+                        sub.status === "graded"
+                          ? "default"
+                          : sub.status === "submitted"
+                          ? "secondary"
+                          : "outline"
+                      }
+                      className="text-xs capitalize"
+                    >
+                      {sub.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="py-2">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        defaultValue={sub.grade ?? ""}
+                        className="h-7 w-16 text-xs"
+                        onBlur={(e) => {
+                          if (e.target.value !== "") {
+                            handleGrade(sub.id, Number(e.target.value));
+                          }
+                        }}
+                        disabled={gradeSubmission.isPending}
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        /{pointsPossible ?? "?"}
+                      </span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <div className="text-center py-6">
+            <Clock className="h-7 w-7 mx-auto text-muted-foreground/50 mb-2" />
+            <p className="text-xs text-muted-foreground">No submissions yet.</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AssignmentFormDialog({
+  open,
+  onOpenChange,
+  courseId,
+  editAssignment,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  courseId: string;
+  editAssignment: (Assignment & { instructions?: string | null; fileUrl?: string | null }) | null;
+  onSuccess: () => void;
+}) {
+  const createAssignment = useCreateAssignment();
+  const updateAssignment = useUpdateAssignment();
+
+  const [form, setForm] = useState<AssignmentFormData>(
+    editAssignment ? toFormData(editAssignment) : emptyForm
+  );
+
+  // Reset when dialog opens/closes or editAssignment changes
+  const handleOpenChange = (v: boolean) => {
+    if (v) {
+      setForm(editAssignment ? toFormData(editAssignment) : emptyForm);
+    }
+    onOpenChange(v);
+  };
+
+  const isEditing = !!editAssignment;
+  const isPending = createAssignment.isPending || updateAssignment.isPending;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim()) {
+      toast.error("Title is required");
+      return;
+    }
+    if (form.due_date && isNaN(Date.parse(form.due_date))) {
+      toast.error("Please enter a valid due date");
+      return;
+    }
+
+    const payload = {
+      course_id: courseId,
+      title: form.title.trim(),
+      description: form.description || undefined,
+      instructions: form.instructions || undefined,
+      file_url: form.file_url || undefined,
+      due_date: form.due_date || undefined,
+      points: form.points ? Number(form.points) : undefined,
+    };
+
+    if (isEditing && editAssignment) {
+      // Use PATCH via existing hook but map to PUT-like semantics
+      updateAssignment.mutate(
+        {
+          id: editAssignment.id,
+          data: {
+            title: payload.title,
+            description: payload.description,
+            dueDate: payload.due_date,
+            pointsPossible: payload.points,
+          },
+        },
+        {
+          onSuccess: () => {
+            toast.success("Assignment updated");
+            onOpenChange(false);
+            onSuccess();
+          },
+          onError: () => toast.error("Failed to update assignment"),
+        }
+      );
+    } else {
+      createAssignment.mutate(
+        {
+          courseId,
+          data: {
+            title: payload.title,
+            description: payload.description,
+            dueDate: payload.due_date,
+            pointsPossible: payload.points,
+          },
+        },
+        {
+          onSuccess: () => {
+            toast.success("Assignment created");
+            onOpenChange(false);
+            onSuccess();
+          },
+          onError: () => toast.error("Failed to create assignment"),
+        }
+      );
+    }
+  };
+
+  const set = (key: keyof AssignmentFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{isEditing ? "Edit Assignment" : "Create Assignment"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="title">Title *</Label>
+            <Input
+              id="title"
+              placeholder="Midterm Essay"
+              value={form.title}
+              onChange={set("title")}
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              placeholder="Brief description of the assignment..."
+              className="resize-none"
+              rows={3}
+              value={form.description}
+              onChange={set("description")}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="instructions">Instructions</Label>
+            <Textarea
+              id="instructions"
+              placeholder="Detailed instructions for students..."
+              className="resize-none"
+              rows={4}
+              value={form.instructions}
+              onChange={set("instructions")}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="file_url">Document / File URL</Label>
+            <Input
+              id="file_url"
+              type="url"
+              placeholder="https://..."
+              value={form.file_url}
+              onChange={set("file_url")}
+            />
+            <p className="text-xs text-muted-foreground">
+              Attach a link to a document, Google Drive file, or Supabase Storage URL.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="due_date">Due Date</Label>
+              <Input
+                id="due_date"
+                type="datetime-local"
+                value={form.due_date}
+                onChange={set("due_date")}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="points">Points</Label>
+              <Input
+                id="points"
+                type="number"
+                min={0}
+                value={form.points}
+                onChange={set("points")}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isEditing ? "Save Changes" : "Create Assignment"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CourseAssignmentsPanel({
+  courseId,
+  courseName,
+  onEdit,
+  onDelete,
+}: {
+  courseId: string;
+  courseName: string;
+  onEdit: (assignment: Assignment) => void;
+  onDelete: (assignment: Assignment) => void;
+}) {
+  const [viewSubmissionsFor, setViewSubmissionsFor] = useState<string | null>(null);
+
+  const { data: assignments, isLoading } = useListAssignments(courseId, {
+    query: { enabled: !!courseId },
+  });
+
   const viewingAssignment = assignments?.find((a) => a.id === viewSubmissionsFor);
 
   return (
     <div className="space-y-3">
-      <button
-        className="flex items-center gap-2 w-full text-left"
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
+      <div className="flex items-center gap-2">
         <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center shrink-0">
           <BookOpen className="h-3.5 w-3.5 text-primary" />
         </div>
         <span className="font-semibold text-sm">{courseName}</span>
         <Badge variant="outline" className="ml-1 text-xs">
-          {assignments?.length || 0}
+          {assignments?.length ?? 0}
         </Badge>
-        <span className="ml-auto text-muted-foreground">
-          {isExpanded ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
-        </span>
-      </button>
+      </div>
 
-      {isExpanded && (
-        <div className="pl-2 space-y-2">
-          {isLoading ? (
-            <div className="space-y-2">
-              {[1, 2].map((i) => (
-                <Skeleton key={i} className="h-16 w-full rounded-lg" />
-              ))}
-            </div>
-          ) : assignments && assignments.length > 0 ? (
-            assignments.map((assignment) => (
-              <Card
-                key={assignment.id}
-                className={`hover:border-primary/40 transition-colors ${
-                  viewSubmissionsFor === assignment.id ? "border-primary" : ""
-                }`}
-              >
-                <CardContent className="p-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-medium text-sm">{assignment.title}</h4>
-                        {!assignment.isPublished && (
-                          <Badge variant="secondary" className="text-xs">
-                            Draft
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
-                        {assignment.dueDate && (
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            Due {format(new Date(assignment.dueDate), "MMM d, yyyy")}
-                          </span>
-                        )}
-                        <span>{assignment.pointsPossible ?? 0} pts</span>
-                      </div>
+      <div className="pl-2 space-y-2">
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2].map((i) => (
+              <Skeleton key={i} className="h-16 w-full rounded-lg" />
+            ))}
+          </div>
+        ) : assignments && assignments.length > 0 ? (
+          assignments.map((assignment) => (
+            <Card
+              key={assignment.id}
+              className={cn(
+                "hover:border-primary/40 transition-colors",
+                viewSubmissionsFor === assignment.id && "border-primary"
+              )}
+            >
+              <CardContent className="p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-medium text-sm">{assignment.title}</h4>
+                      {!assignment.isPublished && (
+                        <Badge variant="secondary" className="text-xs">
+                          Draft
+                        </Badge>
+                      )}
                     </div>
+                    <div className="flex gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+                      {assignment.dueDate && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          Due {format(new Date(assignment.dueDate), "MMM d, yyyy h:mm a")}
+                        </span>
+                      )}
+                      <span>{assignment.pointsPossible ?? 0} pts</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onEdit(assignment)}
+                      className="h-8 px-2"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onDelete(assignment)}
+                      className="h-8 px-2 text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                     <Button
                       size="sm"
                       variant={viewSubmissionsFor === assignment.id ? "default" : "outline"}
@@ -171,146 +512,81 @@ function CourseAssignmentsPanel({ courseId, courseName }: { courseId: string; co
                           viewSubmissionsFor === assignment.id ? null : assignment.id
                         )
                       }
-                      className="shrink-0"
                     >
                       <Eye className="h-3.5 w-3.5 mr-1.5" />
                       {viewSubmissionsFor === assignment.id ? "Hide" : "Submissions"}
                     </Button>
                   </div>
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <div className="text-center py-6 border border-dashed rounded-lg">
-              <p className="text-sm text-muted-foreground">No assignments in this course.</p>
-            </div>
-          )}
-
-          {viewSubmissionsFor && (
-            <Card className="border-primary/30 bg-primary/5">
-              <CardHeader className="pb-3 flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm">
-                    Submissions: {viewingAssignment?.title}
-                  </CardTitle>
-                  <CardDescription className="text-xs mt-0.5">
-                    {submissions?.length || 0} submissions
-                  </CardDescription>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setViewSubmissionsFor(null)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {isLoadingSubmissions ? (
-                  <div className="space-y-2">
-                    {[1, 2, 3].map((i) => (
-                      <Skeleton key={i} className="h-10 w-full" />
-                    ))}
-                  </div>
-                ) : submissions && submissions.length > 0 ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-xs">Student</TableHead>
-                        <TableHead className="text-xs">Status</TableHead>
-                        <TableHead className="text-xs w-36">Grade</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {submissions.map((sub) => (
-                        <TableRow key={sub.id}>
-                          <TableCell className="text-sm font-medium py-2">
-                            {sub.studentName || sub.studentId}
-                          </TableCell>
-                          <TableCell className="py-2">
-                            <Badge
-                              variant={
-                                sub.status === "graded"
-                                  ? "default"
-                                  : sub.status === "submitted"
-                                  ? "secondary"
-                                  : "outline"
-                              }
-                              className="text-xs capitalize"
-                            >
-                              {sub.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="py-2">
-                            <div className="flex items-center gap-1">
-                              <Input
-                                type="number"
-                                defaultValue={sub.grade ?? ""}
-                                className="h-7 w-16 text-xs"
-                                onBlur={(e) => {
-                                  if (e.target.value !== "") {
-                                    handleGrade(sub.id, Number(e.target.value));
-                                  }
-                                }}
-                                disabled={gradeSubmission.isPending}
-                              />
-                              <span className="text-xs text-muted-foreground">
-                                /{viewingAssignment?.pointsPossible ?? "?"}
-                              </span>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="text-center py-6">
-                    <Clock className="h-7 w-7 mx-auto text-muted-foreground/50 mb-2" />
-                    <p className="text-xs text-muted-foreground">No submissions yet.</p>
-                  </div>
-                )}
               </CardContent>
             </Card>
-          )}
-        </div>
-      )}
+          ))
+        ) : (
+          <div className="text-center py-6 border border-dashed rounded-lg">
+            <p className="text-sm text-muted-foreground">No assignments in this course.</p>
+          </div>
+        )}
+
+        {viewSubmissionsFor && viewingAssignment && (
+          <SubmissionsPanel
+            assignmentId={viewSubmissionsFor}
+            assignmentTitle={viewingAssignment.title}
+            pointsPossible={viewingAssignment.pointsPossible}
+            onClose={() => setViewSubmissionsFor(null)}
+          />
+        )}
+      </div>
     </div>
   );
 }
 
 export default function TeacherAssignments() {
   const queryClient = useQueryClient();
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editAssignment, setEditAssignment] = useState<Assignment | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Assignment | null>(null);
 
   const { data: courses, isLoading: isCoursesLoading } = useGetMyCourses();
-  const createAssignment = useCreateAssignment();
+  const deleteAssignment = useDeleteAssignment();
 
-  const form = useForm<AssignmentFormValues>({
-    resolver: zodResolver(assignmentSchema),
-    defaultValues: {
-      title: "",
-      description: "",
-      dueDate: "",
-      pointsPossible: 100,
-      courseId: "",
-    },
-  });
+  const handleCreate = () => {
+    setEditAssignment(null);
+    setIsFormOpen(true);
+  };
 
-  const onSubmit = (data: AssignmentFormValues) => {
-    const { courseId, ...rest } = data;
-    createAssignment.mutate(
-      { courseId, data: rest },
+  const handleEdit = (assignment: Assignment) => {
+    setEditAssignment(assignment);
+    setIsFormOpen(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (!deleteTarget) return;
+    deleteAssignment.mutate(
+      { id: deleteTarget.id },
       {
         onSuccess: () => {
-          toast.success("Assignment created successfully");
-          setIsCreateOpen(false);
-          form.reset();
-          queryClient.invalidateQueries({ queryKey: getListAssignmentsQueryKey(courseId) });
+          toast.success("Assignment deleted");
+          setDeleteTarget(null);
+          queryClient.invalidateQueries({ queryKey: getListAssignmentsQueryKey(deleteTarget.courseId) });
         },
-        onError: () => toast.error("Failed to create assignment"),
+        onError: () => toast.error("Failed to delete assignment"),
       }
     );
   };
+
+  const handleFormSuccess = () => {
+    const courseId = editAssignment?.courseId || selectedCourseId;
+    if (courseId) {
+      queryClient.invalidateQueries({ queryKey: getListAssignmentsQueryKey(courseId) });
+    }
+    // Invalidate all course assignment queries to be safe
+    courses?.forEach((c) => {
+      queryClient.invalidateQueries({ queryKey: getListAssignmentsQueryKey(c.id) });
+    });
+  };
+
+  const activeCourseId = selectedCourseId || courses?.[0]?.id || "";
 
   return (
     <TeacherLayout>
@@ -323,119 +599,37 @@ export default function TeacherAssignments() {
               Manage assignments and grade student submissions across all your courses.
             </p>
           </div>
-
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                New Assignment
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Create Assignment</DialogTitle>
-              </DialogHeader>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="courseId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Course</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a course..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {courses?.map((course) => (
-                              <SelectItem key={course.id} value={course.id}>
-                                {course.title}
-                                {course.code ? ` (${course.code})` : ""}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="title"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Title</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Midterm Essay" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Instructions</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder="Describe the assignment..."
-                            className="resize-none"
-                            rows={3}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="dueDate"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Due Date</FormLabel>
-                          <FormControl>
-                            <Input type="datetime-local" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="pointsPossible"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Points</FormLabel>
-                          <FormControl>
-                            <Input type="number" min={0} {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={createAssignment.isPending}
-                  >
-                    {createAssignment.isPending && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    Create Assignment
-                  </Button>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={handleCreate} disabled={!courses?.length}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Assignment
+          </Button>
         </div>
+
+        {/* Course Selector */}
+        {!isCoursesLoading && courses && courses.length > 0 && (
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+              Filter by course:
+            </label>
+            <Select
+              value={selectedCourseId || "__all__"}
+              onValueChange={(v) => setSelectedCourseId(v === "__all__" ? "" : v)}
+            >
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="All courses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All courses</SelectItem>
+                {courses.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.title}
+                    {(c as any).code ? ` (${(c as any).code})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Summary Stats */}
         {!isCoursesLoading && courses && courses.length > 0 && (
@@ -457,9 +651,7 @@ export default function TeacherAssignments() {
                   <FileText className="h-4 w-4 text-blue-600" />
                 </div>
                 <div>
-                  <div className="text-2xl font-bold">
-                    {courses.reduce((s) => s + 0, 0)}
-                  </div>
+                  <div className="text-2xl font-bold">—</div>
                   <div className="text-xs text-muted-foreground">Total Assignments</div>
                 </div>
               </div>
@@ -467,10 +659,10 @@ export default function TeacherAssignments() {
             <Card className="p-4 col-span-2 sm:col-span-1">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                  <Clock className="h-4 w-4 text-amber-600" />
+                  <Users className="h-4 w-4 text-amber-600" />
                 </div>
                 <div>
-                  <div className="text-2xl font-bold">0</div>
+                  <div className="text-2xl font-bold">—</div>
                   <div className="text-xs text-muted-foreground">Pending Grading</div>
                 </div>
               </div>
@@ -487,11 +679,16 @@ export default function TeacherAssignments() {
           </div>
         ) : courses && courses.length > 0 ? (
           <div className="space-y-6">
-            {courses.map((course) => (
+            {(selectedCourseId
+              ? courses.filter((c) => c.id === selectedCourseId)
+              : courses
+            ).map((course) => (
               <CourseAssignmentsPanel
                 key={course.id}
                 courseId={course.id}
                 courseName={course.title}
+                onEdit={handleEdit}
+                onDelete={setDeleteTarget}
               />
             ))}
           </div>
@@ -507,6 +704,42 @@ export default function TeacherAssignments() {
           </Card>
         )}
       </div>
+
+      {/* Create / Edit Form Dialog */}
+      {isFormOpen && (
+        <AssignmentFormDialog
+          open={isFormOpen}
+          onOpenChange={setIsFormOpen}
+          courseId={editAssignment?.courseId || activeCourseId}
+          editAssignment={editAssignment}
+          onSuccess={handleFormSuccess}
+        />
+      )}
+
+      {/* Delete Confirm Dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Assignment</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteTarget?.title}"? This action cannot be undone
+              and will remove all associated submissions.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteAssignment.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </TeacherLayout>
   );
 }
