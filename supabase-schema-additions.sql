@@ -96,3 +96,31 @@ CREATE TRIGGER on_auth_user_created
 UPDATE public.profiles
 SET internal_email = public.generate_internal_email(first_name, last_name)
 WHERE internal_email IS NULL;
+
+-- ─── School branding enhancements ─────────────────────────────────────────────
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS banner_slides jsonb DEFAULT '[]'::jsonb;
+-- Each slide: { id, image_url, title, subtitle, cta_text, cta_url, overlay_color, overlay_opacity }
+
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS hero_animation text DEFAULT 'fade'
+  CHECK (hero_animation IN ('fade', 'slide', 'zoom', 'bounce', 'none'));
+
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS accent_color text DEFAULT '#f59e0b';
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS body_font text DEFAULT 'Inter';
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS border_radius text DEFAULT 'rounded'
+  CHECK (border_radius IN ('sharp', 'rounded', 'pill'));
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS stats_visible boolean DEFAULT true;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS stats jsonb DEFAULT '[]'::jsonb;
+-- Each stat: { label, value, icon }  e.g. { label: "Students", value: "500+", icon: "users" }
+
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS features_section jsonb DEFAULT '[]'::jsonb;
+-- Each feature: { icon, title, description }
+
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS testimonials jsonb DEFAULT '[]'::jsonb;
+-- Each testimonial: { name, role, quote, avatar_url }
+
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS social_links jsonb DEFAULT '{}'::jsonb;
+-- { facebook, twitter, instagram, linkedin, youtube, website }
+
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS announcement_banner text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS announcement_color text DEFAULT '#4f46e5';
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS show_announcement boolean DEFAULT false;

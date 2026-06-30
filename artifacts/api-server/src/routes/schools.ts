@@ -189,6 +189,22 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
     }
   }
 
+  const {
+    banner_slides,
+    hero_animation,
+    accent_color,
+    body_font,
+    border_radius,
+    stats_visible,
+    stats,
+    features_section,
+    testimonials,
+    social_links,
+    announcement_banner,
+    announcement_color,
+    show_announcement,
+  } = req.body;
+
   const updates: Record<string, unknown> = {};
   if (logo_url !== undefined) updates.logo_url = logo_url;
   if (slug !== undefined) updates.slug = slug;
@@ -199,6 +215,19 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
   if (tagline !== undefined) updates.tagline = tagline;
   if (banner_url !== undefined) updates.banner_url = banner_url;
   if (custom_css !== undefined) updates.custom_css = custom_css;
+  if (banner_slides !== undefined) updates.banner_slides = banner_slides;
+  if (hero_animation !== undefined) updates.hero_animation = hero_animation;
+  if (accent_color !== undefined) updates.accent_color = accent_color;
+  if (body_font !== undefined) updates.body_font = body_font;
+  if (border_radius !== undefined) updates.border_radius = border_radius;
+  if (stats_visible !== undefined) updates.stats_visible = stats_visible;
+  if (stats !== undefined) updates.stats = stats;
+  if (features_section !== undefined) updates.features_section = features_section;
+  if (testimonials !== undefined) updates.testimonials = testimonials;
+  if (social_links !== undefined) updates.social_links = social_links;
+  if (announcement_banner !== undefined) updates.announcement_banner = announcement_banner;
+  if (announcement_color !== undefined) updates.announcement_color = announcement_color;
+  if (show_announcement !== undefined) updates.show_announcement = show_announcement;
 
   const { data, error } = await supabaseAdmin
     .from("schools")

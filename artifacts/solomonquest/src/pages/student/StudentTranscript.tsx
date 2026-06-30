@@ -1,321 +1,378 @@
-import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/lib/supabase";
-import { Button } from "@/components/ui/button";
+import { StudentLayout } from "@/components/layout/StudentLayout";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StudentLayout } from "@/components/layout/StudentLayout";
-import { Printer, GraduationCap, BookOpen } from "lucide-react";
+  GraduationCap,
+  BookOpen,
+  Printer,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  TrendingUp,
+} from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
-async function apiFetch(url: string, options: RequestInit = {}) {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token ?? "";
-  return fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + token,
-      ...(options.headers ?? {}),
-    },
-  });
-}
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-// ---- types ----
-
-interface AssignmentRow {
+interface TranscriptAssignment {
   id: string;
   title: string;
-  due_date?: string | null;
-  submitted_date?: string | null;
-  grade?: number | null;
-  max_grade?: number | null;
-  feedback?: string | null;
+  grade: number | null;
+  pointsPossible: number | null;
+  submittedAt: string | null;
+  status: string;
 }
 
-interface CourseTranscript {
-  course_id: string;
-  course_name: string;
-  course_average?: number | null;
-  assignments: AssignmentRow[];
+interface TranscriptCourse {
+  id: string;
+  title: string;
+  code: string | null;
+  term: string | null;
+  teacherName: string | null;
+  assignments: TranscriptAssignment[];
+  courseAverage: number | null;
 }
 
 interface TranscriptData {
-  student_name: string;
-  unique_student_id: string;
-  overall_gpa?: number | null;
-  courses: CourseTranscript[];
+  studentName: string;
+  studentId: string;
+  courses: TranscriptCourse[];
 }
 
-// ---- helpers ----
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function formatDate(dateStr?: string | null): string {
-  if (!dateStr) return "—";
-  try {
-    return new Date(dateStr).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr;
-  }
+function percentToGpa(pct: number): number {
+  if (pct >= 90) return 4.0;
+  if (pct >= 80) return 3.0;
+  if (pct >= 70) return 2.0;
+  if (pct >= 60) return 1.0;
+  return 0.0;
 }
 
-function gradeLabel(grade?: number | null, maxGrade?: number | null): string {
-  if (grade == null) return "Not graded";
-  if (maxGrade) {
-    const pct = Math.round((grade / maxGrade) * 100);
-    return `${grade}/${maxGrade} (${pct}%)`;
-  }
-  return `${grade}`;
+function calcCourseAverage(assignments: TranscriptAssignment[]): number | null {
+  const valid = assignments
+    .filter((a) => a.grade != null && a.pointsPossible)
+    .map((a) => (a.grade! / a.pointsPossible!) * 100);
+  if (valid.length === 0) return null;
+  return Math.round(valid.reduce((s, v) => s + v, 0) / valid.length);
 }
 
-function gradeColor(grade?: number | null, maxGrade?: number | null): string {
-  if (grade == null) return "text-muted-foreground";
-  if (!maxGrade) return "text-foreground";
-  const pct = (grade / maxGrade) * 100;
+function gradeColor(pct: number | null) {
+  if (pct == null) return "text-muted-foreground";
   if (pct >= 90) return "text-green-600";
-  if (pct >= 70) return "text-blue-600";
-  if (pct >= 60) return "text-amber-600";
+  if (pct >= 80) return "text-blue-600";
+  if (pct >= 70) return "text-amber-600";
+  if (pct >= 60) return "text-orange-500";
   return "text-red-600";
 }
 
-function letterGrade(gpa: number): string {
-  if (gpa >= 3.7) return "A";
-  if (gpa >= 3.3) return "A-";
-  if (gpa >= 3.0) return "B+";
-  if (gpa >= 2.7) return "B";
-  if (gpa >= 2.3) return "B-";
-  if (gpa >= 2.0) return "C+";
-  if (gpa >= 1.7) return "C";
-  if (gpa >= 1.3) return "C-";
-  if (gpa >= 1.0) return "D";
+function letterGrade(pct: number | null): string {
+  if (pct == null) return "—";
+  if (pct >= 90) return "A";
+  if (pct >= 80) return "B";
+  if (pct >= 70) return "C";
+  if (pct >= 60) return "D";
   return "F";
 }
 
-// ---- CourseTable ----
+function gpaColor(gpa: number) {
+  if (gpa >= 3.5) return "text-green-600";
+  if (gpa >= 2.5) return "text-blue-600";
+  if (gpa >= 1.5) return "text-amber-600";
+  return "text-red-600";
+}
 
-function CourseTable({ course }: { course: CourseTranscript }) {
-  const hasGradedWork = course.assignments.some((a) => a.grade != null);
+async function fetchTranscript(studentId: string): Promise<TranscriptData> {
+  const res = await fetch(`/api/grading/transcript/${studentId}`, {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => "Unknown error");
+    throw new Error(`Failed to load transcript: ${res.status} ${err}`);
+  }
+  return res.json();
+}
+
+// ── Course Card ───────────────────────────────────────────────────────────────
+
+function CourseTranscriptCard({ course }: { course: TranscriptCourse }) {
+  const average = course.courseAverage ?? calcCourseAverage(course.assignments);
+  const gpa = average != null ? percentToGpa(average) : null;
+  const letter = letterGrade(average);
+  const gradedCount = course.assignments.filter((a) => a.grade != null).length;
 
   return (
-    <Card>
+    <Card className="print:shadow-none print:border">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">{course.course_name}</CardTitle>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <CardTitle className="text-base leading-tight flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-primary shrink-0" />
+              {course.title}
+            </CardTitle>
+            <CardDescription className="mt-0.5">
+              {[course.code, course.term, course.teacherName ? `Instructor: ${course.teacherName}` : null]
+                .filter(Boolean)
+                .join(" • ")}
+            </CardDescription>
           </div>
-          {course.course_average != null && (
-            <div className="text-right shrink-0">
-              <div className={`text-lg font-bold ${gradeColor(course.course_average, 100)}`}>
-                {Math.round(course.course_average)}%
-              </div>
-              <div className="text-xs text-muted-foreground">Course Average</div>
-            </div>
-          )}
+
+          <div className="text-right shrink-0">
+            {average != null ? (
+              <>
+                <div className={cn("text-2xl font-bold", gradeColor(average))}>
+                  {letter}
+                </div>
+                <div className={cn("text-sm font-semibold", gradeColor(average))}>
+                  {average}%
+                </div>
+                {gpa != null && (
+                  <div className="text-xs text-muted-foreground">GPA {gpa.toFixed(1)}</div>
+                )}
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground italic">In Progress</div>
+            )}
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="pt-0">
-        {course.assignments.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            No assignments for this course.
-          </p>
-        ) : (
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Assignment</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Submitted</TableHead>
-                  <TableHead>Grade</TableHead>
-                  <TableHead>Feedback</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {course.assignments.map((assignment) => (
-                  <TableRow key={assignment.id}>
-                    <TableCell className="font-medium text-sm">{assignment.title}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatDate(assignment.due_date)}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {assignment.submitted_date ? (
-                        formatDate(assignment.submitted_date)
-                      ) : (
-                        <Badge variant="outline" className="text-xs">
-                          Not submitted
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {assignment.grade != null ? (
-                        <span
-                          className={`text-sm font-semibold ${gradeColor(
-                            assignment.grade,
-                            assignment.max_grade ?? undefined
-                          )}`}
-                        >
-                          {gradeLabel(assignment.grade, assignment.max_grade)}
+
+      {course.assignments.length > 0 && (
+        <CardContent className="pt-0">
+          <Separator className="mb-3" />
+          <div className="space-y-1.5">
+            {course.assignments.map((assignment) => {
+              const pct =
+                assignment.grade != null && assignment.pointsPossible
+                  ? Math.round((assignment.grade / assignment.pointsPossible) * 100)
+                  : null;
+              const graded = assignment.grade != null;
+
+              return (
+                <div
+                  key={assignment.id}
+                  className="flex items-center justify-between gap-3 py-1 text-sm"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {graded ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                    ) : (
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                    )}
+                    <span className="truncate text-foreground/80">{assignment.title}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {graded ? (
+                      <>
+                        <span className="text-muted-foreground text-xs">
+                          {assignment.grade}/{assignment.pointsPossible ?? "?"}
                         </span>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">Not graded</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                      {assignment.feedback || "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                        <span className={cn("text-xs font-semibold w-10 text-right", gradeColor(pct))}>
+                          {pct != null ? `${pct}%` : "—"}
+                        </span>
+                      </>
+                    ) : (
+                      <Badge variant="outline" className="text-xs text-muted-foreground">
+                        {assignment.status === "submitted" ? "Pending" : "Not submitted"}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        )}
-        {!hasGradedWork && (
-          <p className="text-xs text-muted-foreground mt-2">
-            No graded work in this course yet.
-          </p>
-        )}
-      </CardContent>
+          <div className="mt-2 pt-2 border-t flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {gradedCount} of {course.assignments.length} assignment
+              {course.assignments.length !== 1 ? "s" : ""} graded
+            </span>
+            {average != null && (
+              <span className={cn("font-semibold", gradeColor(average))}>
+                Course Average: {average}%
+              </span>
+            )}
+          </div>
+        </CardContent>
+      )}
     </Card>
   );
 }
 
-// ---- Main Component ----
+// ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function StudentTranscript() {
   const { user } = useAuth();
-  const [transcript, setTranscript] = useState<TranscriptData | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    setLoading(true);
-    apiFetch(`/api/grading/transcript/${user.id}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setTranscript(data))
-      .catch(() => {
-        toast.error("Failed to load transcript");
-        setTranscript(null);
-      })
-      .finally(() => setLoading(false));
-  }, [user?.id]);
+  const {
+    data: transcript,
+    isLoading,
+    isError,
+    error,
+  } = useQuery<TranscriptData, Error>({
+    queryKey: ["transcript", user?.id],
+    queryFn: () => fetchTranscript(user!.id),
+    enabled: !!user?.id,
+    retry: 1,
+  });
 
-  const hasAnyGradedWork =
-    transcript?.courses.some((c) => c.assignments.some((a) => a.grade != null)) ?? false;
+  // Compute overall GPA from all courses that have a calculable average
+  const gpaData = (() => {
+    if (!transcript) return null;
+    const averages = transcript.courses
+      .map((c) => c.courseAverage ?? calcCourseAverage(c.assignments))
+      .filter((v): v is number => v != null);
+    if (averages.length === 0) return null;
+    const overallPct = averages.reduce((s, v) => s + v, 0) / averages.length;
+    const gpa = averages.map(percentToGpa).reduce((s, v) => s + v, 0) / averages.length;
+    return { overallPct: Math.round(overallPct), gpa: Math.round(gpa * 100) / 100 };
+  })();
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   return (
     <StudentLayout>
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
+      <div className="space-y-6 print:space-y-4">
+        {/* Header — hidden when printing */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
               <GraduationCap className="h-6 w-6 text-primary" />
-              Academic Transcript
+              My Transcript
             </h1>
-            {loading ? (
-              <div className="mt-2 space-y-1">
-                <Skeleton className="h-5 w-48" />
-                <Skeleton className="h-4 w-36" />
-              </div>
-            ) : transcript ? (
-              <div className="mt-1 text-muted-foreground text-sm space-y-0.5">
-                <p className="text-base font-semibold text-foreground">{transcript.student_name}</p>
-                <p>Student ID: {transcript.unique_student_id}</p>
-              </div>
-            ) : null}
+            <p className="text-muted-foreground mt-1">
+              Your academic record across all enrolled courses.
+            </p>
           </div>
-
-          <Button
-            variant="outline"
-            onClick={() => window.print()}
-            className="shrink-0 print:hidden"
-          >
-            <Printer className="h-4 w-4 mr-2" />
-            Print
+          <Button variant="outline" onClick={handlePrint} className="gap-2 self-start sm:self-auto">
+            <Printer className="h-4 w-4" />
+            Print Transcript
           </Button>
         </div>
 
-        {/* GPA Banner */}
-        {loading ? (
-          <Skeleton className="h-24 w-full rounded-xl" />
-        ) : transcript && transcript.overall_gpa != null ? (
-          <Card className="bg-primary/5 border-primary/20">
-            <CardContent className="py-5">
-              <div className="flex items-center gap-6">
-                <div className="text-center">
-                  <div className="text-4xl font-bold text-primary">
-                    {transcript.overall_gpa.toFixed(2)}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">Cumulative GPA</div>
-                </div>
-                <div className="h-12 border-l border-primary/20" />
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-primary">
-                    {letterGrade(transcript.overall_gpa)}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">Letter Grade</div>
-                </div>
-                <div className="h-12 border-l border-primary/20" />
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-foreground">
-                    {transcript.courses.length}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    Course{transcript.courses.length !== 1 ? "s" : ""}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+        {/* Print-only header */}
+        <div className="hidden print:block mb-6">
+          <h1 className="text-2xl font-bold">Academic Transcript</h1>
+          {transcript && (
+            <p className="text-sm text-muted-foreground mt-1">
+              {transcript.studentName} &bull; Generated {new Date().toLocaleDateString()}
+            </p>
+          )}
+        </div>
 
-        {/* Courses */}
-        {loading ? (
+        {isLoading ? (
           <div className="space-y-4">
-            {[1, 2].map((i) => (
-              <Card key={i}>
-                <CardContent className="pt-6 space-y-3">
-                  <Skeleton className="h-6 w-48" />
-                  <Skeleton className="h-32 w-full" />
-                </CardContent>
-              </Card>
+            <Skeleton className="h-28 w-full rounded-xl" />
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-48 w-full rounded-xl" />
             ))}
           </div>
-        ) : !transcript || transcript.courses.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="text-center py-16">
-              <GraduationCap className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" />
-              <p className="text-base font-medium">No transcript available</p>
+        ) : isError ? (
+          <Card className="border-destructive/30">
+            <CardContent className="text-center py-12">
+              <AlertCircle className="h-10 w-10 mx-auto text-destructive/60 mb-3" />
+              <p className="font-semibold text-destructive">Failed to load transcript</p>
               <p className="text-sm text-muted-foreground mt-1">
-                You have no graded work yet. Check back once assignments have been graded.
+                {error?.message || "An unexpected error occurred."}
               </p>
             </CardContent>
           </Card>
-        ) : (
-          <div className="space-y-4">
-            {!hasAnyGradedWork && (
-              <div className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3 border">
-                No graded work yet. Your grades will appear here once assignments are graded.
+        ) : transcript ? (
+          <>
+            {/* GPA Summary Card */}
+            <Card className={cn("border-2", gpaData ? "border-primary/20" : "border-dashed")}>
+              <CardContent className="py-5">
+                <div className="flex flex-wrap items-center gap-6 justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <TrendingUp className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                        Cumulative GPA
+                      </span>
+                    </div>
+                    {gpaData ? (
+                      <>
+                        <div className={cn("text-4xl font-bold", gpaColor(gpaData.gpa))}>
+                          {gpaData.gpa.toFixed(2)}
+                        </div>
+                        <div className="text-sm text-muted-foreground mt-0.5">
+                          Overall average: {gpaData.overallPct}%
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-lg text-muted-foreground">No grades yet</div>
+                    )}
+                  </div>
+
+                  <div className="text-right space-y-1 text-sm text-muted-foreground">
+                    <div>
+                      <span className="font-medium text-foreground">{transcript.courses.length}</span>{" "}
+                      course{transcript.courses.length !== 1 ? "s" : ""}
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">
+                        {transcript.courses.reduce((s, c) => s + c.assignments.length, 0)}
+                      </span>{" "}
+                      total assignments
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">
+                        {transcript.courses.reduce(
+                          (s, c) => s + c.assignments.filter((a) => a.grade != null).length,
+                          0
+                        )}
+                      </span>{" "}
+                      graded
+                    </div>
+                  </div>
+
+                  {/* GPA scale legend */}
+                  <div className="hidden sm:block text-xs text-muted-foreground space-y-0.5 border-l pl-6">
+                    <div className="font-semibold mb-1">GPA Scale</div>
+                    {[
+                      { label: "A  (90%+)", gpa: "4.0", color: "text-green-600" },
+                      { label: "B  (80%+)", gpa: "3.0", color: "text-blue-600" },
+                      { label: "C  (70%+)", gpa: "2.0", color: "text-amber-600" },
+                      { label: "D  (60%+)", gpa: "1.0", color: "text-orange-500" },
+                      { label: "F  (below)", gpa: "0.0", color: "text-red-600" },
+                    ].map((row) => (
+                      <div key={row.gpa} className="flex gap-3 justify-between font-mono">
+                        <span>{row.label}</span>
+                        <span className={cn("font-medium", row.color)}>{row.gpa}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Per-course cards */}
+            {transcript.courses.length === 0 ? (
+              <Card className="border-dashed">
+                <CardContent className="text-center py-12">
+                  <BookOpen className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                  <p className="font-medium">No courses on record</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Enroll in courses to see your transcript here.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {transcript.courses.map((course) => (
+                  <CourseTranscriptCard key={course.id} course={course} />
+                ))}
               </div>
             )}
-            {transcript.courses.map((course) => (
-              <CourseTable key={course.course_id} course={course} />
-            ))}
-          </div>
-        )}
+          </>
+        ) : null}
       </div>
     </StudentLayout>
   );

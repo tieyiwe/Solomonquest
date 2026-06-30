@@ -20,6 +20,8 @@ import videoRouter from "./video";
 import quizzesRouter from "./quizzes";
 import permissionsRouter from "./permissions";
 import formBuilderRouter from "./form-builder";
+import gradingRouter from "./grading";
+import invitationsRouter from "./invitations";
 
 const router: IRouter = Router();
 
@@ -44,5 +46,7 @@ router.use(videoRouter);
 router.use(quizzesRouter);
 router.use(permissionsRouter);
 router.use(formBuilderRouter);
+router.use(gradingRouter);
+router.use(invitationsRouter);
 
 export default router;

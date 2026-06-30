@@ -29,6 +29,12 @@ const StudentOverview = lazy(() => import("@/pages/student/StudentOverview"));
 const StudentCourseDetail = lazy(() => import("@/pages/student/StudentCourseDetail"));
 const StudentAssignments = lazy(() => import("@/pages/student/StudentAssignments"));
 const StudentQuizTake = lazy(() => import("@/pages/student/StudentQuizTake"));
+const StudentTranscript = lazy(() => import("@/pages/student/StudentTranscript"));
+
+const ChatPage = lazy(() => import("@/pages/chat/ChatPage"));
+const ForumPage = lazy(() => import("@/pages/forum/ForumPage"));
+const ForumTopicPage = lazy(() => import("@/pages/forum/ForumTopicPage"));
+const NotificationPreferences = lazy(() => import("@/pages/settings/NotificationPreferences"));
 
 const LoadingFallback = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -109,6 +115,36 @@ export function Router() {
         </Route>
         <Route path="/dashboard/student/quiz/:id">
           <ProtectedRoute allowedRoles={["student", "staff"]}><StudentQuizTake /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/student/quizzes">
+          <ProtectedRoute allowedRoles={["student", "staff"]}><StudentAssignments /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/student/quizzes/:id">
+          <ProtectedRoute allowedRoles={["student", "staff"]}><StudentQuizTake /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/student/transcript">
+          <ProtectedRoute allowedRoles={["student", "staff"]}><StudentTranscript /></ProtectedRoute>
+        </Route>
+
+        {/* Teacher Quiz Route */}
+        <Route path="/dashboard/teacher/quizzes">
+          <ProtectedRoute allowedRoles={["teacher"]}><TeacherQuizBuilder /></ProtectedRoute>
+        </Route>
+
+        {/* Chat & Forum Routes */}
+        <Route path="/chat">
+          <ProtectedRoute><ChatPage /></ProtectedRoute>
+        </Route>
+        <Route path="/forum">
+          <ProtectedRoute><ForumPage /></ProtectedRoute>
+        </Route>
+        <Route path="/forum/topics/:id">
+          <ProtectedRoute><ForumTopicPage /></ProtectedRoute>
+        </Route>
+
+        {/* Settings Routes */}
+        <Route path="/settings/notifications">
+          <ProtectedRoute><NotificationPreferences /></ProtectedRoute>
         </Route>
 
         <Route component={NotFound} />

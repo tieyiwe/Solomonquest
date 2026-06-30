@@ -121,7 +121,7 @@ export default function SchoolPublicPage() {
                     <Badge variant="outline">{course.code}</Badge>
                     <div className="flex gap-2">
                       {course.is_live && (
-                        <Badge className="bg-red-500 text-white hover:bg-red-600">Live Class</Badge>
+                        <Badge className="bg-green-500 text-white hover:bg-green-600">LIVE</Badge>
                       )}
                       {course.term && <Badge variant="secondary" className="bg-secondary/20">{course.term}</Badge>}
                     </div>
@@ -135,7 +135,7 @@ export default function SchoolPublicPage() {
                   <p className="text-muted-foreground text-sm line-clamp-3">
                     {course.description || "No description available."}
                   </p>
-                  {course.class_date && (
+                  {course.is_live && course.class_date && (
                     <p className="text-sm text-primary font-medium mt-3">
                       Next class:{" "}
                       {new Date(course.class_date).toLocaleDateString("en-US", {
