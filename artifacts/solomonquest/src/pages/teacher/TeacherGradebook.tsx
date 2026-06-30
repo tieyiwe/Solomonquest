@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import {
@@ -181,19 +181,11 @@ function GradingPanel({
     }
   };
 
-  // Sync local state when selection changes
-  useState(() => {
+  // Reset grade/feedback whenever the selected submission changes
+  useEffect(() => {
     setGrade(selection?.currentGrade != null ? String(selection.currentGrade) : "");
     setFeedback(selection?.currentFeedback || "");
-  });
-
-  // Reset when selection changes
-  const prevSelId = useState<string | null>(null);
-  if (selection?.submissionId !== prevSelId[0]) {
-    prevSelId[1](selection?.submissionId ?? null);
-    setGrade(selection?.currentGrade != null ? String(selection.currentGrade) : "");
-    setFeedback(selection?.currentFeedback || "");
-  }
+  }, [selection?.submissionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = () => {
     if (!selection?.submissionId) {
@@ -605,12 +597,16 @@ function SubmissionFetcher({
     },
   });
 
-  // Call onData whenever data arrives — track with ref to avoid infinite loops
-  const calledRef = useState<string | null>(null);
-  if (data && calledRef[0] !== assignmentId + JSON.stringify(data)) {
-    calledRef[1](assignmentId + JSON.stringify(data));
-    onData(data);
-  }
+  // Call onData whenever data arrives — use a ref so this doesn't trigger re-renders
+  const calledKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const key = assignmentId + data.length;
+    if (calledKeyRef.current !== key) {
+      calledKeyRef.current = key;
+      onData(data);
+    }
+  }, [assignmentId, data, onData]);
 
   return null;
 }

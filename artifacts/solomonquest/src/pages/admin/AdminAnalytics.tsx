@@ -391,7 +391,7 @@ export default function AdminAnalytics() {
                 Summary (CSV)
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => {
-                const rows = (analytics?.enrollment_trend ?? []).map((d: any) => ({
+                const rows = (analytics?.enrollments_over_time ?? []).map((d: any) => ({
                   month: d.month, enrollments: d.count
                 }));
                 exportCSV(rows, "enrollment-trend.csv");
@@ -655,18 +655,21 @@ function ActivityLog() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     import("@/lib/supabase").then(({ supabase }) =>
       supabase.auth.getSession().then(({ data: { session } }) => {
+        if (cancelled) return;
         if (!session) { setLoading(false); return; }
         fetch("/api/activity-log?limit=50", {
           headers: { Authorization: `Bearer ${session.access_token}` },
         })
           .then((r) => r.json())
-          .then((d) => setEntries(d.entries ?? []))
+          .then((d) => { if (!cancelled) setEntries(d.entries ?? []); })
           .catch(() => {})
-          .finally(() => setLoading(false));
+          .finally(() => { if (!cancelled) setLoading(false); });
       })
     );
+    return () => { cancelled = true; };
   }, []);
 
   const ACTION_LABELS: Record<string, string> = {

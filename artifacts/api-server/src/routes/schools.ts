@@ -7,19 +7,24 @@ const router: IRouter = Router();
 
 // List all schools (public)
 router.get("/schools", async (_req, res): Promise<void> => {
-  const { data, error } = await supabaseAdmin
-    .from("schools")
-    .select("*")
-    .eq("is_active", true)
-    .order("created_at", { ascending: false });
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("schools")
+      .select("*")
+      .eq("is_active", true)
+      .order("created_at", { ascending: false });
 
-  if (error) {
-    logger.error({ error }, "Supabase error listing schools");
-    res.status(500).json({ error: error.message });
-    return;
+    if (error) {
+      logger.error({ error }, "Supabase error listing schools");
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.json((data ?? []).map(mapSchool));
+  } catch (err: any) {
+    logger.error({ err }, "Unhandled error listing schools");
+    res.status(500).json({ error: "Internal server error" });
   }
-
-  res.json((data ?? []).map(mapSchool));
 });
 
 // Get current user's school
@@ -156,6 +161,14 @@ router.get("/schools/slug/:slug", async (req, res): Promise<void> => {
 // Update school branding (admin only)
 router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  // Only admin/super_admin of this school may update branding
+  if (req.userRole !== "super_admin") {
+    if (req.userRole !== "admin" || req.schoolId !== id) {
+      res.status(403).json({ error: "Not authorized to update this school's branding" });
+      return;
+    }
+  }
   const {
     logo_url,
     slug,
@@ -248,6 +261,14 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
 // Update school
 router.patch("/schools/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  // Only admin/super_admin of this school may update it
+  if (req.userRole !== "super_admin") {
+    if (req.userRole !== "admin" || req.schoolId !== id) {
+      res.status(403).json({ error: "Not authorized to update this school" });
+      return;
+    }
+  }
   const { name, primaryColor, secondaryColor, logoUrl, isActive, applicationsOpen, assignment_routing } = req.body;
 
   const updates: Record<string, unknown> = {};

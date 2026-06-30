@@ -266,6 +266,12 @@ router.delete(
         supabaseAdmin.from("courses").select("id", { count: "exact", head: true }).eq("school_id", id),
       ]);
 
+      // If any count query errored, refuse to delete rather than risk deleting a non-empty school
+      if (studentsRes.error || teachersRes.error || coursesRes.error) {
+        res.status(500).json({ error: "Could not verify school is empty. Please try again." });
+        return;
+      }
+
       const students = studentsRes.count ?? 0;
       const teachers = teachersRes.count ?? 0;
       const courses = coursesRes.count ?? 0;
@@ -277,7 +283,15 @@ router.delete(
         return;
       }
 
-      await supabaseAdmin.from("schools").update({ is_active: false, deleted_at: new Date().toISOString() }).eq("id", id);
+      const { error: updateErr } = await supabaseAdmin
+        .from("schools")
+        .update({ is_active: false, deleted_at: new Date().toISOString() })
+        .eq("id", id);
+
+      if (updateErr) {
+        res.status(500).json({ error: "Failed to delete school: " + updateErr.message });
+        return;
+      }
 
       await auditLog({
         actorId: req.userId,

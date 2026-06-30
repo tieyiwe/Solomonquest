@@ -13,21 +13,25 @@ router.post("/activity-log", requireAuth, async (req: AuthenticatedRequest, res)
     return;
   }
 
-  const { error } = await supabaseAdmin.from("platform_audit_log").insert({
-    action,
-    target_type: target_type ?? null,
-    target_id: target_id ?? null,
-    target_name: target_name ?? null,
-    performed_by: req.userId,
-    metadata: metadata ?? null,
-  });
+  try {
+    const { error } = await supabaseAdmin.from("platform_audit_log").insert({
+      action,
+      target_type: target_type ?? null,
+      target_id: target_id ?? null,
+      target_name: target_name ?? null,
+      performed_by: req.userId,
+      metadata: metadata ?? null,
+    });
 
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.sendStatus(201);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? "Internal server error" });
   }
-
-  res.sendStatus(201);
 });
 
 // GET /activity-log — fetch activity log for school admins

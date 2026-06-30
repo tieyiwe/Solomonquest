@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
-import { sendTeacherInvite } from "../lib/email";
+import { sendEnhancedInvite, sendWelcomeEmail } from "../lib/email";
 import crypto from "crypto";
 
 const router: IRouter = Router();
@@ -69,7 +69,7 @@ router.post(
     const inviteUrl = `${process.env.APP_URL ?? ""}/invite/${token}`;
 
     try {
-      await sendTeacherInvite({ to: email, schoolName, inviterName, inviteUrl, role });
+      await sendEnhancedInvite({ to: email, schoolName, inviterName, inviteUrl, role });
     } catch (emailError) {
       console.error("[invitations] email send error:", emailError);
       // Do not fail the request — invitation is already created
@@ -248,7 +248,24 @@ router.post(
 
     if (inviteUpdateError) {
       console.error("[invitations] status update error:", inviteUpdateError);
-      // Profile was already updated; log but don't block the response
+    }
+
+    // Send welcome email (non-blocking)
+    try {
+      const [profileRes, schoolRes, authUserRes] = await Promise.all([
+        supabaseAdmin.from("profiles").select("first_name, last_name").eq("id", userId!).single(),
+        supabaseAdmin.from("schools").select("name").eq("id", invitation.school_id).single(),
+        supabaseAdmin.auth.admin.getUserById(userId!),
+      ]);
+      const firstName = (profileRes.data as any)?.first_name ?? "there";
+      const schoolName = (schoolRes.data as any)?.name;
+      const email = authUserRes.data?.user?.email ?? invitation.email;
+      const appUrl = process.env.APP_URL ?? "https://solomonquest.com";
+      if (email) {
+        sendWelcomeEmail({ to: email, firstName, schoolName, role: invitation.role, loginUrl: `${appUrl}/auth/login` });
+      }
+    } catch (e) {
+      console.warn("[invitations] Could not send welcome email:", e);
     }
 
     res.json({ success: true, role: invitation.role, schoolId: invitation.school_id });
