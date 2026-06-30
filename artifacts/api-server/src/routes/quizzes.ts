@@ -4,222 +4,251 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function isTeacherOrAdmin(role?: string): boolean {
   return role === "teacher" || role === "admin" || role === "super_admin";
 }
 
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+// ---------------------------------------------------------------------------
+// GET /quizzes?course_id=X - list quizzes for a course
+// ---------------------------------------------------------------------------
+router.get("/", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const { course_id } = req.query;
+
+  if (!course_id) {
+    res.status(400).json({ error: "course_id query parameter is required" });
+    return;
   }
-  return a;
-}
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("quizzes")
+      .select("*")
+      .eq("course_id", course_id as string)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.json(data ?? []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ---------------------------------------------------------------------------
-// 1. GET /courses/:courseId/quizzes
+// POST /quizzes - create quiz (teacher/admin only)
 // ---------------------------------------------------------------------------
-router.get(
-  "/courses/:courseId/quizzes",
+router.post("/", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!isTeacherOrAdmin(req.userRole)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const {
+    course_id,
+    title,
+    description,
+    time_limit_minutes,
+    attempt_limit,
+    release_scores_immediately,
+  } = req.body;
+
+  if (!course_id || !title) {
+    res.status(400).json({ error: "course_id and title are required" });
+    return;
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("quizzes")
+      .insert({
+        course_id,
+        title,
+        description: description ?? null,
+        time_limit_minutes: time_limit_minutes ?? null,
+        attempt_limit: attempt_limit ?? null,
+        release_scores_immediately: release_scores_immediately ?? true,
+        is_published: false,
+        created_by: req.userId,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.status(201).json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /quizzes/:id - get quiz with questions
+// ---------------------------------------------------------------------------
+router.get("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    const { data: quiz, error: quizError } = await supabaseAdmin
+      .from("quizzes")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (quizError || !quiz) {
+      res.status(404).json({ error: "Quiz not found" });
+      return;
+    }
+
+    const { data: questions, error: qError } = await supabaseAdmin
+      .from("quiz_questions")
+      .select("*")
+      .eq("quiz_id", id)
+      .order("order_index", { ascending: true });
+
+    if (qError) {
+      res.status(500).json({ error: qError.message });
+      return;
+    }
+
+    res.json({ ...quiz, questions: questions ?? [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /quizzes/:id - update quiz metadata
+// ---------------------------------------------------------------------------
+router.put("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!isTeacherOrAdmin(req.userRole)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const { id } = req.params;
+  const {
+    title,
+    description,
+    time_limit_minutes,
+    attempt_limit,
+    release_scores_immediately,
+  } = req.body;
+
+  const updates: Record<string, unknown> = {};
+  if (title !== undefined) updates.title = title;
+  if (description !== undefined) updates.description = description;
+  if (time_limit_minutes !== undefined) updates.time_limit_minutes = time_limit_minutes;
+  if (attempt_limit !== undefined) updates.attempt_limit = attempt_limit;
+  if (release_scores_immediately !== undefined)
+    updates.release_scores_immediately = release_scores_immediately;
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("quizzes")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    if (!data) {
+      res.status(404).json({ error: "Quiz not found" });
+      return;
+    }
+
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /quizzes/:id - delete quiz
+// ---------------------------------------------------------------------------
+router.delete("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!isTeacherOrAdmin(req.userRole)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const { id } = req.params;
+
+  try {
+    const { error } = await supabaseAdmin.from("quizzes").delete().eq("id", id);
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.sendStatus(204);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /quizzes/:id/questions - add question (teacher/admin only)
+// ---------------------------------------------------------------------------
+router.post(
+  "/:id/questions",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const courseId = req.params.courseId;
-    const userId = req.userId!;
-    const role = req.userRole;
+    if (!isTeacherOrAdmin(req.userRole)) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const { id } = req.params;
+    const { type, question, options, correct_answer, points, order_index } = req.body;
+
+    if (!type || !question) {
+      res.status(400).json({ error: "type and question are required" });
+      return;
+    }
 
     try {
-      let query = supabaseAdmin
-        .from("quizzes")
-        .select("*")
-        .eq("course_id", courseId)
-        .order("created_at", { ascending: true });
+      const { data, error } = await supabaseAdmin
+        .from("quiz_questions")
+        .insert({
+          quiz_id: id,
+          type,
+          question,
+          options: options ?? null,
+          correct_answer: correct_answer ?? null,
+          points: points ?? 1,
+          order_index: order_index ?? 0,
+        })
+        .select()
+        .single();
 
-      if (!isTeacherOrAdmin(role)) {
-        query = query.eq("is_published", true);
-      }
-
-      const { data: quizzes, error } = await query;
       if (error) {
         res.status(500).json({ error: error.message });
         return;
       }
 
-      if (isTeacherOrAdmin(role)) {
-        res.json(quizzes ?? []);
-        return;
-      }
-
-      // For students: include attempt count per quiz
-      const result = await Promise.all(
-        (quizzes ?? []).map(async (quiz: Record<string, unknown>) => {
-          const { count } = await supabaseAdmin
-            .from("quiz_attempts")
-            .select("id", { count: "exact", head: true })
-            .eq("quiz_id", quiz.id as string)
-            .eq("student_id", userId);
-
-          return { ...quiz, attemptCount: count ?? 0 };
-        })
-      );
-
-      res.json(result);
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  }
-);
-
-// ---------------------------------------------------------------------------
-// 2. POST /courses/:courseId/quizzes
-// ---------------------------------------------------------------------------
-router.post(
-  "/courses/:courseId/quizzes",
-  requireAuth,
-  async (req: AuthenticatedRequest, res): Promise<void> => {
-    if (!isTeacherOrAdmin(req.userRole)) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-
-    const courseId = req.params.courseId;
-    const {
-      title,
-      description,
-      timeLimitMinutes,
-      maxAttempts,
-      randomizeQuestions,
-      randomizeOptions,
-      showResultsImmediately,
-      isPublished,
-    } = req.body;
-
-    if (!title) {
-      res.status(400).json({ error: "title is required" });
-      return;
-    }
-
-    try {
-      const { data, error } = await supabaseAdmin
-        .from("quizzes")
-        .insert({
-          course_id: courseId,
-          title,
-          description: description ?? null,
-          time_limit_minutes: timeLimitMinutes ?? null,
-          max_attempts: maxAttempts ?? null,
-          randomize_questions: randomizeQuestions ?? false,
-          randomize_options: randomizeOptions ?? false,
-          show_results_immediately: showResultsImmediately ?? true,
-          is_published: isPublished ?? false,
-          created_by: req.userId,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-
       res.status(201).json(data);
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   }
 );
 
 // ---------------------------------------------------------------------------
-// 3. GET /quizzes/:quizId
+// PUT /quizzes/:id/questions/:qid - update question
 // ---------------------------------------------------------------------------
-router.get(
-  "/quizzes/:quizId",
-  requireAuth,
-  async (req: AuthenticatedRequest, res): Promise<void> => {
-    const quizId = req.params.quizId;
-    const role = req.userRole;
-    const isPrivileged = isTeacherOrAdmin(role);
-
-    try {
-      const { data: quiz, error: quizError } = await supabaseAdmin
-        .from("quizzes")
-        .select("*")
-        .eq("id", quizId)
-        .single();
-
-      if (quizError || !quiz) {
-        res.status(404).json({ error: "Quiz not found" });
-        return;
-      }
-
-      if (!isPrivileged && !quiz.is_published) {
-        res.status(403).json({ error: "Quiz is not published" });
-        return;
-      }
-
-      // Fetch questions
-      const { data: questions, error: qError } = await supabaseAdmin
-        .from("quiz_questions")
-        .select("*")
-        .eq("quiz_id", quizId)
-        .order("sort_order", { ascending: true });
-
-      if (qError) {
-        res.status(500).json({ error: qError.message });
-        return;
-      }
-
-      // Fetch options for all questions
-      const questionIds = (questions ?? []).map(
-        (q: Record<string, unknown>) => q.id as string
-      );
-
-      let optionsData: Record<string, unknown>[] = [];
-      if (questionIds.length > 0) {
-        const { data: opts, error: oError } = await supabaseAdmin
-          .from("quiz_options")
-          .select("*")
-          .in("question_id", questionIds)
-          .order("sort_order", { ascending: true });
-
-        if (oError) {
-          res.status(500).json({ error: oError.message });
-          return;
-        }
-        optionsData = opts ?? [];
-      }
-
-      const questionsWithOptions = (questions ?? []).map(
-        (q: Record<string, unknown>) => {
-          let opts = optionsData.filter(
-            (o) => o.question_id === q.id
-          );
-
-          if (!isPrivileged) {
-            // Strip correct answer info from options for students
-            opts = opts.map(({ is_correct: _ic, ...rest }) => rest);
-          }
-
-          return { ...q, options: opts };
-        }
-      );
-
-      res.json({ ...quiz, questions: questionsWithOptions });
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  }
-);
-
-// ---------------------------------------------------------------------------
-// 4. PATCH /quizzes/:quizId
-// ---------------------------------------------------------------------------
-router.patch(
-  "/quizzes/:quizId",
+router.put(
+  "/:id/questions/:qid",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     if (!isTeacherOrAdmin(req.userRole)) {
@@ -227,215 +256,48 @@ router.patch(
       return;
     }
 
-    const quizId = req.params.quizId;
-    const {
-      title,
-      description,
-      timeLimitMinutes,
-      maxAttempts,
-      randomizeQuestions,
-      randomizeOptions,
-      showResultsImmediately,
-      isPublished,
-    } = req.body;
+    const { id, qid } = req.params;
+    const { type, question, options, correct_answer, points, order_index } = req.body;
 
     const updates: Record<string, unknown> = {};
-    if (title !== undefined) updates.title = title;
-    if (description !== undefined) updates.description = description;
-    if (timeLimitMinutes !== undefined) updates.time_limit_minutes = timeLimitMinutes;
-    if (maxAttempts !== undefined) updates.max_attempts = maxAttempts;
-    if (randomizeQuestions !== undefined) updates.randomize_questions = randomizeQuestions;
-    if (randomizeOptions !== undefined) updates.randomize_options = randomizeOptions;
-    if (showResultsImmediately !== undefined) updates.show_results_immediately = showResultsImmediately;
-    if (isPublished !== undefined) updates.is_published = isPublished;
-
-    try {
-      const { data, error } = await supabaseAdmin
-        .from("quizzes")
-        .update(updates)
-        .eq("id", quizId)
-        .select()
-        .single();
-
-      if (error || !data) {
-        res.status(404).json({ error: "Quiz not found" });
-        return;
-      }
-
-      res.json(data);
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  }
-);
-
-// ---------------------------------------------------------------------------
-// 5. DELETE /quizzes/:quizId
-// ---------------------------------------------------------------------------
-router.delete(
-  "/quizzes/:quizId",
-  requireAuth,
-  async (req: AuthenticatedRequest, res): Promise<void> => {
-    if (!isTeacherOrAdmin(req.userRole)) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-
-    const quizId = req.params.quizId;
-
-    try {
-      const { error } = await supabaseAdmin
-        .from("quizzes")
-        .delete()
-        .eq("id", quizId);
-
-      if (error) {
-        res.status(404).json({ error: "Quiz not found" });
-        return;
-      }
-
-      res.sendStatus(204);
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  }
-);
-
-// ---------------------------------------------------------------------------
-// 6. POST /quizzes/:quizId/questions
-// ---------------------------------------------------------------------------
-router.post(
-  "/quizzes/:quizId/questions",
-  requireAuth,
-  async (req: AuthenticatedRequest, res): Promise<void> => {
-    if (!isTeacherOrAdmin(req.userRole)) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-
-    const quizId = req.params.quizId;
-    const {
-      questionText,
-      questionType,
-      points,
-      sortOrder,
-      explanation,
-      options,
-    } = req.body;
-
-    if (!questionText || !questionType) {
-      res.status(400).json({ error: "questionText and questionType are required" });
-      return;
-    }
-
-    const validTypes = ["multiple_choice", "true_false", "short_answer", "essay"];
-    if (!validTypes.includes(questionType)) {
-      res.status(400).json({ error: `questionType must be one of: ${validTypes.join(", ")}` });
-      return;
-    }
-
-    try {
-      const { data: question, error: qError } = await supabaseAdmin
-        .from("quiz_questions")
-        .insert({
-          quiz_id: quizId,
-          question_text: questionText,
-          question_type: questionType,
-          points: points ?? 1,
-          sort_order: sortOrder ?? 0,
-          explanation: explanation ?? null,
-        })
-        .select()
-        .single();
-
-      if (qError) {
-        res.status(400).json({ error: qError.message });
-        return;
-      }
-
-      let insertedOptions: Record<string, unknown>[] = [];
-      if (options && Array.isArray(options) && options.length > 0) {
-        const optionRows = options.map(
-          (
-            opt: { optionText: string; isCorrect?: boolean; matchText?: string },
-            idx: number
-          ) => ({
-            question_id: question.id,
-            option_text: opt.optionText,
-            is_correct: opt.isCorrect ?? false,
-            match_text: opt.matchText ?? null,
-            sort_order: idx,
-          })
-        );
-
-        const { data: opts, error: oError } = await supabaseAdmin
-          .from("quiz_options")
-          .insert(optionRows)
-          .select();
-
-        if (oError) {
-          res.status(400).json({ error: oError.message });
-          return;
-        }
-
-        insertedOptions = opts ?? [];
-      }
-
-      res.status(201).json({ ...question, options: insertedOptions });
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  }
-);
-
-// ---------------------------------------------------------------------------
-// 7. PATCH /quizzes/:quizId/questions/:questionId
-// ---------------------------------------------------------------------------
-router.patch(
-  "/quizzes/:quizId/questions/:questionId",
-  requireAuth,
-  async (req: AuthenticatedRequest, res): Promise<void> => {
-    if (!isTeacherOrAdmin(req.userRole)) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-
-    const { quizId, questionId } = req.params;
-    const { questionText, questionType, points, sortOrder, explanation } = req.body;
-
-    const updates: Record<string, unknown> = {};
-    if (questionText !== undefined) updates.question_text = questionText;
-    if (questionType !== undefined) updates.question_type = questionType;
+    if (type !== undefined) updates.type = type;
+    if (question !== undefined) updates.question = question;
+    if (options !== undefined) updates.options = options;
+    if (correct_answer !== undefined) updates.correct_answer = correct_answer;
     if (points !== undefined) updates.points = points;
-    if (sortOrder !== undefined) updates.sort_order = sortOrder;
-    if (explanation !== undefined) updates.explanation = explanation;
+    if (order_index !== undefined) updates.order_index = order_index;
 
     try {
       const { data, error } = await supabaseAdmin
         .from("quiz_questions")
         .update(updates)
-        .eq("id", questionId)
-        .eq("quiz_id", quizId)
+        .eq("id", qid)
+        .eq("quiz_id", id)
         .select()
         .single();
 
-      if (error || !data) {
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+
+      if (!data) {
         res.status(404).json({ error: "Question not found" });
         return;
       }
 
       res.json(data);
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   }
 );
 
 // ---------------------------------------------------------------------------
-// 8. DELETE /quizzes/:quizId/questions/:questionId
+// DELETE /quizzes/:id/questions/:qid - delete question
 // ---------------------------------------------------------------------------
 router.delete(
-  "/quizzes/:quizId/questions/:questionId",
+  "/:id/questions/:qid",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     if (!isTeacherOrAdmin(req.userRole)) {
@@ -443,75 +305,112 @@ router.delete(
       return;
     }
 
-    const { quizId, questionId } = req.params;
+    const { id, qid } = req.params;
 
     try {
       const { error } = await supabaseAdmin
         .from("quiz_questions")
         .delete()
-        .eq("id", questionId)
-        .eq("quiz_id", quizId);
+        .eq("id", qid)
+        .eq("quiz_id", id);
 
       if (error) {
-        res.status(404).json({ error: "Question not found" });
+        res.status(500).json({ error: error.message });
         return;
       }
 
       res.sendStatus(204);
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   }
 );
 
 // ---------------------------------------------------------------------------
-// 9. POST /quizzes/:quizId/attempt — start attempt
+// POST /quizzes/:id/publish - set is_published=true
 // ---------------------------------------------------------------------------
 router.post(
-  "/quizzes/:quizId/attempt",
+  "/:id/publish",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    if (isTeacherOrAdmin(req.userRole)) {
-      res.status(403).json({ error: "Only students can start quiz attempts" });
+    if (!isTeacherOrAdmin(req.userRole)) {
+      res.status(403).json({ error: "Forbidden" });
       return;
     }
 
-    const quizId = req.params.quizId;
+    const { id } = req.params;
+
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("quizzes")
+        .update({ is_published: true })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+
+      if (!data) {
+        res.status(404).json({ error: "Quiz not found" });
+        return;
+      }
+
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /quizzes/:id/attempts - start attempt (student)
+// ---------------------------------------------------------------------------
+router.post(
+  "/:id/attempts",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const { id } = req.params;
     const userId = req.userId!;
 
     try {
-      // Fetch quiz
+      // Verify quiz exists and is published
       const { data: quiz, error: quizError } = await supabaseAdmin
         .from("quizzes")
         .select("*")
-        .eq("id", quizId)
-        .eq("is_published", true)
+        .eq("id", id)
         .single();
 
       if (quizError || !quiz) {
-        res.status(404).json({ error: "Quiz not found or not published" });
+        res.status(404).json({ error: "Quiz not found" });
         return;
       }
 
-      // Check max attempts
-      if (quiz.max_attempts !== null) {
+      if (!quiz.is_published) {
+        res.status(400).json({ error: "Quiz is not published" });
+        return;
+      }
+
+      // Check attempt limit
+      if (quiz.attempt_limit !== null && quiz.attempt_limit !== undefined) {
         const { count } = await supabaseAdmin
           .from("quiz_attempts")
           .select("id", { count: "exact", head: true })
-          .eq("quiz_id", quizId)
+          .eq("quiz_id", id)
           .eq("student_id", userId);
 
-        if ((count ?? 0) >= quiz.max_attempts) {
-          res.status(400).json({ error: "Maximum attempts reached" });
+        if ((count ?? 0) >= quiz.attempt_limit) {
+          res.status(400).json({ error: "Attempt limit reached" });
           return;
         }
       }
 
-      // Create attempt
-      const { data: attempt, error: attemptError } = await supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from("quiz_attempts")
         .insert({
-          quiz_id: quizId,
+          quiz_id: id,
           student_id: userId,
           started_at: new Date().toISOString(),
           status: "in_progress",
@@ -519,93 +418,36 @@ router.post(
         .select()
         .single();
 
-      if (attemptError) {
-        res.status(400).json({ error: attemptError.message });
+      if (error) {
+        res.status(500).json({ error: error.message });
         return;
       }
 
-      // Fetch questions
-      const { data: questions, error: qError } = await supabaseAdmin
-        .from("quiz_questions")
-        .select("*")
-        .eq("quiz_id", quizId)
-        .order("sort_order", { ascending: true });
-
-      if (qError) {
-        res.status(500).json({ error: qError.message });
-        return;
-      }
-
-      let questionList = questions ?? [];
-      if (quiz.randomize_questions) {
-        questionList = shuffle(questionList);
-      }
-
-      // Fetch options for multiple_choice / true_false questions
-      const questionIds = questionList.map(
-        (q: Record<string, unknown>) => q.id as string
-      );
-
-      let optionsMap: Record<string, Record<string, unknown>[]> = {};
-      if (questionIds.length > 0) {
-        const { data: opts } = await supabaseAdmin
-          .from("quiz_options")
-          .select("*")
-          .in("question_id", questionIds)
-          .order("sort_order", { ascending: true });
-
-        for (const opt of opts ?? []) {
-          const qid = opt.question_id as string;
-          if (!optionsMap[qid]) optionsMap[qid] = [];
-          optionsMap[qid].push(opt);
-        }
-      }
-
-      const questionsWithOptions = questionList.map(
-        (q: Record<string, unknown>) => {
-          const qType = q.question_type as string;
-          if (qType === "multiple_choice" || qType === "true_false") {
-            let opts = (optionsMap[q.id as string] ?? []).map(
-              ({ is_correct: _ic, ...rest }) => rest
-            );
-            if (quiz.randomize_options) {
-              opts = shuffle(opts);
-            }
-            return { ...q, options: opts };
-          }
-          return q;
-        }
-      );
-
-      res.status(201).json({ ...attempt, questions: questionsWithOptions });
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
+      res.status(201).json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   }
 );
 
 // ---------------------------------------------------------------------------
-// 10. POST /attempts/:attemptId/submit
+// PUT /quizzes/:id/attempts/:aid - submit attempt with auto-grading
 // ---------------------------------------------------------------------------
-router.post(
-  "/attempts/:attemptId/submit",
+router.put(
+  "/:id/attempts/:aid",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const attemptId = req.params.attemptId;
+    const { id, aid } = req.params;
     const userId = req.userId!;
-    const { answers } = req.body;
-
-    if (!Array.isArray(answers)) {
-      res.status(400).json({ error: "answers must be an array" });
-      return;
-    }
+    const { answers } = req.body; // { [questionId]: answerValue }
 
     try {
-      // Fetch attempt and verify ownership
+      // Fetch attempt
       const { data: attempt, error: attemptError } = await supabaseAdmin
         .from("quiz_attempts")
         .select("*")
-        .eq("id", attemptId)
+        .eq("id", aid)
+        .eq("quiz_id", id)
         .single();
 
       if (attemptError || !attempt) {
@@ -613,137 +455,81 @@ router.post(
         return;
       }
 
-      if (attempt.student_id !== userId) {
+      // Students can only submit their own attempts
+      if (!isTeacherOrAdmin(req.userRole) && attempt.student_id !== userId) {
         res.status(403).json({ error: "Forbidden" });
         return;
       }
 
-      if (attempt.status !== "in_progress") {
-        res.status(400).json({ error: "Attempt already submitted" });
+      // Fetch all questions for this quiz
+      const { data: questions, error: qError } = await supabaseAdmin
+        .from("quiz_questions")
+        .select("*")
+        .eq("quiz_id", id);
+
+      if (qError) {
+        res.status(500).json({ error: qError.message });
         return;
       }
 
-      // Fetch quiz for show_results_immediately flag
-      const { data: quiz } = await supabaseAdmin
-        .from("quizzes")
-        .select("*")
-        .eq("id", attempt.quiz_id)
-        .single();
-
-      // Fetch all questions for this quiz
-      const { data: questions } = await supabaseAdmin
-        .from("quiz_questions")
-        .select("*")
-        .eq("quiz_id", attempt.quiz_id);
-
-      const questionMap: Record<string, Record<string, unknown>> = {};
-      for (const q of questions ?? []) {
-        questionMap[q.id as string] = q;
-      }
-
-      // Fetch all options for auto-grading
-      const questionIds = Object.keys(questionMap);
-      let optionsMap: Record<string, Record<string, unknown>[]> = {};
-      if (questionIds.length > 0) {
-        const { data: opts } = await supabaseAdmin
-          .from("quiz_options")
-          .select("*")
-          .in("question_id", questionIds);
-
-        for (const opt of opts ?? []) {
-          const qid = opt.question_id as string;
-          if (!optionsMap[qid]) optionsMap[qid] = [];
-          optionsMap[qid].push(opt);
-        }
-      }
-
-      // Grade answers and insert quiz_answers rows
+      const AUTO_GRADE_TYPES = new Set(["multiple_choice", "true_false", "fill_blank"]);
       let totalPoints = 0;
       let earnedPoints = 0;
-      let hasManualGrading = false;
-
-      const answerRows: Record<string, unknown>[] = [];
       const gradedAnswers: Record<string, unknown>[] = [];
 
-      for (const answer of answers as {
-        questionId: string;
-        answerText?: string;
-        selectedOptionId?: string;
-      }[]) {
-        const question = questionMap[answer.questionId];
-        if (!question) continue;
+      for (const q of questions ?? []) {
+        const qid = q.id as string;
+        const qPoints = (q.points as number) ?? 1;
+        const qType = q.type as string;
+        const submittedAnswer = answers ? answers[qid] : undefined;
 
-        const qType = question.question_type as string;
-        const qPoints = (question.points as number) ?? 1;
         totalPoints += qPoints;
 
-        let isCorrect: boolean | null = null;
-        let pointsEarned = 0;
+        let score: number | null = null;
+        let is_correct: boolean | null = null;
 
-        if (qType === "multiple_choice" || qType === "true_false") {
-          if (answer.selectedOptionId) {
-            const selectedOpt = (optionsMap[answer.questionId] ?? []).find(
-              (o) => o.id === answer.selectedOptionId
-            );
-            isCorrect = selectedOpt ? (selectedOpt.is_correct as boolean) : false;
-            pointsEarned = isCorrect ? qPoints : 0;
-            earnedPoints += pointsEarned;
+        if (AUTO_GRADE_TYPES.has(qType) && submittedAnswer !== undefined) {
+          const correctAnswer = q.correct_answer;
+          // Case-insensitive comparison for fill_blank, exact for others
+          if (qType === "fill_blank") {
+            is_correct =
+              String(submittedAnswer).trim().toLowerCase() ===
+              String(correctAnswer).trim().toLowerCase();
           } else {
-            isCorrect = false;
+            is_correct = String(submittedAnswer) === String(correctAnswer);
           }
-        } else {
-          // short_answer / essay — manual grading needed
-          hasManualGrading = true;
-          isCorrect = null;
+          score = is_correct ? qPoints : 0;
+          earnedPoints += score;
         }
+        // essay and short_answer: score stays null (manual grading)
 
-        const row: Record<string, unknown> = {
-          attempt_id: attemptId,
-          question_id: answer.questionId,
-          answer_text: answer.answerText ?? null,
-          selected_option_id: answer.selectedOptionId ?? null,
-          is_correct: isCorrect,
-          points_earned: isCorrect === true ? pointsEarned : isCorrect === false ? 0 : null,
-        };
-        answerRows.push(row);
-        gradedAnswers.push(row);
+        gradedAnswers.push({
+          question_id: qid,
+          submitted_answer: submittedAnswer ?? null,
+          is_correct,
+          score,
+        });
       }
 
-      // Insert answers
-      if (answerRows.length > 0) {
-        const { error: insertError } = await supabaseAdmin
-          .from("quiz_answers")
-          .insert(answerRows);
-
-        if (insertError) {
-          res.status(400).json({ error: insertError.message });
-          return;
-        }
-      }
-
-      // Calculate score percentage (only from auto-graded questions)
-      const autoGradedTotal = (questions ?? [])
-        .filter((q: Record<string, unknown>) => {
-          const t = q.question_type as string;
-          return t === "multiple_choice" || t === "true_false";
-        })
-        .reduce((sum: number, q: Record<string, unknown>) => sum + ((q.points as number) ?? 1), 0);
-
-      const score = autoGradedTotal > 0
-        ? Math.round((earnedPoints / autoGradedTotal) * 100)
-        : null;
-
-      const newStatus = hasManualGrading ? "submitted" : "graded";
+      const totalQPoints = (questions ?? []).reduce(
+        (sum: number, q: Record<string, unknown>) => sum + ((q.points as number) ?? 1),
+        0
+      );
+      const scorePercent = totalQPoints > 0 ? (earnedPoints / totalQPoints) * 100 : 0;
 
       // Update attempt
       const { data: updatedAttempt, error: updateError } = await supabaseAdmin
         .from("quiz_attempts")
         .update({
           submitted_at: new Date().toISOString(),
-          score,
-          status: newStatus,
+          answers: answers ?? {},
+          graded_answers: gradedAnswers,
+          score: scorePercent,
+          earned_points: earnedPoints,
+          total_points: totalPoints,
+          status: "submitted",
         })
-        .eq("id", attemptId)
+        .eq("id", aid)
         .select()
         .single();
 
@@ -752,55 +538,53 @@ router.post(
         return;
       }
 
-      // Build response
-      const response: Record<string, unknown> = {
-        attempt: updatedAttempt,
-        earnedPoints,
-        totalPoints,
-        score,
-        status: newStatus,
-      };
-
-      if (quiz?.show_results_immediately) {
-        // Include correct answers
-        const answersWithCorrect = gradedAnswers.map((a) => {
-          const qid = a.question_id as string;
-          const question = questionMap[qid];
-          const qType = question?.question_type as string;
-          let correctAnswer: unknown = null;
-
-          if (qType === "multiple_choice" || qType === "true_false") {
-            const correctOpt = (optionsMap[qid] ?? []).find(
-              (o) => o.is_correct === true
-            );
-            correctAnswer = correctOpt ?? null;
-          } else {
-            correctAnswer = question?.explanation ?? null;
-          }
-
-          return {
-            ...a,
-            correctAnswer,
-            explanation: question?.explanation ?? null,
-          };
-        });
-        response.answers = answersWithCorrect;
-      } else {
-        response.answers = gradedAnswers.map(({ is_correct: _ic, points_earned: _pe, ...rest }) => rest);
-      }
-
-      res.json(response);
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
+      res.json(updatedAttempt);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   }
 );
 
 // ---------------------------------------------------------------------------
-// 11. GET /quizzes/:quizId/results — teacher view of all attempts
+// GET /quizzes/:id/attempts - list attempts (teacher sees all, student sees own)
 // ---------------------------------------------------------------------------
 router.get(
-  "/quizzes/:quizId/results",
+  "/:id/attempts",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const { id } = req.params;
+    const userId = req.userId!;
+
+    try {
+      let query = supabaseAdmin
+        .from("quiz_attempts")
+        .select("*")
+        .eq("quiz_id", id)
+        .order("started_at", { ascending: false });
+
+      if (!isTeacherOrAdmin(req.userRole)) {
+        query = query.eq("student_id", userId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+
+      res.json(data ?? []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// GET /quizzes/:id/analytics - return average score, attempt count, question breakdown
+// ---------------------------------------------------------------------------
+router.get(
+  "/:id/analytics",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     if (!isTeacherOrAdmin(req.userRole)) {
@@ -808,107 +592,86 @@ router.get(
       return;
     }
 
-    const quizId = req.params.quizId;
+    const { id } = req.params;
 
     try {
-      const { data: attempts, error } = await supabaseAdmin
+      // Fetch all submitted attempts
+      const { data: attempts, error: attemptsError } = await supabaseAdmin
         .from("quiz_attempts")
         .select("*")
-        .eq("quiz_id", quizId)
-        .order("submitted_at", { ascending: false });
+        .eq("quiz_id", id)
+        .eq("status", "submitted");
 
-      if (error) {
-        res.status(500).json({ error: error.message });
+      if (attemptsError) {
+        res.status(500).json({ error: attemptsError.message });
         return;
       }
 
-      // Enrich with student names
-      const result = await Promise.all(
-        (attempts ?? []).map(async (attempt: Record<string, unknown>) => {
-          const { data: profile } = await supabaseAdmin
-            .from("profiles")
-            .select("first_name, last_name, email")
-            .eq("id", attempt.student_id as string)
-            .single();
+      const attemptList = attempts ?? [];
+      const attemptCount = attemptList.length;
 
-          const studentName = profile
-            ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() ||
-              profile.email
-            : attempt.student_id;
+      const averageScore =
+        attemptCount > 0
+          ? attemptList.reduce(
+              (sum: number, a: Record<string, unknown>) => sum + ((a.score as number) ?? 0),
+              0
+            ) / attemptCount
+          : 0;
 
-          return {
-            id: attempt.id,
-            studentId: attempt.student_id,
-            studentName,
-            score: attempt.score,
-            submittedAt: attempt.submitted_at,
-            startedAt: attempt.started_at,
-            status: attempt.status,
-          };
-        })
-      );
-
-      res.json(result);
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  }
-);
-
-// ---------------------------------------------------------------------------
-// 12. GET /attempts/:attemptId — get attempt details
-// ---------------------------------------------------------------------------
-router.get(
-  "/attempts/:attemptId",
-  requireAuth,
-  async (req: AuthenticatedRequest, res): Promise<void> => {
-    const attemptId = req.params.attemptId;
-    const userId = req.userId!;
-    const role = req.userRole;
-
-    try {
-      const { data: attempt, error: attemptError } = await supabaseAdmin
-        .from("quiz_attempts")
+      // Fetch questions for breakdown
+      const { data: questions, error: qError } = await supabaseAdmin
+        .from("quiz_questions")
         .select("*")
-        .eq("id", attemptId)
-        .single();
+        .eq("quiz_id", id)
+        .order("order_index", { ascending: true });
 
-      if (attemptError || !attempt) {
-        res.status(404).json({ error: "Attempt not found" });
+      if (qError) {
+        res.status(500).json({ error: qError.message });
         return;
       }
 
-      // Students can only view their own attempts
-      if (!isTeacherOrAdmin(role) && attempt.student_id !== userId) {
-        res.status(403).json({ error: "Forbidden" });
-        return;
+      // Build per-question breakdown from graded_answers stored on each attempt
+      const questionStats: Record<
+        string,
+        { question: string; type: string; correct: number; incorrect: number; unanswered: number }
+      > = {};
+
+      for (const q of questions ?? []) {
+        questionStats[q.id as string] = {
+          question: q.question as string,
+          type: q.type as string,
+          correct: 0,
+          incorrect: 0,
+          unanswered: 0,
+        };
       }
 
-      // Fetch answers
-      const { data: answers, error: answersError } = await supabaseAdmin
-        .from("quiz_answers")
-        .select("*")
-        .eq("attempt_id", attemptId);
-
-      if (answersError) {
-        res.status(500).json({ error: answersError.message });
-        return;
+      for (const attempt of attemptList) {
+        const gradedAnswers = (attempt.graded_answers as Record<string, unknown>[] | null) ?? [];
+        for (const ga of gradedAnswers) {
+          const qid = ga.question_id as string;
+          if (!questionStats[qid]) continue;
+          if (ga.is_correct === true) {
+            questionStats[qid].correct += 1;
+          } else if (ga.is_correct === false) {
+            questionStats[qid].incorrect += 1;
+          } else {
+            questionStats[qid].unanswered += 1;
+          }
+        }
       }
-
-      // Fetch quiz for context
-      const { data: quiz } = await supabaseAdmin
-        .from("quizzes")
-        .select("id, title, show_results_immediately")
-        .eq("id", attempt.quiz_id)
-        .single();
 
       res.json({
-        ...attempt,
-        quiz: quiz ?? null,
-        answers: answers ?? [],
+        quiz_id: id,
+        attempt_count: attemptCount,
+        average_score: averageScore,
+        question_breakdown: Object.entries(questionStats).map(([qid, stats]) => ({
+          question_id: qid,
+          ...stats,
+        })),
       });
-    } catch (err) {
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   }
 );
