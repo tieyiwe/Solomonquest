@@ -1033,6 +1033,12 @@ export default function AdminSchoolBranding() {
               <TabsContent value="css" className="space-y-4 mt-0">
                 <div>
                   <Label className="text-sm font-medium text-gray-700 mb-1 block">Custom CSS</Label>
+                  <div className="flex items-start gap-2 mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <span className="text-amber-500 text-base leading-none mt-0.5">⚠️</span>
+                    <p className="text-xs text-amber-800 font-medium">
+                      <strong>For developers only.</strong> If you are not a developer, do not add anything here — incorrect CSS can break your school's public page appearance.
+                    </p>
+                  </div>
                   <p className="text-xs text-gray-500 mb-2">
                     This CSS is injected into your school's public page.
                     Hint: Use <code className="bg-gray-100 px-1 rounded text-xs font-mono">:root {"{ --custom-bg: #fff; }"}</code> to override CSS variables.
