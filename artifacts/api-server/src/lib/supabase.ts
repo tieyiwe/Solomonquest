@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "./logger";
 
 const supabaseUrl =
@@ -18,23 +18,28 @@ const supabaseAnonKey =
   "";
 
 if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
-  logger.warn("Supabase environment variables not fully configured");
+  logger.warn(
+    {
+      hasUrl: !!supabaseUrl,
+      hasServiceKey: !!supabaseServiceKey,
+      hasAnonKey: !!supabaseAnonKey,
+    },
+    "Supabase environment variables not fully configured — some API routes will fail"
+  );
 }
 
-if (!supabaseUrl) {
-  throw new Error("SUPABASE_URL is required but not set. Add it to your environment variables.");
+function makeClient(url: string, key: string): SupabaseClient {
+  if (!url || !key) {
+    // Return a dummy client — requests using it will fail gracefully with 500
+    // rather than crashing the server at startup.
+    return createClient("https://placeholder.supabase.co", "placeholder-key", {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+  }
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
-
-export const supabaseAnon = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+export const supabaseAdmin = makeClient(supabaseUrl, supabaseServiceKey);
+export const supabaseAnon = makeClient(supabaseUrl, supabaseAnonKey);
