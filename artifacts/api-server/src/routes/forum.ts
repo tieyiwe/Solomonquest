@@ -55,6 +55,7 @@ async function enrichTopic(topic: Record<string, unknown>) {
     courseId: topic.course_id,
     title: topic.title,
     content: topic.content,
+    coverImage: topic.cover_image ?? null,
     isPinned: topic.is_pinned,
     postedBy: topic.posted_by,
     postedByProfile: profile,
@@ -159,6 +160,8 @@ router.post(
       return;
     }
 
+    const coverImage = typeof req.body.coverImage === "string" ? req.body.coverImage.trim() : null;
+
     const { data, error } = await supabaseAdmin
       .from("forum_topics")
       .insert({
@@ -168,6 +171,7 @@ router.post(
         course_id: courseId ?? null,
         is_pinned: isPinned ?? false,
         posted_by: req.userId,
+        cover_image: coverImage || null,
       })
       .select()
       .single();

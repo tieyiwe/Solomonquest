@@ -185,8 +185,21 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
         <Avatar name={topic.author_name} url={topic.author_avatar_url} />
       </div>
 
+      {/* Cover image thumbnail */}
+      {topic.coverImage && (
+        <div className="hidden sm:block shrink-0 w-20 h-14 rounded-md overflow-hidden border border-border self-center">
+          <img src={topic.coverImage} alt="" className="w-full h-full object-cover" />
+        </div>
+      )}
+
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+        {/* Cover image on mobile */}
+        {topic.coverImage && (
+          <div className="sm:hidden w-full h-28 rounded-md overflow-hidden border border-border mb-1">
+            <img src={topic.coverImage} alt="" className="w-full h-full object-cover" />
+          </div>
+        )}
         {/* Title row */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2 flex-wrap">
@@ -263,6 +276,7 @@ function NewTopicModal({
 }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [coverImage, setCoverImage] = useState("");
   const [scope, setScope] = useState<"school-wide" | "course">("school-wide");
   const [courseId, setCourseId] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
@@ -270,6 +284,7 @@ function NewTopicModal({
   function reset() {
     setTitle("");
     setContent("");
+    setCoverImage("");
     setScope("school-wide");
     setCourseId("");
   }
@@ -289,6 +304,7 @@ function NewTopicModal({
         content: content.trim(),
       };
       if (scope === "course" && courseId) body.course_id = courseId;
+      if (coverImage.trim()) body.coverImage = coverImage.trim();
 
       const res = await apiFetch("/api/forum/topics", {
         method: "POST",
@@ -391,6 +407,27 @@ function NewTopicModal({
             <p className="text-xs text-muted-foreground">
               {content.length} chars{content.length < 20 && ` — ${20 - content.length} more needed`}
             </p>
+          </div>
+
+          {/* Cover image */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="new-cover">Cover Image URL <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Input
+              id="new-cover"
+              placeholder="https://example.com/image.jpg"
+              value={coverImage}
+              onChange={(e) => setCoverImage(e.target.value)}
+            />
+            {coverImage.trim() && (
+              <div className="relative rounded-md overflow-hidden h-32 border border-border mt-1">
+                <img
+                  src={coverImage}
+                  alt="Cover preview"
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+              </div>
+            )}
           </div>
 
           <DialogFooter className="pt-1">

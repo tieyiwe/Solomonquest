@@ -653,6 +653,13 @@ export default function ForumTopicPage() {
             )}
           </div>
 
+          {/* Cover image */}
+          {topic.coverImage && (
+            <div className="w-full rounded-lg overflow-hidden border border-border max-h-64">
+              <img src={topic.coverImage} alt="Topic cover" className="w-full h-full object-cover" />
+            </div>
+          )}
+
           {/* Title */}
           <h1 className="text-xl font-bold leading-snug text-foreground">{topic.title}</h1>
 

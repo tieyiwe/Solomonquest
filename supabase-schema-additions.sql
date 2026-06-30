@@ -253,3 +253,6 @@ INSERT INTO platform_settings (key, value) VALUES
   ('maintenance_mode', 'false'::jsonb),
   ('maintenance_message', '"Platform is under maintenance. Please check back later."'::jsonb)
 ON CONFLICT (key) DO NOTHING;
+
+-- Forum topic cover image
+ALTER TABLE forum_topics ADD COLUMN IF NOT EXISTS cover_image text;
