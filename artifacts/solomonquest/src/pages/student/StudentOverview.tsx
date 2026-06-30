@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { NotificationBell } from "@/components/NotificationBell";
 import {
   LayoutDashboard,
   BookOpen,
@@ -137,6 +138,7 @@ const NAV_LINKS = [
   { href: "/dashboard/student/resources", label: "Resources", icon: FolderOpen },
   { href: "/forum", label: "Forum", icon: MessageSquare },
   { href: "/chat", label: "Chat", icon: MessageCircle },
+  { href: "/messages", label: "Messages", icon: MessageSquare },
   { href: "/dashboard/student/applications", label: "Applications", icon: Inbox },
 ];
 
@@ -442,6 +444,7 @@ export default function StudentOverview() {
             )}
           </div>
 
+          <NotificationBell />
           <Avatar className="h-8 w-8 border">
             <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
             <AvatarFallback className="bg-primary text-primary-foreground text-xs">

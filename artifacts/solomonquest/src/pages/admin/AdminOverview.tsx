@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { NotificationBell } from "@/components/NotificationBell";
 import {
   LayoutDashboard,
   Users,
@@ -157,6 +158,7 @@ const NAV_LINKS = [
   { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
   { href: "/forum", label: "Forum", icon: MessageSquare },
   { href: "/chat", label: "Chat", icon: MessageCircle },
+  { href: "/messages", label: "Messages", icon: MessageSquare },
   { href: "/dashboard/admin/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
 ];
@@ -422,6 +424,7 @@ export default function AdminOverview() {
             )}
           </div>
 
+          <NotificationBell />
           <Avatar className="h-8 w-8 border">
             <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
             <AvatarFallback className="bg-primary text-primary-foreground text-xs">

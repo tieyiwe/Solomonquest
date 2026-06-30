@@ -40,6 +40,7 @@ const ChatPage = lazy(() => import("@/pages/chat/ChatPage"));
 const ForumPage = lazy(() => import("@/pages/forum/ForumPage"));
 const ForumTopicPage = lazy(() => import("@/pages/forum/ForumTopicPage"));
 const NotificationPreferences = lazy(() => import("@/pages/settings/NotificationPreferences"));
+const MessagesPage = lazy(() => import("@/pages/messages/MessagesPage"));
 
 function InviteAcceptPage({ token }: { token: string }) {
   const [, setLocation] = useLocation();
@@ -226,6 +227,11 @@ export function Router() {
           <ProtectedRoute allowedRoles={["student", "staff", "teacher", "admin", "super_admin"]}>
             <StudentVideoSession />
           </ProtectedRoute>
+        </Route>
+
+        {/* Messages Route */}
+        <Route path="/messages">
+          <ProtectedRoute><MessagesPage /></ProtectedRoute>
         </Route>
 
         {/* Settings Routes */}

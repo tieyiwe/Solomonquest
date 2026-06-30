@@ -164,3 +164,105 @@ CREATE POLICY "messages_all" ON internal_messages FOR ALL USING (
   auth.uid() = from_user_id OR auth.uid() = to_user_id
 );
 ALTER PUBLICATION supabase_realtime ADD TABLE internal_messages;
+
+-- ─── Super Admin Platform Tables ──────────────────────────────────────────────
+
+-- Platform-level audit log (every significant action)
+CREATE TABLE IF NOT EXISTS platform_audit_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id uuid REFERENCES profiles,
+  actor_email text,
+  action text NOT NULL,
+  target_type text,   -- 'school' | 'user' | 'course' | 'platform'
+  target_id text,
+  target_name text,
+  details jsonb,
+  ip_address text,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE platform_audit_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "audit_log_superadmin" ON platform_audit_log;
+CREATE POLICY "audit_log_superadmin" ON platform_audit_log FOR ALL USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'super_admin')
+);
+
+-- School deletion requests (from school admin requesting deletion)
+CREATE TABLE IF NOT EXISTS school_deletion_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid REFERENCES schools NOT NULL,
+  school_name text NOT NULL,
+  requested_by uuid REFERENCES profiles NOT NULL,
+  reason text,
+  status text DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','completed')),
+  reviewed_by uuid REFERENCES profiles,
+  reviewed_at timestamptz,
+  review_notes text,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE school_deletion_requests ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "deletion_requests_policy" ON school_deletion_requests;
+CREATE POLICY "deletion_requests_policy" ON school_deletion_requests FOR ALL USING (true);
+
+-- School soft-delete archive (30-day backup before permanent delete)
+CREATE TABLE IF NOT EXISTS school_archive (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  school_data jsonb NOT NULL,    -- full snapshot of school row
+  stats_snapshot jsonb,          -- { students, teachers, courses, enrollments } at time of deletion
+  deleted_by uuid REFERENCES profiles,
+  deletion_request_id uuid REFERENCES school_deletion_requests,
+  restore_deadline timestamptz NOT NULL DEFAULT (now() + interval '30 days'),
+  restored_at timestamptz,
+  permanently_deleted_at timestamptz,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE school_archive ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "archive_superadmin" ON school_archive;
+CREATE POLICY "archive_superadmin" ON school_archive FOR ALL USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'super_admin')
+);
+
+-- Platform settings
+CREATE TABLE IF NOT EXISTS platform_settings (
+  key text PRIMARY KEY,
+  value jsonb NOT NULL,
+  updated_by uuid REFERENCES profiles,
+  updated_at timestamptz DEFAULT now()
+);
+ALTER TABLE platform_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "platform_settings_superadmin" ON platform_settings;
+CREATE POLICY "platform_settings_superadmin" ON platform_settings FOR ALL USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'super_admin')
+);
+
+-- Insert defaults for platform settings
+INSERT INTO platform_settings (key, value) VALUES
+  ('max_schools_per_admin', '1'::jsonb),
+  ('max_students_per_school', '10000'::jsonb),
+  ('max_courses_per_school', '500'::jsonb),
+  ('allow_school_registration', 'true'::jsonb),
+  ('maintenance_mode', 'false'::jsonb),
+  ('maintenance_message', '"Platform is under maintenance. Please check back later."'::jsonb)
+ON CONFLICT (key) DO NOTHING;
+
+-- Internal messages (in-platform email)
+CREATE TABLE IF NOT EXISTS internal_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid REFERENCES schools,
+  from_user_id uuid REFERENCES profiles NOT NULL,
+  to_user_id uuid REFERENCES profiles NOT NULL,
+  subject text NOT NULL,
+  body text NOT NULL,
+  is_read boolean DEFAULT false,
+  read_at timestamptz,
+  parent_id uuid REFERENCES internal_messages,
+  thread_id uuid,
+  deleted_by jsonb DEFAULT '[]'::jsonb,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE internal_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "messages_rls" ON internal_messages;
+CREATE POLICY "messages_rls" ON internal_messages FOR ALL USING (
+  auth.uid() = from_user_id OR auth.uid() = to_user_id
+);
+ALTER PUBLICATION supabase_realtime ADD TABLE internal_messages;

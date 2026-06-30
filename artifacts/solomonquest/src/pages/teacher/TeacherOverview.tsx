@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { NotificationBell } from "@/components/NotificationBell";
 import {
   LayoutDashboard,
   BookOpen,
@@ -116,6 +117,7 @@ const NAV_LINKS = [
   { href: "/dashboard/teacher/resources", label: "Resources", icon: FolderOpen },
   { href: "/forum", label: "Forum", icon: MessageSquare },
   { href: "/chat", label: "Chat", icon: MessageCircle },
+  { href: "/messages", label: "Messages", icon: MessageSquare },
 ];
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -329,6 +331,7 @@ export default function TeacherOverview() {
             <Calendar className="h-3.5 w-3.5" />
             {format(new Date(), "MMM d, yyyy")}
           </div>
+          <NotificationBell />
           <Avatar className="h-8 w-8 border">
             <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
             <AvatarFallback className="bg-primary text-primary-foreground text-xs">
