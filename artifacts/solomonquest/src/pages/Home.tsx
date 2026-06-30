@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -6,9 +7,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, BookOpen, GraduationCap, Users } from "lucide-react";
 import { generate_image_tool } from "@/components/ui/empty"; // Dummy import to avoid error if we don't have it, actually just use standard icons
+import { setPageMeta } from "@/lib/seo";
 
 export default function Home() {
   const { data: schools, isLoading } = useListSchools();
+
+  useEffect(() => {
+    setPageMeta({ title: "Home", description: "Discover schools and courses on SolomonQuest LMS" });
+  }, []);
 
   return (
     <PublicLayout>

@@ -70,6 +70,36 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
     return;
   }
 
+  // Validate slug format
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    res.status(400).json({ error: "Slug must contain only lowercase letters, numbers, and hyphens." });
+    return;
+  }
+
+  // Enforce unique school name (case-insensitive)
+  const { data: nameConflict } = await supabaseAdmin
+    .from("schools")
+    .select("id")
+    .ilike("name", name)
+    .maybeSingle();
+
+  if (nameConflict) {
+    res.status(409).json({ error: "A school with this name already exists. Please choose a different name." });
+    return;
+  }
+
+  // Enforce unique slug
+  const { data: slugConflict } = await supabaseAdmin
+    .from("schools")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (slugConflict) {
+    res.status(409).json({ error: "This URL slug is already taken. Please choose a different one." });
+    return;
+  }
+
   const { data, error } = await supabaseAdmin
     .from("schools")
     .insert({
@@ -84,6 +114,14 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
     .single();
 
   if (error) {
+    // DB-level unique constraint fallback
+    if (error.code === "23505") {
+      const msg = error.message.includes("name")
+        ? "A school with this name already exists."
+        : "This URL slug is already taken.";
+      res.status(409).json({ error: msg });
+      return;
+    }
     res.status(400).json({ error: error.message });
     return;
   }
@@ -95,6 +133,87 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
     .eq("id", req.userId);
 
   res.status(201).json(mapSchool(data));
+});
+
+// Get school by slug (public, explicit path to avoid conflict with /:id)
+router.get("/schools/slug/:slug", async (req, res): Promise<void> => {
+  const { slug } = req.params;
+
+  const { data, error } = await supabaseAdmin
+    .from("schools")
+    .select("*")
+    .eq("slug", slug)
+    .single();
+
+  if (error || !data) {
+    res.status(404).json({ error: "School not found" });
+    return;
+  }
+
+  res.json(mapSchool(data));
+});
+
+// Update school branding (admin only)
+router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const {
+    logo_url,
+    slug,
+    primary_color,
+    secondary_color,
+    heading_font,
+    heading_color,
+    tagline,
+    banner_url,
+    custom_css,
+  } = req.body;
+
+  // Validate slug format if provided
+  if (slug !== undefined) {
+    if (!/^[a-z0-9-]+$/.test(slug)) {
+      res.status(400).json({ error: "Slug must be lowercase alphanumeric with hyphens only" });
+      return;
+    }
+
+    // Check slug uniqueness
+    const { data: existing } = await supabaseAdmin
+      .from("schools")
+      .select("id")
+      .eq("slug", slug)
+      .neq("id", id)
+      .maybeSingle();
+
+    if (existing) {
+      res.status(409).json({ error: "Slug is already taken" });
+      return;
+    }
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (logo_url !== undefined) updates.logo_url = logo_url;
+  if (slug !== undefined) updates.slug = slug;
+  if (primary_color !== undefined) updates.primary_color = primary_color;
+  if (secondary_color !== undefined) updates.secondary_color = secondary_color;
+  if (heading_font !== undefined) updates.heading_font = heading_font;
+  if (heading_color !== undefined) updates.heading_color = heading_color;
+  if (tagline !== undefined) updates.tagline = tagline;
+  if (banner_url !== undefined) updates.banner_url = banner_url;
+  if (custom_css !== undefined) updates.custom_css = custom_css;
+
+  const { data, error } = await supabaseAdmin
+    .from("schools")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error || !data) {
+    logger.error({ error }, "Error updating school branding");
+    res.status(404).json({ error: "School not found or update failed" });
+    return;
+  }
+
+  res.json(mapSchool(data));
 });
 
 // Update school
@@ -133,6 +252,11 @@ function mapSchool(s: Record<string, unknown>) {
     primaryColor: s.primary_color,
     secondaryColor: s.secondary_color,
     logoUrl: s.logo_url,
+    headingFont: s.heading_font,
+    headingColor: s.heading_color,
+    tagline: s.tagline,
+    bannerUrl: s.banner_url,
+    customCss: s.custom_css,
     isActive: s.is_active,
     createdAt: s.created_at,
   };

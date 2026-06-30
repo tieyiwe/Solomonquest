@@ -69,8 +69,9 @@ router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, re
     const { id } = req.params;
     const { grade, feedback } = req.body;
     const userId = req.user?.id;
+    const userRole = req.userRole;
 
-    // Fetch submission to get student_id, assignment_id, etc.
+    // Fetch submission joined through assignments to courses so we can check ownership
     const { data: submission, error: fetchError } = await supabaseAdmin
       .from("submissions")
       .select(`
@@ -81,7 +82,11 @@ router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, re
           id,
           title,
           course_id,
-          school_id
+          school_id,
+          courses:course_id (
+            id,
+            teacher_id
+          )
         )
       `)
       .eq("id", id)
@@ -90,6 +95,16 @@ router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, re
     if (fetchError) throw fetchError;
     if (!submission) {
       return res.status(404).json({ error: "Submission not found" });
+    }
+
+    const assignment = (submission as any).assignments;
+    const course = assignment?.courses;
+
+    // Security: verify teacher owns the course, or requester is admin/super_admin
+    if (userRole !== "admin" && userRole !== "super_admin") {
+      if (userRole !== "teacher" || course?.teacher_id !== userId) {
+        return res.status(403).json({ error: "Access denied: you do not own this course" });
+      }
     }
 
     const graded_at = new Date().toISOString();
@@ -108,8 +123,6 @@ router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, re
       .single();
 
     if (updateError) throw updateError;
-
-    const assignment = (submission as any).assignments;
 
     // Upsert into transcripts
     const { error: transcriptError } = await supabaseAdmin
@@ -162,20 +175,57 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
   try {
     const { student_id } = req.params;
     const userId = req.user?.id;
+    const userRole = req.userRole;
 
-    // Authorization: student themselves, teacher of those courses, or admin
-    // We'll fetch data and let Supabase RLS handle it, but also do a basic check
     if (userId !== student_id) {
-      // Check if requester is an admin or teacher
-      const { data: profile, error: profileError } = await supabaseAdmin
-        .from("profiles")
-        .select("role, school_id")
-        .eq("id", userId)
-        .single();
+      // Must be admin/super_admin of the same school, OR a teacher of a course the student is enrolled in
+      if (userRole === "admin" || userRole === "super_admin") {
+        // Verify same school as student
+        const { data: studentProfile, error: studentProfileError } = await supabaseAdmin
+          .from("profiles")
+          .select("school_id")
+          .eq("id", student_id)
+          .single();
 
-      if (profileError) throw profileError;
+        if (studentProfileError || !studentProfile) {
+          return res.status(404).json({ error: "Student not found" });
+        }
 
-      if (!profile || !["admin", "teacher", "super_admin"].includes(profile.role)) {
+        const { data: callerProfile, error: callerProfileError } = await supabaseAdmin
+          .from("profiles")
+          .select("school_id")
+          .eq("id", userId)
+          .single();
+
+        if (callerProfileError || !callerProfile) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+
+        if (studentProfile.school_id !== callerProfile.school_id) {
+          return res.status(403).json({ error: "Access denied: different school" });
+        }
+      } else if (userRole === "teacher") {
+        // Teacher must be the teacher of at least one course the student is enrolled in
+        const { data: sharedCourses, error: sharedCoursesError } = await supabaseAdmin
+          .from("enrollments")
+          .select(`
+            course_id,
+            courses:course_id (
+              teacher_id
+            )
+          `)
+          .eq("student_id", student_id);
+
+        if (sharedCoursesError) throw sharedCoursesError;
+
+        const teachesStudent = (sharedCourses ?? []).some(
+          (e: any) => e.courses?.teacher_id === userId
+        );
+
+        if (!teachesStudent) {
+          return res.status(403).json({ error: "Access denied: you do not teach this student" });
+        }
+      } else {
         return res.status(403).json({ error: "Access denied" });
       }
     }

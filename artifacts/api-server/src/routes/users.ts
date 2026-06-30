@@ -4,10 +4,15 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-// List users in school
+// List users in school — admin/teacher only
 router.get("/users", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (!req.schoolId) {
     res.status(403).json({ error: "Not associated with a school" });
+    return;
+  }
+
+  if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
 
@@ -24,7 +29,7 @@ router.get("/users", requireAuth, async (req: AuthenticatedRequest, res): Promis
   const { data, error } = await query;
 
   if (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Failed to fetch users" });
     return;
   }
 
@@ -39,7 +44,7 @@ router.get("/users", requireAuth, async (req: AuthenticatedRequest, res): Promis
   res.json(profiles);
 });
 
-// Get single user
+// Get single user — must be same school (or self), unless super_admin
 router.get("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
@@ -54,13 +59,46 @@ router.get("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Pr
     return;
   }
 
+  // super_admin can view any user; others must share school or be viewing themselves
+  if (req.userRole !== "super_admin") {
+    if (data.school_id !== req.schoolId && req.userId !== id) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
+
   const { data: userData } = await supabaseAdmin.auth.admin.getUserById(id);
   res.json(mapProfile(data, userData?.user?.email));
 });
 
-// Update user profile
+// Update user profile — self or admin of same school; role changes are never allowed here
 router.patch("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  // Ownership check: must be the user themselves OR an admin/super_admin
+  const isSelf = req.userId === id;
+  const isAdmin = req.userRole === "admin" || req.userRole === "super_admin";
+
+  if (!isSelf && !isAdmin) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  // Admins (non-super_admin) may only update users in the same school
+  if (isAdmin && req.userRole !== "super_admin") {
+    const { data: targetProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("school_id")
+      .eq("id", id)
+      .single();
+
+    if (!targetProfile || targetProfile.school_id !== req.schoolId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
+
+  // Only allow safe profile fields — never role
   const { firstName, lastName, avatarUrl, bio } = req.body;
 
   const updates: Record<string, unknown> = {};
@@ -68,6 +106,11 @@ router.patch("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): 
   if (lastName !== undefined) updates.last_name = lastName;
   if (avatarUrl !== undefined) updates.avatar_url = avatarUrl;
   if (bio !== undefined) updates.bio = bio;
+
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ error: "No valid fields to update" });
+    return;
+  }
 
   const { data, error } = await supabaseAdmin
     .from("profiles")
@@ -85,9 +128,15 @@ router.patch("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): 
   res.json(mapProfile(data, userData?.user?.email));
 });
 
-// Update user role
+// Update user role — admin/super_admin only, same-school constraint for admin
 router.patch("/users/:id/role", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const { role } = req.body;
 
   if (!role) {
@@ -99,6 +148,20 @@ router.patch("/users/:id/role", requireAuth, async (req: AuthenticatedRequest, r
   if (!validRoles.includes(role)) {
     res.status(400).json({ error: "Invalid role" });
     return;
+  }
+
+  // Admins (non-super_admin) may only change roles for users in the same school
+  if (req.userRole !== "super_admin") {
+    const { data: targetProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("school_id")
+      .eq("id", id)
+      .single();
+
+    if (!targetProfile || targetProfile.school_id !== req.schoolId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
   }
 
   const { data, error } = await supabaseAdmin
@@ -178,7 +241,7 @@ router.put("/users/me/notification-prefs", requireAuth, async (req: Authenticate
     .single();
 
   if (error || !data) {
-    res.status(500).json({ error: error?.message ?? "Failed to update notification preferences" });
+    res.status(500).json({ error: "Failed to update notification preferences" });
     return;
   }
 
@@ -198,7 +261,7 @@ router.put("/users/me/online", requireAuth, async (req: AuthenticatedRequest, re
     .eq("id", req.userId);
 
   if (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Failed to update online status" });
     return;
   }
 
@@ -206,39 +269,104 @@ router.put("/users/me/online", requireAuth, async (req: AuthenticatedRequest, re
 });
 
 // GET /users/search - search users by unique_student_id or first/last name
+// Scoped to requester's school; admin/teacher only
 router.get("/users/search", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  const query = req.query.query as string | undefined;
-  const school_id = req.query.school_id as string | undefined;
+  if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
 
-  if (!query) {
+  const queryParam = req.query.query as string | undefined;
+
+  if (!queryParam) {
     res.status(400).json({ error: "query parameter is required" });
     return;
   }
 
+  // Always scope search to caller's school (ignore client-supplied school_id to prevent cross-school enumeration)
   let dbQuery = supabaseAdmin
     .from("profiles")
     .select("id, first_name, last_name, unique_student_id, avatar_url, role");
 
-  if (school_id) {
-    dbQuery = dbQuery.eq("school_id", school_id);
+  if (req.userRole === "super_admin") {
+    // super_admin may optionally filter by a specific school
+    const school_id = req.query.school_id as string | undefined;
+    if (school_id) {
+      dbQuery = dbQuery.eq("school_id", school_id);
+    }
+  } else {
+    if (!req.schoolId) {
+      res.status(403).json({ error: "Not associated with a school" });
+      return;
+    }
+    dbQuery = dbQuery.eq("school_id", req.schoolId);
   }
 
   dbQuery = dbQuery.or(
-    `unique_student_id.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`
+    `unique_student_id.ilike.%${queryParam}%,first_name.ilike.%${queryParam}%,last_name.ilike.%${queryParam}%`
   );
 
   const { data, error } = await dbQuery;
 
   if (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Search failed" });
     return;
   }
 
   res.json(data ?? []);
 });
 
-// POST /users/admin/reset-password - admin resets any user's password
+// POST /users/me/avatar - update current user's avatar
+router.post("/users/me/avatar", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const { avatar_url, avatar_type, avatar_index } = req.body;
+
+  let resolvedAvatarUrl: string | undefined;
+
+  if (avatar_type === "default") {
+    if (typeof avatar_index !== "number" || avatar_index < 0 || avatar_index > 7) {
+      res.status(400).json({ error: "avatar_index must be a number between 0 and 7" });
+      return;
+    }
+    resolvedAvatarUrl = `default:${avatar_index}`;
+  } else if (avatar_url !== undefined) {
+    if (typeof avatar_url !== "string" || avatar_url.trim() === "") {
+      res.status(400).json({ error: "avatar_url must be a non-empty string" });
+      return;
+    }
+    resolvedAvatarUrl = avatar_url.trim();
+  } else {
+    res.status(400).json({ error: "Provide either avatar_url or { avatar_type: 'default', avatar_index: number }" });
+    return;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ avatar_url: resolvedAvatarUrl })
+    .eq("id", req.userId)
+    .select()
+    .single();
+
+  if (error || !data) {
+    res.status(500).json({ error: "Failed to update avatar" });
+    return;
+  }
+
+  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(req.userId);
+  res.json(mapProfile(data, userData?.user?.email));
+});
+
+// POST /users/admin/reset-password - admin resets a user's password; same-school constraint
 router.post("/users/admin/reset-password", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const { user_id, new_password } = req.body;
 
   if (!user_id || !new_password) {
@@ -246,12 +374,26 @@ router.post("/users/admin/reset-password", requireAuth, async (req: Authenticate
     return;
   }
 
+  // Verify target user belongs to the same school (unless super_admin)
+  if (req.userRole !== "super_admin") {
+    const { data: targetProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("school_id")
+      .eq("id", user_id)
+      .single();
+
+    if (!targetProfile || targetProfile.school_id !== req.schoolId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
+
   const { data, error } = await supabaseAdmin.auth.admin.updateUserById(user_id, {
     password: new_password,
   });
 
   if (error || !data) {
-    res.status(500).json({ error: error?.message ?? "Failed to reset password" });
+    res.status(500).json({ error: "Failed to reset password" });
     return;
   }
 

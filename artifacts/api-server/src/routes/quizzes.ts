@@ -393,13 +393,36 @@ router.post(
         return;
       }
 
-      // Check attempt limit
+      // Security: verify the student is enrolled in the quiz's course
+      const { data: enrollment, error: enrollmentError } = await supabaseAdmin
+        .from("enrollments")
+        .select("id")
+        .eq("course_id", quiz.course_id)
+        .eq("student_id", userId)
+        .maybeSingle();
+
+      if (enrollmentError) {
+        res.status(500).json({ error: enrollmentError.message });
+        return;
+      }
+
+      if (!enrollment) {
+        res.status(403).json({ error: "You are not enrolled in this course" });
+        return;
+      }
+
+      // Check attempt limit before allowing a new attempt
       if (quiz.attempt_limit !== null && quiz.attempt_limit !== undefined) {
-        const { count } = await supabaseAdmin
+        const { count, error: countError } = await supabaseAdmin
           .from("quiz_attempts")
           .select("id", { count: "exact", head: true })
           .eq("quiz_id", id)
           .eq("student_id", userId);
+
+        if (countError) {
+          res.status(500).json({ error: countError.message });
+          return;
+        }
 
         if ((count ?? 0) >= quiz.attempt_limit) {
           res.status(400).json({ error: "Attempt limit reached" });
@@ -546,7 +569,8 @@ router.put(
 );
 
 // ---------------------------------------------------------------------------
-// GET /quizzes/:id/attempts - list attempts (teacher sees all, student sees own)
+// GET /quizzes/:id/attempts - list attempts
+// Security: students only see their own attempts; teachers see all for their course.
 // ---------------------------------------------------------------------------
 router.get(
   "/:id/attempts",
@@ -556,24 +580,66 @@ router.get(
     const userId = req.userId!;
 
     try {
-      let query = supabaseAdmin
-        .from("quiz_attempts")
-        .select("*")
-        .eq("quiz_id", id)
-        .order("started_at", { ascending: false });
+      if (isTeacherOrAdmin(req.userRole)) {
+        // Teachers/admins: verify they own the course before seeing all attempts
+        if (req.userRole === "teacher") {
+          const { data: quiz, error: quizError } = await supabaseAdmin
+            .from("quizzes")
+            .select("course_id")
+            .eq("id", id)
+            .single();
 
-      if (!isTeacherOrAdmin(req.userRole)) {
-        query = query.eq("student_id", userId);
+          if (quizError || !quiz) {
+            res.status(404).json({ error: "Quiz not found" });
+            return;
+          }
+
+          const { data: course, error: courseError } = await supabaseAdmin
+            .from("courses")
+            .select("teacher_id")
+            .eq("id", quiz.course_id)
+            .single();
+
+          if (courseError || !course) {
+            res.status(404).json({ error: "Course not found" });
+            return;
+          }
+
+          if (course.teacher_id !== userId) {
+            res.status(403).json({ error: "You do not own this course" });
+            return;
+          }
+        }
+
+        // Admin or verified teacher: return all attempts
+        const { data, error } = await supabaseAdmin
+          .from("quiz_attempts")
+          .select("*")
+          .eq("quiz_id", id)
+          .order("started_at", { ascending: false });
+
+        if (error) {
+          res.status(500).json({ error: error.message });
+          return;
+        }
+
+        res.json(data ?? []);
+      } else {
+        // Students: only return their own attempts
+        const { data, error } = await supabaseAdmin
+          .from("quiz_attempts")
+          .select("*")
+          .eq("quiz_id", id)
+          .eq("student_id", userId)
+          .order("started_at", { ascending: false });
+
+        if (error) {
+          res.status(500).json({ error: error.message });
+          return;
+        }
+
+        res.json(data ?? []);
       }
-
-      const { data, error } = await query;
-
-      if (error) {
-        res.status(500).json({ error: error.message });
-        return;
-      }
-
-      res.json(data ?? []);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -14,7 +14,6 @@ import {
   Users,
   Clock,
   ArrowRight,
-  Plus,
   Video,
   FolderOpen,
   FileText,
@@ -188,7 +187,7 @@ export default function TeacherOverview() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 text-xs text-primary hover:text-primary hover:bg-primary/10 group-hover:bg-primary/10"
+                          className="h-7 text-xs text-primary hover:text-primary hover:bg-primary/10"
                           asChild
                         >
                           <Link href={`/dashboard/teacher/courses/${course.id}`}>
@@ -224,9 +223,7 @@ export default function TeacherOverview() {
                     <Link key={action.label} href={action.href}>
                       <Card className="hover:border-primary/50 hover:shadow-sm transition-all cursor-pointer h-full">
                         <CardContent className="p-4 flex flex-col gap-2">
-                          <div
-                            className={`h-9 w-9 rounded-lg ${action.bg} flex items-center justify-center`}
-                          >
+                          <div className={`h-9 w-9 rounded-lg ${action.bg} flex items-center justify-center`}>
                             <Icon className={`h-5 w-5 ${action.color}`} />
                           </div>
                           <div>
@@ -242,9 +239,8 @@ export default function TeacherOverview() {
             </div>
           </div>
 
-          {/* Sidebar: Activity + Pending */}
+          {/* Sidebar: Needs Grading + Activity */}
           <div className="space-y-4">
-            {/* Pending Assignments */}
             <div>
               <h2 className="text-lg font-semibold text-foreground mb-3">Needs Grading</h2>
               <Card>
@@ -258,10 +254,7 @@ export default function TeacherOverview() {
                   ) : pendingAssignments && pendingAssignments.length > 0 ? (
                     <div className="divide-y">
                       {pendingAssignments.slice(0, 5).map((assignment) => (
-                        <Link
-                          key={assignment.id}
-                          href={`/dashboard/teacher/assignments`}
-                        >
+                        <Link key={assignment.id} href="/dashboard/teacher/assignments">
                           <div className="p-3 hover:bg-muted/50 transition-colors flex items-start gap-3 cursor-pointer">
                             <div className="h-7 w-7 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0 mt-0.5">
                               <Clock className="h-3.5 w-3.5 text-amber-600" />
@@ -291,7 +284,6 @@ export default function TeacherOverview() {
               </Card>
             </div>
 
-            {/* Recent Activity */}
             <div>
               <h2 className="text-lg font-semibold text-foreground mb-3">Recent Activity</h2>
               <Card>
@@ -312,9 +304,7 @@ export default function TeacherOverview() {
                               {activity.description}
                             </p>
                             <p className="text-xs text-muted-foreground mt-1">
-                              {formatDistanceToNow(new Date(activity.createdAt), {
-                                addSuffix: true,
-                              })}
+                              {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
                             </p>
                           </div>
                         </div>

@@ -1,2 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Sitemap: https://solomonquest.tilogics.com/sitemap.xml

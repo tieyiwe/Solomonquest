@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Bell, Menu, LogOut, LayoutDashboard, Users, BookOpen, Settings, CheckSquare, GraduationCap, ClipboardList } from "lucide-react";
+import { Bell, Menu, LogOut, LayoutDashboard, Users, BookOpen, Settings, CheckSquare, GraduationCap, ClipboardList, FolderOpen } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useGetMySchool } from "@workspace/api-client-react";
 
@@ -27,6 +27,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     { href: "/dashboard/admin/users", label: "Users", icon: Users },
     { href: "/dashboard/admin/courses", label: "Courses", icon: BookOpen },
     { href: "/dashboard/admin/admissions", label: "Admissions", icon: CheckSquare },
+    { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
     { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
   ];
 
