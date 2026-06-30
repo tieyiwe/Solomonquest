@@ -1,0 +1,351 @@
+# 🏫 SolomonQuest LMS — Replit Master Build Prompt
+
+## Project Overview
+
+Build **SolomonQuest**, a multi-tenant Learning Management System (LMS). This is a full-stack web application where multiple schools can each run their own isolated LMS environment under one platform.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 15 (App Router, Server Components, Server Actions) |
+| Database & Auth | Supabase (Postgres + RLS + Storage) |
+| Language | TypeScript |
+| Styling | Tailwind CSS + shadcn/ui |
+| i18n | next-intl (English + French) |
+| Package Manager | **npm only** (no pnpm, no yarn) |
+
+---
+
+## Environment Variables
+
+Create a `.env.local` file with:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+> ⚠️ Always use `NEXT_PUBLIC_` prefix for Supabase vars — never `VITE_`.
+
+---
+
+## package.json Scripts
+
+```json
+{
+  "scripts": {
+    "dev": "fuser -k 3000/tcp 2>/dev/null; next dev --turbo",
+    "build": "next build",
+    "start": "next start"
+  }
+}
+```
+
+---
+
+## Color Theme
+
+Define these **exactly** as CSS variables in `globals.css` using HSL format. Do not change these values:
+
+```css
+/* globals.css */
+:root {
+  --background: /* #F8F4EE — soft cream paper */;
+  --foreground: /* #2D241B — deep cocoa */;
+  --primary:    /* #6E5238 — espresso brown */;
+  --secondary:  /* #B58F5E — warm caramel */;
+  --border:     /* #D9CFC0 — warm taupe */;
+  --muted:      /* #ECE4D7 — muted cream */;
+}
+```
+
+Convert each hex to HSL and assign to the variable. Let shadcn/ui handle all other design tokens.
+
+---
+
+## Multi-Tenant Architecture
+
+- Every row in the database belongs to a `school_id`
+- A user belongs to one school at a time
+- Roles: `super_admin` | `admin` | `teacher` | `staff` | `student`
+
+---
+
+## Database Schema (Supabase Postgres)
+
+Run this SQL in your Supabase SQL editor:
+
+```sql
+-- Schools
+create table schools (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text unique not null,
+  owner_id uuid references auth.users,
+  primary_color text,
+  secondary_color text,
+  logo_url text,
+  is_active boolean default true,
+  created_at timestamptz default now()
+);
+
+-- Profiles (mirrors auth.users)
+create table profiles (
+  id uuid primary key references auth.users,
+  school_id uuid references schools,
+  role text check (role in ('super_admin','admin','teacher','staff','student')),
+  first_name text,
+  last_name text,
+  avatar_url text,
+  bio text
+);
+
+-- Programs
+create table programs (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid references schools,
+  name text not null,
+  code text,
+  description text,
+  level text,
+  is_active boolean default true
+);
+
+-- Courses
+create table courses (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid references schools,
+  program_id uuid references programs,
+  teacher_id uuid references profiles,
+  title text not null,
+  code text,
+  term text,
+  description text,
+  is_published boolean default false
+);
+
+-- Enrollments
+create table course_enrollments (
+  course_id uuid references courses,
+  student_id uuid references profiles,
+  status text check (status in ('active','dropped')) default 'active',
+  primary key (course_id, student_id)
+);
+
+-- Assignments
+create table assignments (
+  id uuid primary key default gen_random_uuid(),
+  course_id uuid references courses,
+  title text not null,
+  description text,
+  due_date timestamptz,
+  points_possible int,
+  is_published boolean default false
+);
+
+-- Submissions
+create table submissions (
+  id uuid primary key default gen_random_uuid(),
+  assignment_id uuid references assignments,
+  student_id uuid references profiles,
+  content text,
+  grade numeric,
+  status text check (status in ('draft','submitted','graded')) default 'draft'
+);
+
+-- Announcements
+create table announcements (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid references schools,
+  course_id uuid references courses,
+  title text not null,
+  content text,
+  is_pinned boolean default false,
+  posted_by uuid references profiles,
+  created_at timestamptz default now()
+);
+
+-- Notifications
+create table notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles,
+  title text,
+  body text,
+  link text,
+  is_read boolean default false,
+  created_at timestamptz default now()
+);
+
+-- Student Applications
+create table student_applications (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid references schools,
+  program_id uuid references programs,
+  applicant_id uuid references profiles,
+  status text check (status in ('submitted','under_review','accepted','enrolled','rejected')) default 'submitted'
+);
+
+-- Attendance
+create table attendance (
+  id uuid primary key default gen_random_uuid(),
+  course_id uuid references courses,
+  student_id uuid references profiles,
+  session_date date,
+  status text check (status in ('present','absent','late'))
+);
+
+-- Enable RLS on all tables
+alter table schools enable row level security;
+alter table profiles enable row level security;
+alter table programs enable row level security;
+alter table courses enable row level security;
+alter table course_enrollments enable row level security;
+alter table assignments enable row level security;
+alter table submissions enable row level security;
+alter table announcements enable row level security;
+alter table notifications enable row level security;
+alter table student_applications enable row level security;
+alter table attendance enable row level security;
+```
+
+> ⚠️ After creating tables, add RLS policies so users can only read/write rows matching their own `school_id`.
+
+---
+
+## Supabase Client Setup
+
+Use `@supabase/ssr` for all clients — **never** `@supabase/auth-helpers-nextjs`.
+
+Create:
+- `lib/supabase/client.ts` — browser client (for Client Components)
+- `lib/supabase/server.ts` — server client using cookies (for Server Components + Actions)
+- `lib/supabase/middleware.ts` — session refresh helper
+
+---
+
+## Middleware (`middleware.ts`)
+
+Runs on all `/dashboard/*` routes:
+
+```
+Not logged in            → redirect to /auth/login
+role = admin/super_admin → redirect to /dashboard/admin
+role = teacher           → redirect to /dashboard/teacher
+role = student           → redirect to /dashboard/student
+role = staff             → redirect to /dashboard/staff
+```
+
+The middleware must also **refresh the Supabase session** on every request.
+
+---
+
+## Application Routes
+
+### Public Routes
+| Route | Description |
+|---|---|
+| `/` | Homepage — lists schools, hero section, CTAs |
+| `/auth/login` | Email/password login |
+| `/auth/register` | Email/password registration |
+| `/onboarding/setup` | Create a new school (user becomes admin/owner) |
+| `/onboarding/join` | Join an existing school as a student |
+| `/[school-slug]` | Public school landing page |
+| `/[school-slug]/apply` | Student application form |
+
+### Admin Dashboard (`/dashboard/admin/...`)
+| Route | Description |
+|---|---|
+| `/dashboard/admin` | Stats: students, teachers, courses, pending items |
+| `/dashboard/admin/users` | Manage all school members |
+| `/dashboard/admin/courses` | Manage all courses |
+| `/dashboard/admin/admissions` | Review applications, enroll students |
+| `/dashboard/admin/settings` | School branding, logo upload, colors |
+
+### Teacher Dashboard (`/dashboard/teacher/...`)
+| Route | Description |
+|---|---|
+| `/dashboard/teacher` | Overview of my courses |
+| `/dashboard/teacher/courses/[id]` | Course detail: students, assignments, attendance |
+| `/dashboard/teacher/courses/[id]/assignments` | Create and grade assignments |
+| `/dashboard/teacher/gradebook` | Grade overview across all courses |
+
+### Student Dashboard (`/dashboard/student/...`)
+| Route | Description |
+|---|---|
+| `/dashboard/student` | Enrolled courses, recent assignments, grade summary |
+| `/dashboard/student/courses/[id]` | Course detail with materials and assignments |
+| `/dashboard/student/assignments` | All pending assignments |
+
+---
+
+## Dashboard Layout (Shared Shell)
+
+All dashboard routes share a layout with:
+1. **Top bar** — school name/logo + user avatar. Background = school's `primary_color`
+2. **Collapsible sidebar** — navigation links filtered by role
+3. **Mobile bottom nav bar** — for small screens
+
+---
+
+## Public School Page (`/[school-slug]`)
+
+Display:
+- Hero section with school name, logo, tagline — gradient uses school's `primary_color`
+- Programs list with "Enroll" CTA
+- Published courses list
+- Contact info
+
+`/[school-slug]/apply` — student application form tied to a specific program
+
+---
+
+## Service Worker
+
+Add a `public/sw.js` that only **unregisters itself** — no caching logic yet:
+
+```js
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    self.registration.unregister().then(() => self.clients.matchAll()).then(clients => {
+      clients.forEach(c => c.navigate(c.url));
+    })
+  );
+});
+```
+
+---
+
+## What to Build First (Foundation Phase)
+
+Build these in order before anything else:
+
+1. ✅ Next.js 15 project scaffold with Tailwind + shadcn/ui configured
+2. ✅ Supabase client setup (`client.ts`, `server.ts`, `middleware.ts`)
+3. ✅ CSS variables from the color theme above applied in `globals.css`
+4. ✅ Auth pages: `/auth/login` and `/auth/register`
+5. ✅ Onboarding: `/onboarding/setup` (create school) and `/onboarding/join`
+6. ✅ Middleware with role-based redirects + session refresh
+7. ✅ Dashboard shell layout (top bar + sidebar + mobile nav) — placeholder content is fine
+8. ✅ Role-based dashboard root pages (admin, teacher, student, staff)
+
+> 🛑 Stop here. Once auth works, the dashboard shell loads, and school creation works end-to-end — the foundation is complete. Feature pages will be built on top in the next phase.
+
+---
+
+## Key Rules (Follow These Strictly)
+
+- Use **npm only** — never pnpm or yarn
+- Use **`@supabase/ssr`** — never `@supabase/auth-helpers-nextjs`
+- Use **`NEXT_PUBLIC_`** prefix for all Supabase env vars — never `VITE_`
+- All Server Actions must use the **server Supabase client** with cookies
+- All Client Components must use the **browser Supabase client**
+- Dev command must kill port 3000 first: `fuser -k 3000/tcp 2>/dev/null; next dev --turbo`
+- Keep TypeScript strict — no `any` types
+- Every database table must have **RLS enabled**
+- Do not install unnecessary packages — keep dependencies lean
