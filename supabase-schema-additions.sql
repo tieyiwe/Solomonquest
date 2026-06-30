@@ -124,3 +124,21 @@ ALTER TABLE schools ADD COLUMN IF NOT EXISTS social_links jsonb DEFAULT '{}'::js
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS announcement_banner text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS announcement_color text DEFAULT '#4f46e5';
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS show_announcement boolean DEFAULT false;
+
+-- Reminders table
+CREATE TABLE IF NOT EXISTS reminders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid REFERENCES schools,
+  created_by uuid REFERENCES profiles,
+  target_user_id uuid REFERENCES profiles,
+  target_role text,  -- if set, sends to all users of this role in school
+  course_id uuid REFERENCES courses,
+  message text NOT NULL,
+  send_at timestamptz NOT NULL,
+  sent boolean DEFAULT false,
+  type text CHECK (type IN ('admin_to_teacher', 'teacher_to_student')) DEFAULT 'admin_to_teacher',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "reminders_all" ON reminders;
+CREATE POLICY "reminders_all" ON reminders FOR ALL USING (true);

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { sendPasswordResetEmail } from "../lib/email";
 
 const router: IRouter = Router();
 
@@ -360,6 +361,65 @@ router.post("/users/me/avatar", requireAuth, async (req: AuthenticatedRequest, r
 
   const { data: userData } = await supabaseAdmin.auth.admin.getUserById(req.userId);
   res.json(mapProfile(data, userData?.user?.email));
+});
+
+// POST /users/:id/reset-password - admin sends password reset email to user
+router.post("/users/:id/reset-password", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  // Verify target user belongs to the same school (unless super_admin)
+  const { data: targetProfile } = await supabaseAdmin
+    .from("profiles")
+    .select("school_id, first_name, last_name")
+    .eq("id", id)
+    .single();
+
+  if (!targetProfile) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  if (req.userRole !== "super_admin" && targetProfile.school_id !== req.schoolId) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(id);
+  const userEmail = userData?.user?.email;
+
+  if (!userEmail) {
+    res.status(400).json({ error: "User has no email address" });
+    return;
+  }
+
+  const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+    type: "recovery",
+    email: userEmail,
+  });
+
+  if (linkError || !linkData) {
+    res.status(500).json({ error: "Failed to generate reset link" });
+    return;
+  }
+
+  const resetLink = linkData.properties?.action_link;
+
+  if (!resetLink) {
+    res.status(500).json({ error: "Failed to generate reset link" });
+    return;
+  }
+
+  await sendPasswordResetEmail({
+    to: userEmail,
+    resetUrl: resetLink,
+  });
+
+  res.json({ success: true, message: "Password reset email sent" });
 });
 
 // POST /users/admin/reset-password - admin resets a user's password; same-school constraint

@@ -1,5 +1,5 @@
-import { lazy, Suspense } from "react";
-import { Switch, Route } from "wouter";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { Switch, Route, useParams, useLocation } from "wouter";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import NotFound from "@/pages/not-found";
 
@@ -35,6 +35,60 @@ const ChatPage = lazy(() => import("@/pages/chat/ChatPage"));
 const ForumPage = lazy(() => import("@/pages/forum/ForumPage"));
 const ForumTopicPage = lazy(() => import("@/pages/forum/ForumTopicPage"));
 const NotificationPreferences = lazy(() => import("@/pages/settings/NotificationPreferences"));
+
+function InviteAcceptPage({ token }: { token: string }) {
+  const [, setLocation] = useLocation();
+  const [status, setStatus] = useState<"pending" | "error">("pending");
+
+  useEffect(() => {
+    fetch(`/api/invitations/accept/${token}`, { method: "POST" })
+      .then((res) => {
+        if (res.ok) {
+          setLocation("/onboarding/setup");
+        } else {
+          setStatus("error");
+        }
+      })
+      .catch(() => setStatus("error"));
+  }, [token, setLocation]);
+
+  if (status === "error") {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-destructive">Invalid or expired invite link.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <p className="text-muted-foreground">Accepting invite...</p>
+      </div>
+    </div>
+  );
+}
+
+function StudentVideoSession() {
+  const params = useParams<{ id: string }>();
+  const courseId = params.id;
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-8">
+      <h1 className="text-2xl font-bold mb-4">Live Video Session</h1>
+      <p className="text-muted-foreground mb-6">Course ID: {courseId}</p>
+      <div className="w-full max-w-4xl aspect-video bg-muted rounded-xl flex items-center justify-center border">
+        <iframe
+          src={`https://meet.jit.si/solomonquest-course-${courseId}`}
+          allow="camera; microphone; fullscreen; display-capture"
+          className="w-full h-full rounded-xl"
+          title="Video Session"
+        />
+      </div>
+    </div>
+  );
+}
 
 const LoadingFallback = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -140,6 +194,18 @@ export function Router() {
         </Route>
         <Route path="/forum/topics/:id">
           <ProtectedRoute><ForumTopicPage /></ProtectedRoute>
+        </Route>
+
+        {/* Invite Accept Route */}
+        <Route path="/invite/:token">
+          {(params) => <InviteAcceptPage token={params.token} />}
+        </Route>
+
+        {/* Student Video Route */}
+        <Route path="/dashboard/student/courses/:id/video">
+          <ProtectedRoute allowedRoles={["student", "staff", "teacher", "admin", "super_admin"]}>
+            <StudentVideoSession />
+          </ProtectedRoute>
         </Route>
 
         {/* Settings Routes */}

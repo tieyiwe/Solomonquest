@@ -22,6 +22,8 @@ import permissionsRouter from "./permissions";
 import formBuilderRouter from "./form-builder";
 import gradingRouter from "./grading";
 import invitationsRouter from "./invitations";
+import analyticsRouter from "./analytics";
+import remindersRouter from "./reminders";
 
 const router: IRouter = Router();
 
@@ -48,5 +50,7 @@ router.use(permissionsRouter);
 router.use(formBuilderRouter);
 router.use(gradingRouter);
 router.use(invitationsRouter);
+router.use(analyticsRouter);
+router.use(remindersRouter);
 
 export default router;
