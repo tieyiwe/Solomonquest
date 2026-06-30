@@ -134,39 +134,56 @@ alter table notifications enable row level security;
 alter table student_applications enable row level security;
 alter table attendance enable row level security;
 
--- RLS Policies: service_role bypasses RLS (used by the API server)
--- These policies allow authenticated users to read/write their own school's data
+-- RLS Policies (note: CREATE POLICY does not support IF NOT EXISTS)
+-- Drop first if re-running, then recreate
 
--- Profiles: users can read all profiles in their school, update their own
-create policy if not exists "profiles_read" on profiles for select using (true);
-create policy if not exists "profiles_insert" on profiles for insert with check (auth.uid() = id);
-create policy if not exists "profiles_update" on profiles for update using (auth.uid() = id);
+-- Profiles
+drop policy if exists "profiles_read" on profiles;
+drop policy if exists "profiles_insert" on profiles;
+drop policy if exists "profiles_update" on profiles;
+create policy "profiles_read" on profiles for select using (true);
+create policy "profiles_insert" on profiles for insert with check (auth.uid() = id);
+create policy "profiles_update" on profiles for update using (auth.uid() = id);
 
--- Schools: public read, owners can update
-create policy if not exists "schools_read" on schools for select using (true);
-create policy if not exists "schools_insert" on schools for insert with check (auth.uid() = owner_id);
-create policy if not exists "schools_update" on schools for update using (auth.uid() = owner_id);
+-- Schools
+drop policy if exists "schools_read" on schools;
+drop policy if exists "schools_insert" on schools;
+drop policy if exists "schools_update" on schools;
+create policy "schools_read" on schools for select using (true);
+create policy "schools_insert" on schools for insert with check (auth.uid() = owner_id);
+create policy "schools_update" on schools for update using (auth.uid() = owner_id);
 
--- Programs: school members can read
-create policy if not exists "programs_read" on programs for select using (true);
-create policy if not exists "programs_write" on programs for all using (
+-- Programs
+drop policy if exists "programs_read" on programs;
+drop policy if exists "programs_write" on programs;
+create policy "programs_read" on programs for select using (true);
+create policy "programs_write" on programs for all using (
   exists (select 1 from profiles where id = auth.uid() and school_id = programs.school_id and role in ('admin','super_admin'))
 );
 
--- Courses: school members can read published, admins/teachers can write
-create policy if not exists "courses_read" on courses for select using (true);
-create policy if not exists "courses_write" on courses for all using (
+-- Courses
+drop policy if exists "courses_read" on courses;
+drop policy if exists "courses_write" on courses;
+create policy "courses_read" on courses for select using (true);
+create policy "courses_write" on courses for all using (
   exists (select 1 from profiles where id = auth.uid() and school_id = courses.school_id and role in ('admin','super_admin','teacher'))
 );
 
--- All other tables: school members can read/write their own data
-create policy if not exists "enrollments_all" on course_enrollments for all using (true);
-create policy if not exists "assignments_all" on assignments for all using (true);
-create policy if not exists "submissions_all" on submissions for all using (true);
-create policy if not exists "announcements_all" on announcements for all using (true);
-create policy if not exists "notifications_all" on notifications for all using (true);
-create policy if not exists "applications_all" on student_applications for all using (true);
-create policy if not exists "attendance_all" on attendance for all using (true);
+-- All other tables
+drop policy if exists "enrollments_all" on course_enrollments;
+drop policy if exists "assignments_all" on assignments;
+drop policy if exists "submissions_all" on submissions;
+drop policy if exists "announcements_all" on announcements;
+drop policy if exists "notifications_all" on notifications;
+drop policy if exists "applications_all" on student_applications;
+drop policy if exists "attendance_all" on attendance;
+create policy "enrollments_all" on course_enrollments for all using (true);
+create policy "assignments_all" on assignments for all using (true);
+create policy "submissions_all" on submissions for all using (true);
+create policy "announcements_all" on announcements for all using (true);
+create policy "notifications_all" on notifications for all using (true);
+create policy "applications_all" on student_applications for all using (true);
+create policy "attendance_all" on attendance for all using (true);
 
 -- Auto-create profile on signup trigger
 create or replace function public.handle_new_user()
@@ -175,8 +192,8 @@ begin
   insert into public.profiles (id, first_name, last_name)
   values (
     new.id,
-    split_part(new.raw_user_meta_data->>'full_name', ' ', 1),
-    split_part(new.raw_user_meta_data->>'full_name', ' ', 2)
+    split_part(coalesce(new.raw_user_meta_data->>'full_name', ''), ' ', 1),
+    split_part(coalesce(new.raw_user_meta_data->>'full_name', ''), ' ', 2)
   )
   on conflict (id) do nothing;
   return new;

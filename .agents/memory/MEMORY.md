@@ -1,0 +1,1 @@
+- [Supabase key setup](supabase-keys.md) — SUPABASE_SVC_KEY env var holds the correct service role key; the secret SUPABASE_SERVICE_ROLE_KEY has a stale key from a different project and cannot be overridden.
