@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
+import { logger } from "../lib/logger";
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
@@ -13,7 +14,8 @@ router.get("/schools", async (_req, res): Promise<void> => {
     .order("created_at", { ascending: false });
 
   if (error) {
-    res.status(500).json({ error: error.message });
+    logger.error({ error }, "Supabase error listing schools");
+    res.status(500).json({ error: error.message, code: error.code });
     return;
   }
 
