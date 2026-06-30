@@ -1,5 +1,5 @@
 import { useAuth } from "@/contexts/AuthContext";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -42,19 +42,17 @@ export function ProfileMenu() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary hover:opacity-90 transition-opacity">
-          <Avatar className="h-8 w-8 border-2 border-primary/20 shadow-sm">
-            <AvatarImage src={user?.avatarUrl || ""} alt={fullName} />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <ChevronDown className="h-3.5 w-3.5 text-gray-400 hidden md:block" />
-        </button>
+      <DropdownMenuTrigger className="flex items-center gap-2 rounded-full outline-none hover:opacity-90 transition-opacity focus-visible:ring-2 focus-visible:ring-primary">
+        <Avatar className="h-8 w-8 border-2 border-primary/20 shadow-sm cursor-pointer">
+          <AvatarImage src={user?.avatarUrl || ""} alt={fullName} />
+          <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
+            {initials}
+          </AvatarFallback>
+        </Avatar>
+        <ChevronDown className="h-3.5 w-3.5 text-gray-400 hidden md:block" />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-64 shadow-lg">
+      <DropdownMenuContent align="end" className="w-64 shadow-lg z-50">
         {/* User header */}
         <DropdownMenuLabel className="pb-2">
           <div className="flex items-center gap-3">
