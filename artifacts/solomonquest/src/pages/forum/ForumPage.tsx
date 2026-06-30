@@ -312,7 +312,7 @@ function NewTopicModal({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error((err as any).message ?? "Failed to create topic");
+        throw new Error((err as any).error ?? (err as any).message ?? "Failed to create topic");
       }
       toast.success("Topic created!");
       reset();
@@ -483,8 +483,11 @@ export default function ForumPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
 
-  const isTeacherOrAdmin = user?.role === "teacher" || user?.role === "admin";
-  const schoolId = user?.school_id as string | undefined;
+  const isTeacherOrAdmin =
+    user?.role === "teacher" ||
+    user?.role === "admin" ||
+    user?.role === "super_admin";
+  const schoolId = (user?.schoolId ?? (user as any)?.school_id) as string | undefined;
 
   const fetchTopics = useCallback(async () => {
     if (!schoolId) return;
