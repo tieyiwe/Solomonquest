@@ -23,7 +23,10 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function Register() {
   const [isLoading, setIsLoading] = useState(false);
   const [location, setLocation] = useLocation();
-  const nextPath = new URLSearchParams(location.split("?")[1] ?? "").get("next") ?? "/onboarding/setup";
+  const params = new URLSearchParams(location.split("?")[1] ?? "");
+  const schoolId = params.get("schoolId");
+  const schoolName = params.get("schoolName");
+  const nextPath = params.get("next") ?? "/onboarding/setup";
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -54,9 +57,24 @@ export default function Register() {
       if (error) throw error;
 
       if (signUpData.session) {
-        // Email confirmation is disabled — user is logged in immediately
-        toast.success("Account created! Setting up your profile...");
-        setLocation(nextPath);
+        // If joining a school, link the account to that school
+        if (schoolId) {
+          try {
+            await fetch("/api/users/me/join-school", {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + signUpData.session.access_token,
+              },
+              body: JSON.stringify({ schoolId }),
+            });
+          } catch { /* non-fatal */ }
+          toast.success(`Account created! Welcome to ${schoolName ?? "your school"}.`);
+          setLocation("/dashboard/student");
+        } else {
+          toast.success("Account created! Setting up your profile...");
+          setLocation(nextPath);
+        }
       } else {
         // Email confirmation required
         toast.success("Account created! Please check your email to confirm your address, then log in.");
@@ -93,7 +111,13 @@ export default function Register() {
               <a className="inline-block text-xl font-bold text-primary mb-6 md:hidden">SolomonQuest</a>
             </Link>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Create an account</h1>
-            <p className="text-muted-foreground">Enter your details to get started</p>
+            {schoolName ? (
+              <p className="text-muted-foreground">
+                You're joining <span className="font-semibold text-primary">{schoolName}</span>
+              </p>
+            ) : (
+              <p className="text-muted-foreground">Enter your details to get started</p>
+            )}
           </div>
 
           <Form {...form}>

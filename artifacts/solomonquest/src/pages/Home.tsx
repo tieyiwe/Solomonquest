@@ -34,7 +34,7 @@ export default function Home() {
                   <Link href="/auth/register">Create a School</Link>
                 </Button>
                 <Button size="lg" variant="outline" className="bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 text-lg px-8" asChild>
-                  <Link href="/auth/register?next=/onboarding/join">Join a School</Link>
+                  <Link href="/onboarding/join">Join a School</Link>
                 </Button>
               </div>
             </div>

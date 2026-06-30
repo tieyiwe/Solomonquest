@@ -1,120 +1,79 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { useGetSchoolBySlug, useSubmitApplication } from "@workspace/api-client-react";
-import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
-import { Loader2, Search } from "lucide-react";
+import { useListSchools } from "@workspace/api-client-react";
 import { PublicLayout } from "@/components/layout/PublicLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-
-const searchSchema = z.object({
-  slug: z.string().min(1, "Please enter a school slug"),
-});
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Search, GraduationCap, ArrowRight } from "lucide-react";
 
 export default function OnboardingJoin() {
-  const [_, setLocation] = useLocation();
-  const [searchSlug, setSearchSlug] = useState<string | null>(null);
-  
-  const submitApplication = useSubmitApplication();
+  const [, setLocation] = useLocation();
+  const [query, setQuery] = useState("");
+  const { data: schools, isLoading } = useListSchools();
 
-  const { data: school, isLoading: isSearching, isError, error } = useGetSchoolBySlug(searchSlug || "", {
-    query: {
-      enabled: !!searchSlug,
-      retry: false,
-    }
-  });
+  const filtered = (schools ?? []).filter((s) =>
+    s.name?.toLowerCase().includes(query.toLowerCase()) ||
+    s.slug?.toLowerCase().includes(query.toLowerCase())
+  );
 
-  const form = useForm<z.infer<typeof searchSchema>>({
-    resolver: zodResolver(searchSchema),
-    defaultValues: { slug: "" },
-  });
-
-  function onSearch(data: z.infer<typeof searchSchema>) {
-    setSearchSlug(data.slug);
-  }
-
-  function handleApply() {
-    if (!school) return;
-    
-    submitApplication.mutate(
-      { data: { schoolId: school.id } },
-      {
-        onSuccess: () => {
-          toast.success(`Successfully applied to ${school.name}!`);
-          setLocation("/dashboard/student");
-        },
-        onError: (err: any) => {
-          toast.error(err.message || "Failed to submit application");
-        }
-      }
-    );
+  function handleSelect(schoolId: string, schoolName: string) {
+    setLocation(`/auth/register?schoolId=${encodeURIComponent(schoolId)}&schoolName=${encodeURIComponent(schoolName)}`);
   }
 
   return (
     <PublicLayout>
-      <div className="container mx-auto px-4 py-16 max-w-md">
-        <div className="text-center space-y-6 mb-8">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Join a school</h1>
-          <p className="text-muted-foreground">
-            Enter your school's unique identifier to find and apply to it.
+      <div className="container mx-auto px-4 py-16 max-w-2xl">
+        <div className="text-center space-y-3 mb-10">
+          <h1 className="text-3xl font-bold tracking-tight">Join a School</h1>
+          <p className="text-muted-foreground text-lg">
+            Find your school below, then create your student account.
           </p>
         </div>
 
-        <div className="bg-card p-8 rounded-xl border border-border shadow-sm mb-8">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSearch)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="slug"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>School Slug</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input className="pl-9" placeholder="e.g. solomon-academy" {...field} />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" className="w-full" disabled={isSearching}>
-                {isSearching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Find School
-              </Button>
-            </form>
-          </Form>
+        {/* Search */}
+        <div className="relative mb-6">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            placeholder="Search schools by name..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
 
-        {isError && searchSlug && (
-          <div className="text-center p-6 border border-destructive/50 bg-destructive/10 rounded-lg text-destructive">
-            School "{searchSlug}" not found. Please check the spelling.
+        {/* School list */}
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-20 w-full rounded-xl" />
+            ))}
           </div>
-        )}
-
-        {school && (
-          <Card className="border-primary">
-            <CardHeader>
-              <CardTitle>{school.name}</CardTitle>
-              <CardDescription>Found school matching "{searchSlug}"</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button 
-                className="w-full" 
-                onClick={handleApply}
-                disabled={submitApplication.isPending}
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16 text-muted-foreground">
+            {query ? `No schools found matching "${query}"` : "No schools available yet."}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((school) => (
+              <button
+                key={school.id}
+                onClick={() => handleSelect(school.id, school.name ?? "")}
+                className="w-full flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:border-primary hover:bg-primary/5 transition-all text-left group"
               >
-                {submitApplication.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Apply to Join
-              </Button>
-            </CardContent>
-          </Card>
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <GraduationCap className="h-6 w-6 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-foreground truncate">{school.name}</p>
+                  {school.slug && (
+                    <p className="text-sm text-muted-foreground truncate">{school.slug}</p>
+                  )}
+                </div>
+                <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </PublicLayout>

@@ -100,6 +100,57 @@ router.put("/users/me/notification-prefs", requireAuth, async (req: Authenticate
   res.json({ notification_prefs: data.notification_prefs });
 });
 
+// PUT /users/me/join-school — link a newly registered student to a school
+router.put("/users/me/join-school", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const { schoolId } = req.body as { schoolId?: string };
+  if (!schoolId) {
+    res.status(400).json({ error: "schoolId is required" });
+    return;
+  }
+
+  // Verify the school exists
+  const { data: school, error: schoolErr } = await supabaseAdmin
+    .from("schools")
+    .select("id, name")
+    .eq("id", schoolId)
+    .single();
+
+  if (schoolErr || !school) {
+    res.status(404).json({ error: "School not found" });
+    return;
+  }
+
+  // Only allow if user has no school yet (prevent school-hopping)
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("school_id, role")
+    .eq("id", req.userId!)
+    .single();
+
+  if (profile?.school_id) {
+    res.status(409).json({ error: "You are already associated with a school" });
+    return;
+  }
+
+  const { error: updateErr } = await supabaseAdmin
+    .from("profiles")
+    .update({ school_id: schoolId, role: "student" })
+    .eq("id", req.userId!);
+
+  if (updateErr) {
+    res.status(500).json({ error: "Failed to join school" });
+    return;
+  }
+
+  // Auto-enroll in school's public chat channels
+  try {
+    const { enrollUserInSchoolChannels } = await import("./chat");
+    await enrollUserInSchoolChannels(req.userId!, schoolId);
+  } catch { /* non-fatal */ }
+
+  res.json({ success: true, schoolId, schoolName: school.name });
+});
+
 // PUT /users/me/online - update last online time
 router.put("/users/me/online", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (!req.userId) {

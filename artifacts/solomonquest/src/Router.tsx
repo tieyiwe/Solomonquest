@@ -89,9 +89,7 @@ export function Router() {
         <Route path="/onboarding/setup">
           <ProtectedRoute><OnboardingSetup /></ProtectedRoute>
         </Route>
-        <Route path="/onboarding/join">
-          <ProtectedRoute><OnboardingJoin /></ProtectedRoute>
-        </Route>
+        <Route path="/onboarding/join" component={OnboardingJoin} />
 
         <Route path="/schools/:slug" component={SchoolPublicPage} />
         <Route path="/schools/:slug/apply" component={SchoolApply} />
