@@ -31,7 +31,7 @@ export default function Home() {
               </p>
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
                 <Button size="lg" variant="secondary" asChild className="text-lg px-8">
-                  <Link href="/onboarding/setup">Create a School</Link>
+                  <Link href="/auth/register">Create a School</Link>
                 </Button>
                 <Button size="lg" variant="outline" className="bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 text-lg px-8" asChild>
                   <Link href="/onboarding/join">Join a School</Link>
