@@ -4,8 +4,28 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Link, useRoute } from "wouter";
-import { Textarea } from "@/components/ui/textarea";
-import { ThumbsUp } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { MessageSquare, ThumbsUp, ArrowLeft } from "lucide-react";
+
+async function apiFetch(url: string, options: RequestInit = {}) {
+  const { supabase } = await import("@/lib/supabase");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token ?? "";
+  return fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+      ...(options.headers ?? {}),
+    },
+  });
+}
 
 interface ForumTopic {
   id: string;
@@ -24,6 +44,15 @@ interface ForumComment {
   created_at: string;
 }
 
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((part) => part[0] ?? "")
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
 export default function ForumTopicPage() {
   const { user } = useAuth();
   const [, params] = useRoute("/forum/topics/:id");
@@ -35,7 +64,9 @@ export default function ForumTopicPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [reacting, setReacting] = useState(false);
+  const [liked, setLiked] = useState(false);
   const [reactionCount, setReactionCount] = useState(0);
+
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   useEffect(() => {
@@ -46,19 +77,21 @@ export default function ForumTopicPage() {
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
   }, [topicId]);
 
   async function fetchTopic() {
+    setIsLoading(true);
     try {
-      const res = await fetch(`/api/forum/topics/${topicId}`);
+      const res = await apiFetch(`/api/forum/topics/${topicId}`);
       if (!res.ok) throw new Error("Failed to fetch topic");
-      const data = await res.json();
+      const data: ForumTopic = await res.json();
       setTopic(data);
       setReactionCount(data.reaction_count ?? 0);
-    } catch {
-      toast.error("Could not load topic.");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not load topic.");
     } finally {
       setIsLoading(false);
     }
@@ -66,12 +99,12 @@ export default function ForumTopicPage() {
 
   async function fetchComments() {
     try {
-      const res = await fetch(`/api/forum/topics/${topicId}/comments`);
+      const res = await apiFetch(`/api/forum/topics/${topicId}/comments`);
       if (!res.ok) throw new Error("Failed to fetch comments");
-      const data = await res.json();
+      const data: ForumComment[] = await res.json();
       setComments(data);
-    } catch {
-      toast.error("Could not load comments.");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not load comments.");
     }
   }
 
@@ -89,7 +122,6 @@ export default function ForumTopicPage() {
         (payload) => {
           const newRow = payload.new as ForumComment;
           setComments((prev) => {
-            // Avoid duplicates if the comment was already added optimistically
             if (prev.some((c) => c.id === newRow.id)) return prev;
             return [...prev, newRow];
           });
@@ -99,45 +131,57 @@ export default function ForumTopicPage() {
     channelRef.current = channel;
   }
 
-  async function handleSubmitComment() {
+  async function handleReact() {
+    setReacting(true);
+    // Optimistic toggle
+    const wasLiked = liked;
+    setLiked(!wasLiked);
+    setReactionCount((n) => (wasLiked ? n - 1 : n + 1));
+    try {
+      const res = await apiFetch(`/api/forum/topics/${topicId}/reactions`, {
+        method: "POST",
+        body: JSON.stringify({ reaction: "like" }),
+      });
+      if (!res.ok) throw new Error("Failed to react");
+      const data = await res.json();
+      // Sync with server count if available
+      if (typeof data.reaction_count === "number") {
+        setReactionCount(data.reaction_count);
+      }
+    } catch (err: any) {
+      // Revert optimistic update on error
+      setLiked(wasLiked);
+      setReactionCount((n) => (wasLiked ? n + 1 : n - 1));
+      toast.error(err?.message ?? "Could not add reaction.");
+    } finally {
+      setReacting(false);
+    }
+  }
+
+  async function handleSubmitComment(e: React.FormEvent) {
+    e.preventDefault();
     if (!newComment.trim()) {
       toast.error("Comment cannot be empty.");
       return;
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/forum/topics/${topicId}/comments`, {
+      const res = await apiFetch(`/api/forum/topics/${topicId}/comments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: newComment.trim() }),
       });
-      if (!res.ok) throw new Error("Failed to post comment");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).message ?? "Failed to post comment");
+      }
       setNewComment("");
-      // Realtime will append; also refetch as fallback
+      // Realtime will append the new comment; also refetch as fallback
       fetchComments();
-    } catch {
-      toast.error("Could not post comment.");
+      toast.success("Comment posted.");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not post comment.");
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function handleReact() {
-    setReacting(true);
-    try {
-      const res = await fetch(`/api/forum/topics/${topicId}/reactions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reaction: "like" }),
-      });
-      if (!res.ok) throw new Error("Failed to react");
-      const data = await res.json();
-      setReactionCount(data.reaction_count ?? reactionCount + 1);
-      toast.success("Reaction added.");
-    } catch {
-      toast.error("Could not add reaction.");
-    } finally {
-      setReacting(false);
     }
   }
 
@@ -153,8 +197,12 @@ export default function ForumTopicPage() {
 
   if (isLoading) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-12 text-center text-muted-foreground">
-        Loading topic...
+      <div className="max-w-3xl mx-auto px-4 py-12">
+        <div className="space-y-4">
+          <div className="h-8 w-1/2 rounded bg-muted animate-pulse" />
+          <div className="h-32 rounded-lg bg-muted animate-pulse" />
+          <div className="h-20 rounded-lg bg-muted animate-pulse" />
+        </div>
       </div>
     );
   }
@@ -162,9 +210,11 @@ export default function ForumTopicPage() {
   if (!topic) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-12 text-center text-muted-foreground">
-        Topic not found.{" "}
+        <p className="font-medium mb-3">Topic not found.</p>
         <Link href="/forum">
-          <a className="underline">Back to forum</a>
+          <a className="inline-flex items-center gap-1 text-sm underline">
+            <ArrowLeft size={14} /> Back to forum
+          </a>
         </Link>
       </div>
     );
@@ -174,59 +224,75 @@ export default function ForumTopicPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 flex flex-col gap-6">
       {/* Back link */}
       <Link href="/forum">
-        <a className="text-sm text-muted-foreground hover:underline">&larr; Back to forum</a>
+        <a className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft size={14} /> Back to forum
+        </a>
       </Link>
 
-      {/* Topic header */}
-      <div className="rounded-lg border bg-card p-6 flex flex-col gap-3">
+      {/* Topic header + content */}
+      <div className="rounded-lg border bg-card p-6 flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
-          <h1 className="text-xl font-bold leading-tight">{topic.title}</h1>
+          <h1 className="text-xl font-bold leading-snug">{topic.title}</h1>
           {topic.course_name && (
-            <span className="shrink-0 text-xs bg-primary/10 text-primary rounded px-2 py-0.5">
+            <span className="shrink-0 text-xs bg-primary/10 text-primary rounded-full px-2.5 py-0.5">
               {topic.course_name}
             </span>
           )}
         </div>
-        <div className="text-xs text-muted-foreground flex gap-3">
-          <span>{topic.author_name}</span>
+        <div className="text-xs text-muted-foreground flex items-center gap-2">
+          <span className="font-medium text-foreground">{topic.author_name}</span>
+          <span>&middot;</span>
           <span>{formatDate(topic.created_at)}</span>
         </div>
-        <div className="text-sm whitespace-pre-wrap mt-1">{topic.content}</div>
-        <div className="flex items-center gap-2 mt-2">
+        <p className="text-sm leading-relaxed whitespace-pre-wrap">{topic.content}</p>
+
+        {/* Reaction bar */}
+        <div className="flex items-center gap-2 pt-1 border-t mt-1">
           <Button
-            variant="outline"
+            variant={liked ? "default" : "outline"}
             size="sm"
             onClick={handleReact}
             disabled={reacting}
             className="flex items-center gap-1.5"
           >
             <ThumbsUp className="w-4 h-4" />
-            <span>{reactionCount}</span>
+            <span>Like ({reactionCount})</span>
           </Button>
         </div>
       </div>
 
-      {/* Comments */}
-      <div className="flex flex-col gap-2">
+      {/* Comments section */}
+      <div className="flex flex-col gap-3">
         <h2 className="text-base font-semibold">
-          {comments.length} Comment{comments.length !== 1 ? "s" : ""}
+          {comments.length === 0
+            ? "No comments yet"
+            : `${comments.length} Comment${comments.length !== 1 ? "s" : ""}`}
         </h2>
+
         {comments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No comments yet. Be the first to reply.</p>
+          <p className="text-sm text-muted-foreground">
+            Be the first to reply to this topic.
+          </p>
         ) : (
           <ul className="flex flex-col gap-3">
             {comments.map((comment) => (
               <li
                 key={comment.id}
-                className="rounded-lg border bg-card px-4 py-3 flex flex-col gap-1"
+                className="rounded-lg border bg-card px-4 py-3 flex gap-3"
               >
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">
-                    {comment.author_name}
-                  </span>
-                  <span>{formatDate(comment.created_at)}</span>
+                {/* Author initials circle */}
+                <div className="shrink-0 w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold select-none">
+                  {getInitials(comment.author_name)}
                 </div>
-                <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
+                <div className="flex flex-col gap-1 min-w-0">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      {comment.author_name}
+                    </span>
+                    <span>{formatDate(comment.created_at)}</span>
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
+                </div>
               </li>
             ))}
           </ul>
@@ -236,21 +302,24 @@ export default function ForumTopicPage() {
       {/* Add comment */}
       {user && (
         <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
-          <h3 className="text-sm font-semibold">Add a Comment</h3>
-          <Textarea
-            placeholder="Write your comment..."
-            rows={4}
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-          />
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSubmitComment}
-              disabled={submitting || !newComment.trim()}
-            >
-              {submitting ? "Posting..." : "Post Comment"}
-            </Button>
-          </div>
+          <h3 className="text-sm font-semibold">Add a comment</h3>
+          <form onSubmit={handleSubmitComment} className="flex flex-col gap-3">
+            <textarea
+              className="w-full border rounded-md px-3 py-2 text-sm bg-background min-h-[100px] resize-y"
+              placeholder="Write your comment…"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              disabled={submitting}
+            />
+            <div className="flex justify-end">
+              <Button
+                type="submit"
+                disabled={submitting || !newComment.trim()}
+              >
+                {submitting ? "Posting…" : "Submit"}
+              </Button>
+            </div>
+          </form>
         </div>
       )}
     </div>
