@@ -21,7 +21,14 @@ import {
   ClipboardList,
   TrendingUp,
   Activity,
+  Download,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Card,
@@ -275,6 +282,32 @@ function FunnelBar({ label, value, total, color }: { label: string; value: numbe
   );
 }
 
+// ─── Export helpers ───────────────────────────────────────────────────────────
+
+function exportCSV(rows: Record<string, unknown>[], filename: string) {
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const lines = [
+    headers.join(","),
+    ...rows.map((r) =>
+      headers.map((h) => JSON.stringify(r[h] ?? "")).join(",")
+    ),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportJSON(data: unknown, filename: string) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function AdminAnalytics() {
@@ -335,6 +368,43 @@ export default function AdminAnalytics() {
           <div className="flex-1">
             <h1 className="text-base font-semibold text-gray-900">Analytics</h1>
           </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Download className="h-4 w-4" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => {
+                const rows = [
+                  { metric: "Total Students", value: stats?.totalStudents ?? 0 },
+                  { metric: "Total Teachers", value: stats?.totalTeachers ?? 0 },
+                  { metric: "Active Courses", value: stats?.totalCourses ?? 0 },
+                  { metric: "Pending Applications", value: stats?.pendingApplications ?? 0 },
+                  { metric: "Applications Submitted", value: analytics?.application_funnel?.submitted ?? 0 },
+                  { metric: "Applications Approved", value: analytics?.application_funnel?.approved ?? 0 },
+                  { metric: "Applications Rejected", value: analytics?.application_funnel?.rejected ?? 0 },
+                ];
+                exportCSV(rows, "analytics-summary.csv");
+              }}>
+                Summary (CSV)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => {
+                const rows = (analytics?.enrollment_trend ?? []).map((d: any) => ({
+                  month: d.month, enrollments: d.count
+                }));
+                exportCSV(rows, "enrollment-trend.csv");
+              }}>
+                Enrollment Trend (CSV)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => {
+                exportJSON({ stats, analytics }, "analytics-full.json");
+              }}>
+                Full Data (JSON)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Avatar className="h-8 w-8 border">
             <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
             <AvatarFallback className="bg-primary text-primary-foreground text-xs">
@@ -570,9 +640,127 @@ export default function AdminAnalytics() {
               </Card>
             </div>
 
+            {/* Activity Log */}
+            <ActivityLog />
+
           </div>
         </main>
       </div>
     </div>
+  );
+}
+
+function ActivityLog() {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    import("@/lib/supabase").then(({ supabase }) =>
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!session) { setLoading(false); return; }
+        fetch("/api/activity-log?limit=50", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+          .then((r) => r.json())
+          .then((d) => setEntries(d.entries ?? []))
+          .catch(() => {})
+          .finally(() => setLoading(false));
+      })
+    );
+  }, []);
+
+  const ACTION_LABELS: Record<string, string> = {
+    login: "Logged in",
+    logout: "Logged out",
+    assignment_submitted: "Submitted assignment",
+    assignment_graded: "Graded assignment",
+    course_enrolled: "Enrolled in course",
+    topic_created: "Created forum topic",
+    comment_posted: "Posted a comment",
+    deletion_requested: "Requested school deletion",
+    branding_updated: "Updated school branding",
+  };
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              Activity Log
+            </CardTitle>
+            <CardDescription>Recent user actions across your school</CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => {
+              const rows = entries.map((e) => ({
+                date: e.createdAt,
+                user: e.performerName,
+                role: e.performerRole,
+                action: ACTION_LABELS[e.action] ?? e.action,
+                target: e.targetName ?? e.targetId ?? "",
+              }));
+              const lines = ["date,user,role,action,target", ...rows.map((r) =>
+                Object.values(r).map((v) => JSON.stringify(v ?? "")).join(",")
+              )];
+              const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a"); a.href = url; a.download = "activity-log.csv"; a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {loading ? (
+          <div className="divide-y">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3">
+                <Skeleton className="h-8 w-8 rounded-full" />
+                <div className="flex-1 space-y-1">
+                  <Skeleton className="h-3.5 w-48" />
+                  <Skeleton className="h-3 w-32" />
+                </div>
+                <Skeleton className="h-3 w-24" />
+              </div>
+            ))}
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="py-12 text-center text-muted-foreground text-sm">
+            No activity recorded yet.
+          </div>
+        ) : (
+          <div className="divide-y max-h-96 overflow-y-auto">
+            {entries.map((e) => (
+              <div key={e.id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
+                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
+                  {(e.performerName || "?")[0].toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {e.performerName}
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground capitalize">{e.performerRole}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {ACTION_LABELS[e.action] ?? e.action}
+                    {e.targetName && <span className="font-medium text-gray-700"> · {e.targetName}</span>}
+                  </p>
+                </div>
+                <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                  {new Date(e.createdAt).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -26,6 +26,8 @@ import analyticsRouter from "./analytics";
 import remindersRouter from "./reminders";
 import messagesRouter from "./messages";
 import superAdminRouter from "./super-admin";
+import activityLogRouter from "./activityLog";
+import fileConverterRouter from "./fileConverter";
 
 const router: IRouter = Router();
 
@@ -56,5 +58,7 @@ router.use(analyticsRouter);
 router.use(remindersRouter);
 router.use(messagesRouter);
 router.use(superAdminRouter);
+router.use(activityLogRouter);
+router.use(fileConverterRouter);
 
 export default router;

@@ -66,6 +66,7 @@ interface CellSelection {
   currentGrade: number | null;
   currentFeedback: string | null;
   content: string | null;
+  fileUrl: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -141,7 +142,44 @@ function GradingPanel({
 }) {
   const [grade, setGrade] = useState<string>("");
   const [feedback, setFeedback] = useState<string>("");
+  const [converting, setConverting] = useState(false);
   const gradeSubmission = useGradeSubmission();
+
+  const convertPdfToDocx = async () => {
+    if (!selection?.fileUrl) return;
+    setConverting(true);
+    try {
+      const { supabase } = await import("@/lib/supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+      const pdfResp = await fetch(selection.fileUrl);
+      if (!pdfResp.ok) throw new Error("Could not fetch PDF file");
+      const pdfBlob = await pdfResp.blob();
+      const filename = selection.fileUrl.split("/").pop() || "submission.pdf";
+      const formData = new FormData();
+      formData.append("file", pdfBlob, filename);
+      const resp = await fetch("/api/convert/pdf-to-docx", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+        body: formData,
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || "Conversion failed");
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename.replace(/\.pdf$/i, ".docx");
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Converted! Download started.");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to convert PDF");
+    } finally {
+      setConverting(false);
+    }
+  };
 
   // Sync local state when selection changes
   useState(() => {
@@ -219,6 +257,28 @@ function GradingPanel({
                 <p className="text-sm text-muted-foreground">
                   {selection?.submissionId ? "No text content available" : "No submission yet"}
                 </p>
+              </div>
+            )}
+            {selection?.fileUrl && /\.pdf$/i.test(selection.fileUrl) && (
+              <div className="mt-3 flex items-center gap-2">
+                <a
+                  href={selection.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                >
+                  <FileText className="h-3.5 w-3.5" /> View PDF
+                </a>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={convertPdfToDocx}
+                  disabled={converting}
+                  className="ml-auto text-xs h-7 gap-1.5"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {converting ? "Converting…" : "Convert to Word"}
+                </Button>
               </div>
             )}
           </div>
@@ -299,7 +359,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
   // by fetching the first assignment and iterating. The existing API only exposes per-assignment.
   // We'll accumulate submission data keyed by [studentId][assignmentId].
   const [submissionCache, setSubmissionCache] = useState<
-    Record<string, Record<string, { id: string; grade: number | null; feedback: string | null; content: string | null; status: string }>>
+    Record<string, Record<string, { id: string; grade: number | null; feedback: string | null; content: string | null; fileUrl: string | null; status: string }>>
   >({});
 
   const [selectedCell, setSelectedCell] = useState<CellSelection | null>(null);
@@ -326,6 +386,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
         currentGrade: sub?.grade ?? null,
         currentFeedback: sub?.feedback ?? null,
         content: sub?.content ?? null,
+        fileUrl: sub?.fileUrl ?? null,
       });
     },
     [submissionCache]
@@ -378,6 +439,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
                   grade: sub.grade ?? null,
                   feedback: (sub as any).feedback ?? null,
                   content: (sub as any).content ?? null,
+                  fileUrl: (sub as any).fileUrl ?? (sub as any).file_url ?? null,
                   status: sub.status,
                 };
               }
