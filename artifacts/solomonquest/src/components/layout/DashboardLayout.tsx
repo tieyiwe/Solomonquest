@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
+import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
+import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Bell, Menu, LogOut, LayoutDashboard, Users, BookOpen, Settings, CheckSquare, GraduationCap, ClipboardList, FolderOpen } from "lucide-react";
@@ -11,6 +13,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
   const [location] = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const { showTour, launchTour, closeTour } = useTour(user?.role as "student" | "staff" | null);
 
   const { data: school } = useGetMySchool({
     query: {
@@ -152,6 +156,18 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+
+      <HelpButton onClick={() => setHelpOpen(true)} />
+      {helpOpen && (
+        <HelpCenter
+          role={user?.role as "student" | "staff"}
+          onClose={() => setHelpOpen(false)}
+          onStartTour={launchTour}
+        />
+      )}
+      {showTour && (
+        <TourOverlay role={user?.role as "student" | "staff"} onClose={closeTour} />
+      )}
     </div>
   );
 }

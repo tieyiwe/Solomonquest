@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
+import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -32,6 +34,8 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
   const [location] = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [coursesExpanded, setCoursesExpanded] = useState(true);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const { showTour, launchTour, closeTour } = useTour("teacher");
 
   const { data: school } = useGetMySchool({ query: { enabled: !!user?.schoolId } });
   const { data: courses, isLoading: isCoursesLoading } = useGetMyCourses();
@@ -244,6 +248,12 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
           {children}
         </main>
       </div>
+
+      <HelpButton onClick={() => setHelpOpen(true)} />
+      {helpOpen && (
+        <HelpCenter role="teacher" onClose={() => setHelpOpen(false)} onStartTour={launchTour} />
+      )}
+      {showTour && <TourOverlay role="teacher" onClose={closeTour} />}
     </div>
   );
 }

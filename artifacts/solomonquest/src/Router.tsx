@@ -46,6 +46,7 @@ const MessagesPage = lazy(() => import("@/pages/messages/MessagesPage"));
 const SuperAdminDashboard = lazy(() => import("@/pages/super-admin/SuperAdminDashboard"));
 const AdminDangerZone = lazy(() => import("@/pages/admin/AdminDangerZone"));
 const AcceptInvitePage = lazy(() => import("@/pages/auth/AcceptInvitePage"));
+const HelpPage = lazy(() => import("@/pages/HelpPage"));
 
 
 function StudentVideoSession() {
@@ -224,6 +225,11 @@ export function Router() {
 
         {/* Public Transcript Verification Route */}
         <Route path="/transcript" component={TranscriptVerifyPage} />
+
+        {/* Help Center */}
+        <Route path="/help">
+          <ProtectedRoute><HelpPage /></ProtectedRoute>
+        </Route>
 
         <Route component={NotFound} />
       </Switch>

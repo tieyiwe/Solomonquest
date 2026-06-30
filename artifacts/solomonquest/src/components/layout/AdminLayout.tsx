@@ -15,7 +15,10 @@ import {
   Menu,
   LogOut,
   ChevronRight,
+  HelpCircle,
 } from "lucide-react";
+import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
+import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 
 const adminLinks = [
   { href: "/dashboard/admin", label: "Overview", icon: LayoutDashboard },
@@ -24,6 +27,7 @@ const adminLinks = [
   { href: "/dashboard/admin/admissions", label: "Admissions", icon: CheckSquare },
   { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
   { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
+  { href: "/help", label: "Help Center", icon: HelpCircle },
 ];
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
@@ -65,7 +69,9 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const { data: school } = useGetMySchool({ query: { enabled: !!user?.schoolId } });
+  const { showTour, launchTour, closeTour } = useTour(user?.role as "admin" | "super_admin");
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -181,6 +187,23 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8">{children}</div>
         </main>
       </div>
+
+      {/* Floating help button */}
+      <HelpButton onClick={() => setHelpOpen(true)} />
+
+      {/* Help Center drawer */}
+      {helpOpen && (
+        <HelpCenter
+          role={user?.role as "admin" | "super_admin"}
+          onClose={() => setHelpOpen(false)}
+          onStartTour={launchTour}
+        />
+      )}
+
+      {/* Guided tour */}
+      {showTour && (
+        <TourOverlay role={user?.role as "admin" | "super_admin"} onClose={closeTour} />
+      )}
     </div>
   );
 }
