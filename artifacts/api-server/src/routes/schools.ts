@@ -190,14 +190,14 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
     }
   }
 
-  // Map all branding fields to their dedicated DB columns
+  // Map all branding fields to their dedicated DB columns (only columns confirmed in schema)
   const columnUpdates: Record<string, unknown> = {};
   if (slug !== undefined) columnUpdates.slug = slug;
   if (logo_url !== undefined) columnUpdates.logo_url = logo_url;
   if (tagline !== undefined) columnUpdates.tagline = tagline;
   if (primary_color !== undefined) columnUpdates.primary_color = primary_color;
   if (secondary_color !== undefined) columnUpdates.secondary_color = secondary_color;
-  if (custom_css !== undefined) columnUpdates.custom_css = custom_css;
+  // custom_css column does not exist in schema — stored in branding JSONB only
 
   const {
     accent_color, heading_text_color, heading_font, body_font, border_radius,

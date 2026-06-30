@@ -256,3 +256,7 @@ ON CONFLICT (key) DO NOTHING;
 
 -- Forum topic cover image
 ALTER TABLE forum_topics ADD COLUMN IF NOT EXISTS cover_image text;
+
+-- Branding extended columns
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_css text;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS branding jsonb DEFAULT '{}'::jsonb;
