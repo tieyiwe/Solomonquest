@@ -54,6 +54,7 @@ interface Channel {
   unread_count?: number;
   member_count?: number;
   active_call?: { jitsi_room: string } | null;
+  createdAt?: string | null;
 }
 
 interface ChatMessage {
@@ -221,8 +222,10 @@ interface PersonResult {
 
 function PeopleSearch({
   onOpenDm,
+  directChannels,
 }: {
   onOpenDm: (userId: string, name: string) => void;
+  directChannels: Channel[];
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PersonResult[]>([]);
@@ -270,30 +273,39 @@ function PeopleSearch({
           {loading && (
             <p className="px-3 py-2 text-xs text-[#72767d]">Searching…</p>
           )}
-          {results.map((p) => (
-            <button
-              key={p.id}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-white/10 transition-colors text-left"
-              onClick={() => {
-                onOpenDm(p.id, fullName(p));
-                setQuery("");
-                setResults([]);
-              }}
-            >
-              <Avatar name={fullName(p)} size="sm" />
-              <div className="min-w-0">
-                <p className="text-white font-medium truncate">{fullName(p)}</p>
-                {p.internal_email && (
-                  <p className="text-[#72767d] text-xs truncate">{p.internal_email}</p>
+          {results.map((p) => {
+            const name = fullName(p);
+            const existing = directChannels.find((c) => c.name === name);
+            const chatDate = existing?.createdAt
+              ? new Date(existing.createdAt).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })
+              : null;
+            return (
+              <button
+                key={p.id}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-white/10 transition-colors text-left"
+                onClick={() => {
+                  onOpenDm(p.id, name);
+                  setQuery("");
+                  setResults([]);
+                }}
+              >
+                <Avatar name={name} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-white font-medium truncate">{name}</p>
+                  {chatDate ? (
+                    <p className="text-[#72767d] text-xs truncate">Chatted since {chatDate}</p>
+                  ) : p.internal_email ? (
+                    <p className="text-[#72767d] text-xs truncate">{p.internal_email}</p>
+                  ) : null}
+                </div>
+                {p.role && (
+                  <span className="text-[10px] text-[#72767d] capitalize shrink-0">
+                    {p.role.replace("_", " ")}
+                  </span>
                 )}
-              </div>
-              {p.role && (
-                <span className="ml-auto text-[10px] text-[#72767d] capitalize shrink-0">
-                  {p.role.replace("_", " ")}
-                </span>
-              )}
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -1267,7 +1279,7 @@ export default function ChatPage() {
 
         {/* People search */}
         <div className="pt-2 flex-shrink-0">
-          <PeopleSearch onOpenDm={openDmWith} />
+          <PeopleSearch onOpenDm={openDmWith} directChannels={directChannels} />
         </div>
 
         {/* Nav */}

@@ -55,23 +55,21 @@ router.get(
       return;
     }
 
-    const channels = (memberships ?? []).map((m: Record<string, unknown>) => {
-      const channel = m.chat_channels as Record<string, unknown> | null;
-      return {
-        membershipId: m.id,
-        lastSeen: m.last_seen,
-        unreadCount: 0, // read tracking will be added later
-        channel: channel
-          ? {
-              id: channel.id,
-              name: channel.name,
-              type: channel.type,
-              courseId: channel.course_id,
-              createdAt: channel.created_at,
-            }
-          : null,
-      };
-    });
+    const channels = (memberships ?? [])
+      .map((m: Record<string, unknown>) => {
+        const channel = m.chat_channels as Record<string, unknown> | null;
+        if (!channel) return null;
+        return {
+          id: channel.id,
+          name: channel.name,
+          type: channel.type,
+          courseId: channel.course_id,
+          createdAt: channel.created_at,
+          lastSeen: m.last_seen,
+          unreadCount: 0,
+        };
+      })
+      .filter(Boolean);
 
     res.json(channels);
   }
