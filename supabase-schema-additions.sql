@@ -52,6 +52,7 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS notification_prefs jsonb DEFAULT '
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS online_at timestamptz;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS bio text;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url text;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone text;
 
 -- ─── Internal email generation ────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.generate_internal_email(

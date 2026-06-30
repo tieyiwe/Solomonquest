@@ -24,7 +24,10 @@ export default function AppShell({ children, title, sidebar }: AppShellProps) {
       {/* Mobile header — only visible on mobile */}
       <header className="md:hidden fixed top-0 left-0 right-0 z-40 bg-background border-b border-border h-14 flex items-center px-4 gap-3">
         <Link href="/">
-          <a className="text-base font-bold text-primary mr-auto">SolomonQuest</a>
+          <a className="flex flex-col leading-tight mr-auto">
+            <span className="text-base font-bold text-primary">SolomonQuest</span>
+            <span className="text-[9px] text-muted-foreground tracking-widest uppercase">Powered by TIBLOGICS</span>
+          </a>
         </Link>
 
         {title && (

@@ -21,7 +21,7 @@ router.get("/auth/me", requireAuth, async (req: AuthenticatedRequest, res): Prom
     const lastName = (meta.last_name ?? meta.full_name?.split(" ").slice(1).join(" ") ?? "").trim();
     const { data: newProfile } = await supabaseAdmin
       .from("profiles")
-      .upsert({ id: req.userId, first_name: firstName, last_name: lastName })
+      .upsert({ id: req.userId, first_name: firstName, last_name: lastName, phone: meta.phone ?? null })
       .select()
       .single();
     profile = newProfile;

@@ -120,6 +120,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             <LogOut className="mr-2 h-3.5 w-3.5" />
             Sign Out
           </Button>
+          <p className="text-center text-[10px] text-slate-600 tracking-widest uppercase mt-2">Powered by TIBLOGICS</p>
         </div>
       </aside>
 

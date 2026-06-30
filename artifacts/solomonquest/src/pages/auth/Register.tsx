@@ -14,6 +14,7 @@ const registerSchema = z.object({
   firstName: z.string().min(2, "First name is required"),
   lastName: z.string().min(2, "Last name is required"),
   email: z.string().email("Please enter a valid email address"),
+  phone: z.string().min(7, "Please enter a valid phone number"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
@@ -29,6 +30,7 @@ export default function Register() {
       firstName: "",
       lastName: "",
       email: "",
+      phone: "",
       password: "",
     },
   });
@@ -43,6 +45,7 @@ export default function Register() {
           data: {
             first_name: data.firstName,
             last_name: data.lastName,
+            phone: data.phone,
           },
         },
       });
@@ -143,6 +146,25 @@ export default function Register() {
                         placeholder="name@example.com"
                         type="email"
                         autoComplete="email"
+                        className="min-h-[44px]"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone Number</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="+1 (555) 000-0000"
+                        type="tel"
+                        autoComplete="tel"
                         className="min-h-[44px]"
                         {...field}
                       />

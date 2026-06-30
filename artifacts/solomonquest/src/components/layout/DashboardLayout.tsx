@@ -101,6 +101,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <LogOut className="mr-2 h-4 w-4" />
             Sign Out
           </Button>
+          <p className="text-center text-[10px] text-muted-foreground/50 tracking-widest uppercase mt-2">Powered by TIBLOGICS</p>
         </div>
       </aside>
 
