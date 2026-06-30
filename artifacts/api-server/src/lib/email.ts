@@ -103,6 +103,7 @@ export interface TeacherInviteParams {
   schoolName: string;
   inviterName: string;
   inviteUrl: string;
+  role?: string;
 }
 
 export async function sendTeacherInvite({
@@ -110,16 +111,25 @@ export async function sendTeacherInvite({
   schoolName,
   inviterName,
   inviteUrl,
+  role = 'teacher',
 }: TeacherInviteParams): Promise<void> {
   const subject = `You've been invited to join ${schoolName} on SolomonQuest`;
+  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
 
   const body = `
     ${heading(`You've been invited to join ${schoolName}!`)}
-    ${paragraph(`<strong>${inviterName}</strong> has invited you to join <strong>${schoolName}</strong> as a teacher on SolomonQuest.`)}
+    ${paragraph(`<strong>${inviterName}</strong> has invited you to join <strong>${schoolName}</strong> as a <strong>${roleLabel}</strong> on SolomonQuest.`)}
     ${paragraph('SolomonQuest is a modern learning management system that makes it easy to manage courses, engage students, and track progress.')}
-    ${paragraph('Click the button below to accept your invitation and set up your account:')}
-    <div style="text-align:center;">${button(inviteUrl, 'Accept Invitation')}</div>
-    ${paragraph(`<span style="color:#999999;font-size:13px;">If you did not expect this invitation, you can safely ignore this email. This link will expire in 7 days.</span>`)}
+    ${paragraph('Click the button below to accept your invitation and create your account:')}
+    <div style="text-align:center;margin:32px 0;">
+      <a href="${inviteUrl}" style="display:inline-block;padding:16px 40px;background:${ACCENT};color:#ffffff;text-decoration:none;border-radius:6px;font-size:16px;font-weight:bold;letter-spacing:0.3px;">Accept Invitation</a>
+    </div>
+    <div style="margin:24px 0;padding:16px;background:#fff8e1;border-left:4px solid #f59e0b;border-radius:0 4px 4px 0;">
+      <p style="margin:0;color:#444444;font-size:13px;">
+        <strong>This invitation expires in 7 days.</strong> After that, you'll need to request a new one from your administrator.
+      </p>
+    </div>
+    ${paragraph(`<span style="color:#999999;font-size:13px;">If you didn't expect this invitation, you can ignore this email — no account will be created without your action.</span>`)}
   `;
 
   await send(to, subject, baseLayout(subject, body));

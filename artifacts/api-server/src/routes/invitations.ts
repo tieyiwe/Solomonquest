@@ -58,16 +58,18 @@ router.post(
     // Fetch school name and inviter name for the email
     const [schoolResult, profileResult] = await Promise.all([
       supabaseAdmin.from("schools").select("name").eq("id", schoolId).single(),
-      supabaseAdmin.from("profiles").select("full_name").eq("id", userId).single(),
+      supabaseAdmin.from("profiles").select("first_name, last_name").eq("id", userId).single(),
     ]);
 
     const schoolName = schoolResult.data?.name ?? "SolomonQuest School";
-    const inviterName = profileResult.data?.full_name ?? "An administrator";
+    const inviterName = profileResult.data
+      ? `${profileResult.data.first_name ?? ""} ${profileResult.data.last_name ?? ""}`.trim() || "An administrator"
+      : "An administrator";
 
     const inviteUrl = `${process.env.APP_URL ?? ""}/invite/${token}`;
 
     try {
-      await sendTeacherInvite({ to: email, schoolName, inviterName, inviteUrl });
+      await sendTeacherInvite({ to: email, schoolName, inviterName, inviteUrl, role });
     } catch (emailError) {
       console.error("[invitations] email send error:", emailError);
       // Do not fail the request — invitation is already created
