@@ -380,16 +380,39 @@ export default function AdminSchoolBranding() {
       .then((r) => r.json())
       .then((data) => {
         if (data) {
-          const b = (data.branding && typeof data.branding === "object") ? data.branding as Record<string, unknown> : {};
+          // Prefer branding JSONB if available, otherwise fall back to individual columns
+          const b = (data.branding && typeof data.branding === "object" && Object.keys(data.branding as object).length > 0)
+            ? data.branding as Record<string, unknown>
+            : null;
           setBranding((prev) => ({
             ...prev,
-            ...b,
+            ...(b ?? {}),
             school_name: (data.name as string) ?? prev.school_name,
-            slug: (b.slug as string) ?? (data.slug as string) ?? prev.slug,
-            logo_url: (b.logo_url as string) ?? (data.logoUrl as string) ?? prev.logo_url,
-            tagline: (b.tagline as string) ?? (data.tagline as string) ?? prev.tagline,
-            primary_color: (b.primary_color as string) ?? (data.primaryColor as string) ?? prev.primary_color,
-            secondary_color: (b.secondary_color as string) ?? (data.secondaryColor as string) ?? prev.secondary_color,
+            slug: (b?.slug as string) ?? (data.slug as string) ?? prev.slug,
+            logo_url: (b?.logo_url as string) ?? (data.logo_url as string) ?? (data.logoUrl as string) ?? prev.logo_url,
+            tagline: (b?.tagline as string) ?? (data.tagline as string) ?? prev.tagline,
+            primary_color: (b?.primary_color as string) ?? (data.primary_color as string) ?? (data.primaryColor as string) ?? prev.primary_color,
+            secondary_color: (b?.secondary_color as string) ?? (data.secondary_color as string) ?? (data.secondaryColor as string) ?? prev.secondary_color,
+            accent_color: (b?.accent_color as string) ?? (data.accent_color as string) ?? prev.accent_color,
+            heading_font: (b?.heading_font as string) ?? (data.heading_font as string) ?? prev.heading_font,
+            heading_text_color: (b?.heading_text_color as string) ?? (data.heading_color as string) ?? prev.heading_text_color,
+            body_font: (b?.body_font as string) ?? (data.body_font as string) ?? prev.body_font,
+            border_radius: (b?.border_radius as "sharp" | "rounded" | "pill") ?? (data.border_radius as "sharp" | "rounded" | "pill") ?? prev.border_radius,
+            banner_slides: (b?.banner_slides as HeroSlide[]) ?? (data.banner_slides as HeroSlide[]) ?? prev.banner_slides,
+            stats_visible: (b?.stats_visible as boolean) ?? (data.stats_visible as boolean) ?? prev.stats_visible,
+            stats: (b?.stats as StatItem[]) ?? (data.stats as StatItem[]) ?? prev.stats,
+            features: (b?.features as FeatureItem[]) ?? (data.features_section as FeatureItem[]) ?? prev.features,
+            testimonials: (b?.testimonials as Testimonial[]) ?? (data.testimonials as Testimonial[]) ?? prev.testimonials,
+            show_announcement: (b?.show_announcement as boolean) ?? (data.show_announcement as boolean) ?? prev.show_announcement,
+            announcement_text: (b?.announcement_text as string) ?? (data.announcement_banner as string) ?? prev.announcement_text,
+            announcement_bg_color: (b?.announcement_bg_color as string) ?? (data.announcement_color as string) ?? prev.announcement_bg_color,
+            social_facebook: (b?.social_facebook as string) ?? ((data.social_links as Record<string, string>)?.facebook) ?? prev.social_facebook,
+            social_twitter: (b?.social_twitter as string) ?? ((data.social_links as Record<string, string>)?.twitter) ?? prev.social_twitter,
+            social_instagram: (b?.social_instagram as string) ?? ((data.social_links as Record<string, string>)?.instagram) ?? prev.social_instagram,
+            social_linkedin: (b?.social_linkedin as string) ?? ((data.social_links as Record<string, string>)?.linkedin) ?? prev.social_linkedin,
+            social_youtube: (b?.social_youtube as string) ?? ((data.social_links as Record<string, string>)?.youtube) ?? prev.social_youtube,
+            social_website: (b?.social_website as string) ?? ((data.social_links as Record<string, string>)?.website) ?? prev.social_website,
+            custom_css: (b?.custom_css as string) ?? (data.custom_css as string) ?? prev.custom_css,
           }));
         }
       })
