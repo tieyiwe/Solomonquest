@@ -289,3 +289,31 @@ UPDATE public.invitations SET status = 'expired' WHERE accepted_at IS NULL AND e
 
 -- ─── Invitations archived flag ─────────────────────────────────────────────────
 ALTER TABLE public.invitations ADD COLUMN IF NOT EXISTS archived boolean NOT NULL DEFAULT false;
+
+-- ─── School AI Agent ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.school_agents (
+  school_id   uuid PRIMARY KEY REFERENCES public.schools(id) ON DELETE CASCADE,
+  name        text NOT NULL DEFAULT 'Solomon',
+  updated_by  uuid REFERENCES public.profiles(id),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.school_agents ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "school_agents_all" ON public.school_agents;
+CREATE POLICY "school_agents_all" ON public.school_agents FOR ALL USING (true);
+
+CREATE TABLE IF NOT EXISTS public.agent_conversations (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id   uuid NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  user_id     uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  role        text NOT NULL CHECK (role IN ('user','assistant')),
+  content     text NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.agent_conversations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "agent_conversations_own" ON public.agent_conversations;
+CREATE POLICY "agent_conversations_own" ON public.agent_conversations FOR ALL USING (
+  auth.uid() = user_id
+);
+CREATE INDEX IF NOT EXISTS agent_conversations_user_idx
+  ON public.agent_conversations (school_id, user_id, created_at);
