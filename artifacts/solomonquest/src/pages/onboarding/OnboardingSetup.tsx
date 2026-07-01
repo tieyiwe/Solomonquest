@@ -33,8 +33,14 @@ export default function OnboardingSetup() {
     createSchool.mutate(
       { data: { name: data.name, slug: data.slug } },
       {
-        onSuccess: () => {
+        onSuccess: async () => {
           toast.success("School created successfully!");
+          // Set up the default General chat channel for the school
+          try {
+            await fetch("/api/chat/channels/setup-school", { method: "POST" });
+          } catch {
+            // Non-fatal — channel setup failure should not block onboarding
+          }
           // User is now an admin, redirect to admin dashboard
           // Note: Wait a bit to let the user profile update its schoolId and role
           setTimeout(() => {

@@ -50,7 +50,230 @@ router.get("/assignments/pending", requireAuth, async (req: AuthenticatedRequest
   res.json(await Promise.all(pending.map(enrichAssignment)));
 });
 
-// List assignments for a course
+// GET /assignments?course_id=X — list assignments for a course with submission info
+router.get("/assignments", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const courseId = Array.isArray(req.query.course_id)
+    ? (req.query.course_id[0] as string)
+    : (req.query.course_id as string | undefined);
+
+  if (!courseId) {
+    res.status(400).json({ error: "course_id query param is required" });
+    return;
+  }
+
+  const { data: assignments, error } = await supabaseAdmin
+    .from("assignments")
+    .select("*")
+    .eq("course_id", courseId)
+    .order("due_date", { ascending: true });
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  const userId = req.userId;
+
+  const enriched = await Promise.all(
+    (assignments ?? []).map(async (a: Record<string, unknown>) => {
+      // Count submissions
+      const { count: submissionCount } = await supabaseAdmin
+        .from("submissions")
+        .select("id", { count: "exact", head: true })
+        .eq("assignment_id", a.id as string);
+
+      // Check if current user has submitted
+      let hasSubmitted = false;
+      if (userId) {
+        const { data: mySub } = await supabaseAdmin
+          .from("submissions")
+          .select("id, grade, status")
+          .eq("assignment_id", a.id as string)
+          .eq("student_id", userId)
+          .single();
+        if (mySub) {
+          hasSubmitted = true;
+        }
+      }
+
+      const base = await enrichAssignment(a);
+      return {
+        ...base,
+        submissionCount: submissionCount ?? 0,
+        hasSubmitted,
+      };
+    })
+  );
+
+  res.json(enriched);
+});
+
+// POST /assignments — create assignment (teacher/admin)
+router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const role = req.userRole;
+  if (role !== "teacher" && role !== "admin") {
+    res.status(403).json({ error: "Only teachers and admins can create assignments" });
+    return;
+  }
+
+  const { course_id, title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch } = req.body;
+
+  if (!course_id) {
+    res.status(400).json({ error: "course_id is required" });
+    return;
+  }
+  if (!title) {
+    res.status(400).json({ error: "title is required" });
+    return;
+  }
+  if (due_date && isNaN(Date.parse(due_date))) {
+    res.status(400).json({ error: "due_date must be a valid date" });
+    return;
+  }
+
+  const { data: assignment, error } = await supabaseAdmin
+    .from("assignments")
+    .insert({
+      course_id,
+      title,
+      description: description ?? null,
+      due_date: due_date ?? null,
+      points_possible: points ?? null,
+      file_url: file_url ?? null,
+      instructions: instructions ?? null,
+      is_published: true,
+      assignment_type: assignment_type ?? "standard",
+      video_url: video_url ?? null,
+      require_full_watch: require_full_watch ?? false,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
+
+  // Notify all enrolled students
+  const { data: enrollments } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("student_id")
+    .eq("course_id", course_id)
+    .eq("status", "active");
+
+  if (enrollments && enrollments.length > 0) {
+    const notifications = enrollments.map((e: Record<string, unknown>) => ({
+      user_id: e.student_id as string,
+      title: "New Assignment",
+      message: `A new assignment "${title}" has been posted.`,
+      type: "assignment",
+      reference_id: assignment.id,
+      is_read: false,
+    }));
+
+    await supabaseAdmin.from("notifications").insert(notifications);
+  }
+
+  res.status(201).json(await enrichAssignment(assignment));
+});
+
+// PUT /assignments/:id — update assignment (teacher who owns course / admin)
+router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const role = req.userRole;
+  const userId = req.userId;
+
+  // Fetch existing assignment
+  const { data: existing, error: fetchError } = await supabaseAdmin
+    .from("assignments")
+    .select("*, courses(teacher_id)")
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !existing) {
+    res.status(404).json({ error: "Assignment not found" });
+    return;
+  }
+
+  // Ownership check for teachers
+  if (role !== "admin") {
+    const teacherId = (existing.courses as Record<string, unknown> | null)?.teacher_id;
+    if (teacherId !== userId) {
+      res.status(403).json({ error: "You do not have permission to update this assignment" });
+      return;
+    }
+  }
+
+  const { title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch } = req.body;
+
+  if (due_date !== undefined && due_date !== null && isNaN(Date.parse(due_date))) {
+    res.status(400).json({ error: "due_date must be a valid date" });
+    return;
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (title !== undefined) updates.title = title;
+  if (description !== undefined) updates.description = description;
+  if (due_date !== undefined) updates.due_date = due_date;
+  if (points !== undefined) updates.points_possible = points;
+  if (file_url !== undefined) updates.file_url = file_url;
+  if (instructions !== undefined) updates.instructions = instructions;
+  if (assignment_type !== undefined) updates.assignment_type = assignment_type;
+  if (video_url !== undefined) updates.video_url = video_url;
+  if (require_full_watch !== undefined) updates.require_full_watch = require_full_watch;
+
+  const { data, error } = await supabaseAdmin
+    .from("assignments")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error || !data) {
+    res.status(400).json({ error: error?.message ?? "Failed to update assignment" });
+    return;
+  }
+
+  res.json(await enrichAssignment(data));
+});
+
+// DELETE /assignments/:id — delete assignment (teacher who owns course / admin)
+router.delete("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const role = req.userRole;
+  const userId = req.userId;
+
+  // Fetch existing assignment for ownership check
+  const { data: existing, error: fetchError } = await supabaseAdmin
+    .from("assignments")
+    .select("*, courses(teacher_id)")
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !existing) {
+    res.status(404).json({ error: "Assignment not found" });
+    return;
+  }
+
+  if (role !== "admin") {
+    const teacherId = (existing.courses as Record<string, unknown> | null)?.teacher_id;
+    if (teacherId !== userId) {
+      res.status(403).json({ error: "You do not have permission to delete this assignment" });
+      return;
+    }
+  }
+
+  const { error } = await supabaseAdmin.from("assignments").delete().eq("id", id);
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  res.sendStatus(204);
+});
+
+// List assignments for a course (legacy route by path param)
 router.get("/courses/:courseId/assignments", requireAuth, async (req, res): Promise<void> => {
   const courseId = Array.isArray(req.params.courseId) ? req.params.courseId[0] : req.params.courseId;
 
@@ -68,7 +291,7 @@ router.get("/courses/:courseId/assignments", requireAuth, async (req, res): Prom
   res.json(await Promise.all((data ?? []).map(enrichAssignment)));
 });
 
-// Create assignment
+// Create assignment (legacy route by path param)
 router.post("/courses/:courseId/assignments", requireAuth, async (req, res): Promise<void> => {
   const courseId = Array.isArray(req.params.courseId) ? req.params.courseId[0] : req.params.courseId;
   const { title, description, dueDate, pointsPossible } = req.body;
@@ -117,10 +340,10 @@ router.get("/assignments/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(await enrichAssignment(data));
 });
 
-// Update assignment
+// Update assignment (PATCH - legacy)
 router.patch("/assignments/:id", requireAuth, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { title, description, dueDate, pointsPossible, isPublished } = req.body;
+  const { title, description, dueDate, pointsPossible, isPublished, videoUrl, requireFullWatch, assignmentType } = req.body;
 
   const updates: Record<string, unknown> = {};
   if (title !== undefined) updates.title = title;
@@ -128,6 +351,9 @@ router.patch("/assignments/:id", requireAuth, async (req, res): Promise<void> =>
   if (dueDate !== undefined) updates.due_date = dueDate;
   if (pointsPossible !== undefined) updates.points_possible = pointsPossible;
   if (isPublished !== undefined) updates.is_published = isPublished;
+  if (assignmentType !== undefined) updates.assignment_type = assignmentType;
+  if (videoUrl !== undefined) updates.video_url = videoUrl;
+  if (requireFullWatch !== undefined) updates.require_full_watch = requireFullWatch;
 
   const { data, error } = await supabaseAdmin
     .from("assignments")
@@ -142,20 +368,6 @@ router.patch("/assignments/:id", requireAuth, async (req, res): Promise<void> =>
   }
 
   res.json(await enrichAssignment(data));
-});
-
-// Delete assignment
-router.delete("/assignments/:id", requireAuth, async (req, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-
-  const { error } = await supabaseAdmin.from("assignments").delete().eq("id", id);
-
-  if (error) {
-    res.status(404).json({ error: "Assignment not found" });
-    return;
-  }
-
-  res.sendStatus(204);
 });
 
 async function enrichAssignment(a: Record<string, unknown>) {
@@ -175,10 +387,15 @@ async function enrichAssignment(a: Record<string, unknown>) {
     courseId: a.course_id,
     title: a.title,
     description: a.description,
+    instructions: a.instructions,
+    fileUrl: a.file_url,
     dueDate: a.due_date,
     pointsPossible: a.points_possible,
     isPublished: a.is_published,
     courseTitle,
+    assignmentType: (a.assignment_type as string) ?? "standard",
+    videoUrl: (a.video_url as string | null) ?? null,
+    requireFullWatch: (a.require_full_watch as boolean) ?? false,
   };
 }
 

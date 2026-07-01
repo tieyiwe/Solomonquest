@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -6,9 +7,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, BookOpen, GraduationCap, Users } from "lucide-react";
 import { generate_image_tool } from "@/components/ui/empty"; // Dummy import to avoid error if we don't have it, actually just use standard icons
+import { setPageMeta } from "@/lib/seo";
 
 export default function Home() {
   const { data: schools, isLoading } = useListSchools();
+
+  useEffect(() => {
+    setPageMeta({ title: "Home", description: "Discover schools and courses on SolomonQuest LMS" });
+  }, []);
 
   return (
     <PublicLayout>
@@ -25,7 +31,7 @@ export default function Home() {
               </p>
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
                 <Button size="lg" variant="secondary" asChild className="text-lg px-8">
-                  <Link href="/onboarding/setup">Create a School</Link>
+                  <Link href="/auth/register">Create a School</Link>
                 </Button>
                 <Button size="lg" variant="outline" className="bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 text-lg px-8" asChild>
                   <Link href="/onboarding/join">Join a School</Link>
@@ -102,12 +108,19 @@ export default function Home() {
                 {schools.map((school) => (
                   <Link key={school.id} href={`/schools/${school.slug}`}>
                     <Card className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer h-full group border-border">
-                      <div 
-                        className="h-32 bg-primary/10 relative"
-                        style={{ backgroundColor: school.primaryColor ? `hsl(from ${school.primaryColor} h s l / 0.1)` : undefined }}
+                      <div
+                        className="h-36 relative"
+                        style={{
+                          backgroundColor: school.primaryColor ?? "#4f46e5",
+                          backgroundImage: school.bannerUrl ? `url(${school.bannerUrl})` : undefined,
+                          backgroundSize: "cover",
+                          backgroundPosition: "center",
+                        }}
                       >
+                        {/* Gradient overlay so logo pops */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
                         {school.logoUrl && (
-                          <div className="absolute -bottom-6 left-6 h-12 w-12 rounded-full border-4 border-card bg-background overflow-hidden">
+                          <div className="absolute -bottom-6 left-4 h-12 w-12 rounded-full border-4 border-card bg-background overflow-hidden shadow-sm">
                             <img src={school.logoUrl} alt={school.name} className="w-full h-full object-cover" />
                           </div>
                         )}

@@ -1,0 +1,18 @@
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (max-width: 768px) {
+  .mobile-card {
+    border-radius: 16px;
+  }
+
+  .mobile-input {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+}

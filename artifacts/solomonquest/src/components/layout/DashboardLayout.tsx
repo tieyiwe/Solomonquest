@@ -1,16 +1,21 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
+import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
+import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Bell, Menu, LogOut, LayoutDashboard, Users, BookOpen, Settings, CheckSquare, GraduationCap, ClipboardList } from "lucide-react";
+import { Bell, Menu, LogOut, LayoutDashboard, Users, BookOpen, Settings, CheckSquare, GraduationCap, ClipboardList, FolderOpen } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useGetMySchool } from "@workspace/api-client-react";
+import { BottomNav } from "@/components/layout/BottomNav";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
   const [location] = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const { showTour, launchTour, closeTour } = useTour(user?.role as "student" | "staff" | null);
 
   const { data: school } = useGetMySchool({
     query: {
@@ -27,6 +32,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     { href: "/dashboard/admin/users", label: "Users", icon: Users },
     { href: "/dashboard/admin/courses", label: "Courses", icon: BookOpen },
     { href: "/dashboard/admin/admissions", label: "Admissions", icon: CheckSquare },
+    { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
     { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
   ];
 
@@ -49,15 +55,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const links = getLinks();
 
   const NavLinks = () => (
-    <nav className="flex flex-col gap-2 p-4">
+    <nav className="flex flex-col gap-1 p-3">
       {links.map((link) => {
         const Icon = link.icon;
         const isActive = location === link.href || location.startsWith(`${link.href}/`);
         return (
           <Button
             key={link.href}
-            variant={isActive ? "secondary" : "ghost"}
-            className={`justify-start ${isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/50"}`}
+            variant="ghost"
+            className={`justify-start ${isActive ? "bg-white/15 text-white font-semibold border-l-2 border-white rounded-l-none hover:bg-white/20 hover:text-white" : "text-slate-300 hover:bg-white/8 hover:text-white"}`}
             asChild
             onClick={() => setIsMobileMenuOpen(false)}
           >
@@ -74,10 +80,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background flex">
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-64 flex-col border-r bg-sidebar h-screen sticky top-0">
-        <div className="p-6 border-b border-sidebar-border h-16 flex items-center">
+      <aside className="hidden md:flex w-64 flex-col bg-slate-900 h-screen sticky top-0">
+        <div className="p-6 border-b border-white/10 h-16 flex items-center">
           <Link href="/">
-            <h1 className="text-xl font-bold text-sidebar-primary tracking-tight truncate">
+            <h1 className="text-xl font-bold text-white tracking-tight truncate">
               {school?.name || "SolomonQuest"}
             </h1>
           </Link>
@@ -85,21 +91,22 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         <div className="flex-1 overflow-y-auto">
           <NavLinks />
         </div>
-        <div className="p-4 border-t border-sidebar-border">
+        <div className="p-4 border-t border-white/10">
           <div className="flex items-center gap-3 mb-4 px-2">
-            <Avatar className="h-9 w-9 border border-sidebar-border">
+            <Avatar className="h-9 w-9 border border-white/20">
               <AvatarImage src={user?.avatarUrl || ""} />
-              <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">{getInitials(user?.firstName, user?.lastName)}</AvatarFallback>
+              <AvatarFallback className="bg-white/20 text-white">{getInitials(user?.firstName, user?.lastName)}</AvatarFallback>
             </Avatar>
             <div className="flex flex-col overflow-hidden">
-              <span className="text-sm font-medium text-sidebar-foreground truncate">{user?.firstName} {user?.lastName}</span>
-              <span className="text-xs text-sidebar-foreground/70 capitalize truncate">{user?.role?.replace("_", " ")}</span>
+              <span className="text-sm font-medium text-white truncate">{user?.firstName} {user?.lastName}</span>
+              <span className="text-xs text-white/50 capitalize truncate">{user?.role?.replace("_", " ")}</span>
             </div>
           </div>
-          <Button variant="ghost" className="w-full justify-start text-sidebar-foreground hover:text-destructive hover:bg-destructive/10" onClick={signOut}>
+          <Button variant="ghost" className="w-full justify-start text-white/60 hover:text-red-400 hover:bg-red-500/10" onClick={signOut}>
             <LogOut className="mr-2 h-4 w-4" />
             Sign Out
           </Button>
+          <p className="text-center text-[10px] text-white/20 tracking-widest uppercase mt-2">Powered by TIBLOGICS</p>
         </div>
       </aside>
 
@@ -114,9 +121,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0 bg-sidebar border-r-sidebar-border">
-                <div className="p-6 border-b border-sidebar-border h-16 flex items-center">
-                  <h1 className="text-xl font-bold text-sidebar-primary tracking-tight truncate">
+              <SheetContent side="left" className="w-72 p-0 bg-slate-900 border-r border-slate-700">
+                <div className="p-6 border-b border-white/10 h-16 flex items-center">
+                  <h1 className="text-xl font-bold text-white tracking-tight truncate">
                     {school?.name || "SolomonQuest"}
                   </h1>
                 </div>
@@ -146,10 +153,25 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background has-bottom-nav md:pb-6">
           {children}
         </main>
       </div>
+
+      {/* Mobile Bottom Nav */}
+      <BottomNav links={links} onItemClick={() => setIsMobileMenuOpen(false)} />
+
+      <HelpButton onClick={() => setHelpOpen(true)} />
+      {helpOpen && (
+        <HelpCenter
+          role={user?.role as "student" | "staff"}
+          onClose={() => setHelpOpen(false)}
+          onStartTour={launchTour}
+        />
+      )}
+      {showTour && (
+        <TourOverlay role={user?.role as "student" | "staff"} onClose={closeTour} />
+      )}
     </div>
   );
 }

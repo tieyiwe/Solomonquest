@@ -248,6 +248,57 @@ router.post("/courses/:id/enroll", requireAuth, async (req, res): Promise<void> 
   });
 });
 
+// Update live class settings
+router.put("/courses/:id/live-settings", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const role = req.userRole;
+  if (role !== "admin" && role !== "teacher") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const { is_live, class_date, class_end_time } = req.body;
+
+  const updates: Record<string, unknown> = {};
+  if (is_live !== undefined) updates.is_live = is_live;
+  if (class_date !== undefined) updates.class_date = class_date;
+  if (class_end_time !== undefined) updates.class_end_time = class_end_time;
+
+  const { data, error } = await supabaseAdmin
+    .from("courses")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error || !data) {
+    res.status(404).json({ error: "Course not found" });
+    return;
+  }
+
+  // Send notifications to enrolled students if going live with a date
+  if (is_live === true && class_date) {
+    const { data: enrollments } = await supabaseAdmin
+      .from("course_enrollments")
+      .select("student_id")
+      .eq("course_id", id)
+      .eq("status", "active");
+
+    if (enrollments && enrollments.length > 0) {
+      const notifications = (enrollments as Record<string, unknown>[]).map((e) => ({
+        user_id: e.student_id,
+        course_id: id,
+        message: `Live class scheduled for ${class_date}`,
+        type: "live_class",
+      }));
+
+      await supabaseAdmin.from("notifications").insert(notifications);
+    }
+  }
+
+  res.json(await enrichCourse(data as Record<string, unknown>));
+});
+
 async function enrichCourse(c: Record<string, unknown>) {
   let teacherName: string | null = null;
   let studentCount: number | null = null;

@@ -59,6 +59,140 @@ router.post("/courses/:courseId/attendance", requireAuth, async (req, res): Prom
   res.status(201).json(await enrichAttendance(data));
 });
 
+// POST /attendance/checkin - student self-check-in for live class
+router.post("/attendance/checkin", requireAuth, async (req, res): Promise<void> => {
+  const { course_id } = req.body;
+  const studentId = req.userId;
+
+  if (!course_id) {
+    res.status(400).json({ error: "course_id is required" });
+    return;
+  }
+
+  // Check that today is the class_date for this course
+  const { data: course, error: courseError } = await supabaseAdmin
+    .from("courses")
+    .select("id, is_live, class_date")
+    .eq("id", course_id)
+    .single();
+
+  if (courseError || !course) {
+    res.status(404).json({ error: "Course not found" });
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const classDate = course.class_date ? String(course.class_date).slice(0, 10) : null;
+
+  if (!course.is_live || classDate !== today) {
+    res.status(400).json({ error: "No live class scheduled for today" });
+    return;
+  }
+
+  // Check if student is enrolled
+  const { data: enrollment } = await supabaseAdmin
+    .from("enrollments")
+    .select("id")
+    .eq("course_id", course_id)
+    .eq("student_id", studentId)
+    .single();
+
+  if (!enrollment) {
+    res.status(403).json({ error: "You are not enrolled in this course" });
+    return;
+  }
+
+  const now = new Date().toISOString();
+
+  const { data, error } = await supabaseAdmin
+    .from("attendance")
+    .upsert(
+      {
+        course_id,
+        student_id: studentId,
+        session_date: today,
+        status: "present",
+        checked_in_at: now,
+        checkin_method: "self",
+      },
+      { onConflict: "course_id,student_id,session_date" }
+    )
+    .select("checked_in_at")
+    .single();
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  res.json({
+    success: true,
+    message: "Checked in successfully",
+    checked_in_at: data?.checked_in_at ?? now,
+  });
+});
+
+// GET /attendance/live-class?course_id=X - teacher/admin gets today's check-in list
+router.get("/attendance/live-class", requireAuth, async (req, res): Promise<void> => {
+  const course_id = Array.isArray(req.query.course_id)
+    ? req.query.course_id[0]
+    : req.query.course_id;
+
+  if (!course_id) {
+    res.status(400).json({ error: "course_id is required" });
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Get all enrollments for the course
+  const { data: enrollments, error: enrollError } = await supabaseAdmin
+    .from("enrollments")
+    .select("student_id, profiles:student_id(first_name, last_name, unique_student_id)")
+    .eq("course_id", course_id);
+
+  if (enrollError) {
+    res.status(500).json({ error: enrollError.message });
+    return;
+  }
+
+  // Get today's attendance records
+  const { data: attendanceRecords, error: attError } = await supabaseAdmin
+    .from("attendance")
+    .select("student_id, status, checked_in_at, id")
+    .eq("course_id", course_id)
+    .eq("session_date", today);
+
+  if (attError) {
+    res.status(500).json({ error: attError.message });
+    return;
+  }
+
+  const attendanceMap = new Map(
+    (attendanceRecords ?? []).map((r) => [r.student_id, r])
+  );
+
+  const students = (enrollments ?? []).map((e) => {
+    const profile = Array.isArray(e.profiles) ? e.profiles[0] : e.profiles;
+    const att = attendanceMap.get(e.student_id);
+    return {
+      id: e.student_id,
+      name: profile
+        ? [profile.first_name, profile.last_name].filter(Boolean).join(" ")
+        : null,
+      unique_student_id: profile?.unique_student_id ?? null,
+      checked_in: att?.status === "present",
+      checked_in_at: att?.checked_in_at ?? null,
+      attendance_id: att?.id ?? null,
+    };
+  });
+
+  const total_enrolled = students.length;
+  const total_checked_in = students.filter((s) => s.checked_in).length;
+
+  res.json({ total_enrolled, total_checked_in, students });
+});
+
 async function enrichAttendance(a: Record<string, unknown>) {
   let studentName: string | null = null;
 
