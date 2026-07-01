@@ -10,7 +10,7 @@ const router: IRouter = Router();
 const DEFAULT_AGENT_NAME = "Solomon";
 
 function isStaff(role?: string): boolean {
-  return role === "admin" || role === "super_admin" || role === "teacher";
+  return role === "admin" || role === "super_admin" || role === "teacher" || role === "staff";
 }
 
 // ─── Tool definitions ──────────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ Current school snapshot (always current as of this message):
 - Recent announcements:
 ${recentAnnouncements}
 
-You assist school admins and teachers. Be concise and practical. You can answer questions about the school using the snapshot above, and you can propose actions (creating reminders, posting announcements, or — for admins only — broadcasting a message to every student, teacher, or staff member by email or in-app chat) using the tools available to you. When asked to send a message, write the full message text yourself in a professional tone matching what was requested; never leave placeholders for the user to fill in. Never claim to have performed an action yourself — when you call a tool, the user will be shown a confirmation prompt before anything actually happens, so phrase your responses accordingly (e.g. "I've drafted a message for you to review" rather than "I've sent the message").`;
+You assist school admins, teachers, and staff. Be concise and practical. You can answer questions about the school using the snapshot above, and you can propose actions (creating reminders, posting announcements, or — for admins only — broadcasting a message to every student, teacher, or staff member by email or in-app chat) using the tools available to you. When asked to send a message, write the full message text yourself in a professional tone matching what was requested; never leave placeholders for the user to fill in. Never claim to have performed an action yourself — when you call a tool, the user will be shown a confirmation prompt before anything actually happens, so phrase your responses accordingly (e.g. "I've drafted a message for you to review" rather than "I've sent the message").`;
 }
 
 // ─── GET /agent/settings ────────────────────────────────────────────────────────

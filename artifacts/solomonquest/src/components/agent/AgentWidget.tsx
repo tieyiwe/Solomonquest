@@ -57,7 +57,8 @@ export function AgentWidget() {
   const [actionLoading, setActionLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const canUseAgent = user?.role === "admin" || user?.role === "super_admin" || user?.role === "teacher";
+  const canUseAgent =
+    user?.role === "admin" || user?.role === "super_admin" || user?.role === "teacher" || user?.role === "staff";
 
   useEffect(() => {
     if (!open || !canUseAgent) return;
