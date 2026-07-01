@@ -11,7 +11,7 @@ function isTeacherOrAdmin(role?: string): boolean {
 // ---------------------------------------------------------------------------
 // GET /quizzes?course_id=X - list quizzes for a course
 // ---------------------------------------------------------------------------
-router.get("/", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+router.get("/quizzes", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const { course_id } = req.query;
 
   if (!course_id) {
@@ -40,7 +40,7 @@ router.get("/", requireAuth, async (req: AuthenticatedRequest, res): Promise<voi
 // ---------------------------------------------------------------------------
 // POST /quizzes - create quiz (teacher/admin only)
 // ---------------------------------------------------------------------------
-router.post("/", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+router.post("/quizzes", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (!isTeacherOrAdmin(req.userRole)) {
     res.status(403).json({ error: "Forbidden" });
     return;
@@ -90,7 +90,7 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res): Promise<vo
 // ---------------------------------------------------------------------------
 // GET /quizzes/:id - get quiz with questions
 // ---------------------------------------------------------------------------
-router.get("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+router.get("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const { id } = req.params;
 
   try {
@@ -125,7 +125,7 @@ router.get("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<
 // ---------------------------------------------------------------------------
 // PUT /quizzes/:id - update quiz metadata
 // ---------------------------------------------------------------------------
-router.put("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+router.put("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (!isTeacherOrAdmin(req.userRole)) {
     res.status(403).json({ error: "Forbidden" });
     return;
@@ -175,7 +175,7 @@ router.put("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<
 // ---------------------------------------------------------------------------
 // DELETE /quizzes/:id - delete quiz
 // ---------------------------------------------------------------------------
-router.delete("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+router.delete("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (!isTeacherOrAdmin(req.userRole)) {
     res.status(403).json({ error: "Forbidden" });
     return;
@@ -201,7 +201,7 @@ router.delete("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promi
 // POST /quizzes/:id/questions - add question (teacher/admin only)
 // ---------------------------------------------------------------------------
 router.post(
-  "/:id/questions",
+  "/quizzes/:id/questions",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     if (!isTeacherOrAdmin(req.userRole)) {
@@ -248,7 +248,7 @@ router.post(
 // PUT /quizzes/:id/questions/:qid - update question
 // ---------------------------------------------------------------------------
 router.put(
-  "/:id/questions/:qid",
+  "/quizzes/:id/questions/:qid",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     if (!isTeacherOrAdmin(req.userRole)) {
@@ -297,7 +297,7 @@ router.put(
 // DELETE /quizzes/:id/questions/:qid - delete question
 // ---------------------------------------------------------------------------
 router.delete(
-  "/:id/questions/:qid",
+  "/quizzes/:id/questions/:qid",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     if (!isTeacherOrAdmin(req.userRole)) {
@@ -330,7 +330,7 @@ router.delete(
 // POST /quizzes/:id/publish - set is_published=true
 // ---------------------------------------------------------------------------
 router.post(
-  "/:id/publish",
+  "/quizzes/:id/publish",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     if (!isTeacherOrAdmin(req.userRole)) {
@@ -369,7 +369,7 @@ router.post(
 // POST /quizzes/:id/attempts - start attempt (student)
 // ---------------------------------------------------------------------------
 router.post(
-  "/:id/attempts",
+  "/quizzes/:id/attempts",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { id } = req.params;
@@ -457,7 +457,7 @@ router.post(
 // PUT /quizzes/:id/attempts/:aid - submit attempt with auto-grading
 // ---------------------------------------------------------------------------
 router.put(
-  "/:id/attempts/:aid",
+  "/quizzes/:id/attempts/:aid",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { id, aid } = req.params;
@@ -573,7 +573,7 @@ router.put(
 // Security: students only see their own attempts; teachers see all for their course.
 // ---------------------------------------------------------------------------
 router.get(
-  "/:id/attempts",
+  "/quizzes/:id/attempts",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { id } = req.params;
@@ -650,7 +650,7 @@ router.get(
 // GET /quizzes/:id/analytics - return average score, attempt count, question breakdown
 // ---------------------------------------------------------------------------
 router.get(
-  "/:id/analytics",
+  "/quizzes/:id/analytics",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
     if (!isTeacherOrAdmin(req.userRole)) {
