@@ -260,3 +260,13 @@ ALTER TABLE forum_topics ADD COLUMN IF NOT EXISTS cover_image text;
 -- Branding extended columns
 ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_css text;
 ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS branding jsonb DEFAULT '{}'::jsonb;
+
+-- ─── Invitations status column ─────────────────────────────────────────────────
+-- supabase-schema.sql's invitations table was created without a `status` column,
+-- but the API reads/writes it on every request, so invites failed silently.
+ALTER TABLE public.invitations ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending';
+ALTER TABLE public.invitations DROP CONSTRAINT IF EXISTS invitations_status_check;
+ALTER TABLE public.invitations ADD CONSTRAINT invitations_status_check
+  CHECK (status IN ('pending','accepted','expired'));
+UPDATE public.invitations SET status = 'accepted' WHERE accepted_at IS NOT NULL AND status = 'pending';
+UPDATE public.invitations SET status = 'expired' WHERE accepted_at IS NULL AND expires_at < now() AND status = 'pending';
