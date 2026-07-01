@@ -10,6 +10,13 @@ const app: Express = express();
 
 app.disable("x-powered-by");
 
+// Replit's infrastructure sits in front of this app as a reverse proxy and
+// sets X-Forwarded-For. Without trusting it, express-rate-limit throws
+// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR on every request, which was crashing
+// the health check and causing autoscale to repeatedly kill/restart the
+// container.
+app.set("trust proxy", 1);
+
 app.use(helmet());
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "http://localhost:3000").split(",");
