@@ -102,7 +102,7 @@ router.get(
 
       const { data: invitations, error } = await supabaseAdmin
         .from("invitations")
-        .select("id, email, role, status, created_at, expires_at, accepted_at")
+        .select("id, email, role, status, created_at, expires_at, accepted_at, archived")
         .eq("school_id", schoolId)
         .order("created_at", { ascending: false });
 
@@ -115,6 +115,54 @@ router.get(
       res.json({ invitations });
     } catch (err: any) {
       console.error("[invitations] Unhandled error in GET /invitations:", err);
+      res.status(500).json({ error: err?.message ?? "Internal server error" });
+    }
+  }
+);
+
+// ─── PATCH /invitations/:id/archive — archive/unarchive invitation ───────────
+
+router.patch(
+  "/invitations/:id/archive",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { userRole, schoolId } = req;
+      const { id } = req.params;
+      const { archived = true } = req.body as { archived?: boolean };
+
+      if (userRole !== "admin" && userRole !== "super_admin") {
+        res.status(403).json({ error: "Forbidden: admin access required" });
+        return;
+      }
+
+      if (!schoolId) {
+        res.status(400).json({ error: "No school associated with this account" });
+        return;
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("invitations")
+        .update({ archived })
+        .eq("id", id)
+        .eq("school_id", schoolId)
+        .select("id, archived")
+        .single();
+
+      if (error) {
+        console.error("[invitations] archive error:", error);
+        res.status(500).json({ error: error.message ?? "Failed to update invitation" });
+        return;
+      }
+
+      if (!data) {
+        res.status(404).json({ error: "Invitation not found" });
+        return;
+      }
+
+      res.json({ success: true, archived: data.archived });
+    } catch (err: any) {
+      console.error("[invitations] Unhandled error in PATCH /invitations/:id/archive:", err);
       res.status(500).json({ error: err?.message ?? "Internal server error" });
     }
   }

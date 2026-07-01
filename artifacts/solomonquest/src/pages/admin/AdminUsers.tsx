@@ -59,6 +59,9 @@ import {
   GraduationCap,
   Briefcase,
   Send,
+  Trash2,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -249,14 +252,15 @@ function InviteButton({
   role,
   onSent,
 }: {
-  role: "teacher" | "staff";
+  role: "teacher" | "staff" | "student";
   onSent: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const roleLabel = role === "teacher" ? "Teacher" : "Staff Member";
-  const placeholder = role === "teacher" ? "teacher@school.edu" : "staff@school.edu";
+  const roleLabel = role === "teacher" ? "Teacher" : role === "staff" ? "Staff Member" : "Student";
+  const placeholder =
+    role === "teacher" ? "teacher@school.edu" : role === "staff" ? "staff@school.edu" : "student@school.edu";
 
   const handleSend = async () => {
     if (!email.trim()) return;
@@ -341,6 +345,7 @@ interface Invitation {
   created_at: string;
   expires_at: string;
   accepted_at?: string | null;
+  archived?: boolean;
 }
 
 function statusBadge(status: string) {
@@ -358,8 +363,10 @@ function InvitationsTab({ refreshKey }: { refreshKey: number }) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
     let cancelled = false;
     setLoading(true);
     setFetchError("");
@@ -378,7 +385,51 @@ function InvitationsTab({ refreshKey }: { refreshKey: number }) {
         .finally(() => { if (!cancelled) setLoading(false); });
     });
     return () => { cancelled = true; };
-  }, [refreshKey]);
+  };
+
+  useEffect(() => load(), [refreshKey]);
+
+  const handleArchive = async (inv: Invitation) => {
+    setBusyId(inv.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/invitations/${inv.id}/archive`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ archived: !inv.archived }),
+      });
+      if (!res.ok) throw new Error("Failed to update invitation");
+      setInvitations((prev) =>
+        prev.map((i) => (i.id === inv.id ? { ...i, archived: !inv.archived } : i))
+      );
+      toast.success(inv.archived ? "Invitation unarchived" : "Invitation archived");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update invitation");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleDelete = async (inv: Invitation) => {
+    setBusyId(inv.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/invitations/${inv.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (!res.ok) throw new Error("Failed to delete invitation");
+      setInvitations((prev) => prev.filter((i) => i.id !== inv.id));
+      toast.success("Invitation deleted");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete invitation");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -396,54 +447,124 @@ function InvitationsTab({ refreshKey }: { refreshKey: number }) {
     );
   }
 
-  if (invitations.length === 0) {
-    return (
-      <div className="text-center py-16 text-muted-foreground">
-        <Mail className="h-10 w-10 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">No invitations sent yet. Use the Invite buttons in the Teachers or Staff tabs.</p>
-      </div>
-    );
-  }
+  const visibleInvitations = invitations.filter((inv) => !!inv.archived === showArchived);
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow className="bg-gray-50/50">
-          <TableHead className="font-semibold">Email</TableHead>
-          <TableHead className="font-semibold">Role</TableHead>
-          <TableHead className="font-semibold">Status</TableHead>
-          <TableHead className="font-semibold">Sent</TableHead>
-          <TableHead className="font-semibold">Accepted / Expires</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {invitations.map((inv) => (
-          <TableRow key={inv.id}>
-            <TableCell className="font-medium text-sm">{inv.email}</TableCell>
-            <TableCell>
-              {inv.role === "teacher" ? (
-                <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Teacher</Badge>
-              ) : inv.role === "staff" ? (
-                <Badge className="bg-orange-100 text-orange-700 border-orange-200 border">Staff</Badge>
-              ) : (
-                <Badge variant="outline" className="capitalize">{inv.role}</Badge>
-              )}
-            </TableCell>
-            <TableCell>{statusBadge(inv.status)}</TableCell>
-            <TableCell className="text-sm text-muted-foreground">
-              {new Date(inv.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
-            </TableCell>
-            <TableCell className="text-sm text-muted-foreground">
-              {inv.status === "accepted" && inv.accepted_at
-                ? new Date(inv.accepted_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-                : inv.status === "expired"
-                ? "—"
-                : `Expires ${new Date(inv.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <div>
+      <div className="flex items-center justify-between px-4 py-3 border-b">
+        <p className="text-sm text-muted-foreground">
+          {showArchived ? "Archived invitations." : "Invitations sent to prospective users."}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowArchived((v) => !v)}
+        >
+          {showArchived ? (
+            <><ArchiveRestore className="mr-2 h-3.5 w-3.5" />View Active</>
+          ) : (
+            <><Archive className="mr-2 h-3.5 w-3.5" />View Archived</>
+          )}
+        </Button>
+      </div>
+
+      {visibleInvitations.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <Mail className="h-10 w-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">
+            {showArchived
+              ? "No archived invitations."
+              : "No invitations sent yet. Use the Invite buttons in the Teachers, Students, or Staff tabs."}
+          </p>
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50/50">
+              <TableHead className="font-semibold">Email</TableHead>
+              <TableHead className="font-semibold">Role</TableHead>
+              <TableHead className="font-semibold">Status</TableHead>
+              <TableHead className="font-semibold">Sent</TableHead>
+              <TableHead className="font-semibold">Accepted / Expires</TableHead>
+              <TableHead className="font-semibold text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visibleInvitations.map((inv) => (
+              <TableRow key={inv.id}>
+                <TableCell className="font-medium text-sm">{inv.email}</TableCell>
+                <TableCell>
+                  {inv.role === "teacher" ? (
+                    <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Teacher</Badge>
+                  ) : inv.role === "staff" ? (
+                    <Badge className="bg-orange-100 text-orange-700 border-orange-200 border">Staff</Badge>
+                  ) : inv.role === "student" ? (
+                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 border">Student</Badge>
+                  ) : (
+                    <Badge variant="outline" className="capitalize">{inv.role}</Badge>
+                  )}
+                </TableCell>
+                <TableCell>{statusBadge(inv.status)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {new Date(inv.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {inv.status === "accepted" && inv.accepted_at
+                    ? new Date(inv.accepted_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+                    : inv.status === "expired"
+                    ? "—"
+                    : `Expires ${new Date(inv.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-gray-900"
+                      disabled={busyId === inv.id}
+                      onClick={() => handleArchive(inv)}
+                      title={inv.archived ? "Unarchive" : "Archive"}
+                    >
+                      {inv.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-red-600"
+                          disabled={busyId === inv.id}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Invitation?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently delete the invitation sent to <strong>{inv.email}</strong>. This cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDelete(inv)}
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
   );
 }
 
@@ -522,6 +643,10 @@ export default function AdminUsers() {
 
           <TabsContent value="students" className="mt-0">
             <Card className="border-0 shadow-sm">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <p className="text-sm text-muted-foreground">Students enrolled in your school.</p>
+                <InviteButton role="student" onSent={() => { addInvite(); setActiveTab("invitations"); }} />
+              </div>
               <CardContent className="p-0">
                 <UserTable role="student" search={search} />
               </CardContent>

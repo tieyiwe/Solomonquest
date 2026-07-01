@@ -5,7 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 const router: IRouter = Router();
 
 // POST /video/sessions - start a session (teacher only)
-router.post("/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/video/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { course_id } = req.body;
     const userId = req.user!.id;
@@ -77,7 +77,7 @@ router.post("/sessions", requireAuth, async (req: AuthenticatedRequest, res) => 
 });
 
 // GET /video/sessions?course_id=X - get active session for a course (any enrolled user)
-router.get("/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/video/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { course_id } = req.query;
     const userId = req.user!.id;
@@ -131,7 +131,7 @@ router.get("/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
 });
 
 // PUT /video/sessions/:id/end - end session (teacher only)
-router.put("/sessions/:id/end", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/video/sessions/:id/end", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
@@ -169,7 +169,7 @@ router.put("/sessions/:id/end", requireAuth, async (req: AuthenticatedRequest, r
 });
 
 // POST /video/chat-calls - start group call in chat channel
-router.post("/chat-calls", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/video/chat-calls", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { channel_id } = req.body;
 
@@ -197,7 +197,7 @@ router.post("/chat-calls", requireAuth, async (req: AuthenticatedRequest, res) =
 });
 
 // PUT /video/chat-calls/:id/end - end chat call
-router.put("/chat-calls/:id/end", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/video/chat-calls/:id/end", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
 

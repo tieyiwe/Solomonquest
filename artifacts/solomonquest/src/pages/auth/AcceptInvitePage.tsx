@@ -90,7 +90,7 @@ export default function AcceptInvitePage() {
       setTimeout(() => {
         const role = invite.role;
         if (role === "teacher") setLocation("/dashboard/teacher");
-        else if (role === "staff") setLocation("/dashboard/student");
+        else if (role === "staff" || role === "student") setLocation("/dashboard/student");
         else setLocation("/dashboard");
       }, 1500);
     } catch (err: unknown) {

@@ -31,7 +31,17 @@ const FROM = process.env.SMTP_FROM ?? 'SolomonQuest <solomonquest@tilogics.com>'
 const PRIMARY = '#1a1a2e';
 const ACCENT = '#e94560';
 
-function baseLayout(title: string, body: string): string {
+function baseLayout(title: string, body: string, options?: { confetti?: boolean }): string {
+  const confettiRow = options?.confetti
+    ? `
+          <!-- Confetti -->
+          <tr>
+            <td style="background:${PRIMARY};padding:0 40px 22px;text-align:center;font-size:26px;line-height:1;letter-spacing:6px;">
+              &#127881; &#127882; &#10024; &#127880; &#127882; &#10024; &#127881;
+            </td>
+          </tr>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -46,10 +56,10 @@ function baseLayout(title: string, body: string): string {
         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
           <!-- Header -->
           <tr>
-            <td style="background:${PRIMARY};padding:28px 40px;">
+            <td style="background:${PRIMARY};padding:28px 40px${options?.confetti ? " 6px" : ""};">
               <p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">SolomonQuest</p>
             </td>
-          </tr>
+          </tr>${confettiRow}
           <!-- Body -->
           <tr>
             <td style="padding:40px;">
@@ -132,7 +142,7 @@ export async function sendTeacherInvite({
     ${paragraph(`<span style="color:#999999;font-size:13px;">If you didn't expect this invitation, you can ignore this email — no account will be created without your action.</span>`)}
   `;
 
-  await send(to, subject, baseLayout(subject, body));
+  await send(to, subject, baseLayout(subject, body, { confetti: true }));
 }
 
 // ─── 2. Course Assignment Notification ───────────────────────────────────────
@@ -454,5 +464,5 @@ export async function sendEnhancedInvite({
     ${paragraph('<span style="color:#999999;font-size:13px;">If you weren\'t expecting this invitation, you can safely ignore this email. No account will be created without your action.</span>')}
   `;
 
-  await send(to, subject, baseLayout(subject, body));
+  await send(to, subject, baseLayout(subject, body, { confetti: true }));
 }

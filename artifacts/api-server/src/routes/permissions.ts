@@ -17,7 +17,7 @@ const DEFAULT_FEATURES = [
 ];
 
 // GET /permissions/my - get current user's permissions based on their role and school
-router.get("/my", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/permissions/my", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const user = req.user!;
 
@@ -66,7 +66,7 @@ router.get("/my", requireAuth, async (req: AuthenticatedRequest, res) => {
 });
 
 // GET /permissions?school_id=X - get all permissions for a school (admin only)
-router.get("/", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/permissions", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const user = req.user!;
     const { school_id } = req.query;
@@ -115,7 +115,7 @@ router.get("/", requireAuth, async (req: AuthenticatedRequest, res) => {
 });
 
 // PUT /permissions - upsert a permission (admin only)
-router.put("/", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/permissions", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const user = req.user!;
     const { school_id, role, feature, enabled } = req.body;

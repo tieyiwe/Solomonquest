@@ -286,3 +286,6 @@ ALTER TABLE public.invitations ADD CONSTRAINT invitations_status_check
   CHECK (status IN ('pending','accepted','expired'));
 UPDATE public.invitations SET status = 'accepted' WHERE accepted_at IS NOT NULL AND status = 'pending';
 UPDATE public.invitations SET status = 'expired' WHERE accepted_at IS NULL AND expires_at < now() AND status = 'pending';
+
+-- ─── Invitations archived flag ─────────────────────────────────────────────────
+ALTER TABLE public.invitations ADD COLUMN IF NOT EXISTS archived boolean NOT NULL DEFAULT false;
