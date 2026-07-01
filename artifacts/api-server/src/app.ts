@@ -30,11 +30,6 @@ app.use(
   }),
 );
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: "Too many requests, please try again later" },
-});
 const apiLimiter = rateLimit({ windowMs: 1 * 60 * 1000, max: 300 });
 
 app.use(
@@ -60,7 +55,6 @@ app.use(
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/api/auth", authLimiter);
 app.use("/api", apiLimiter);
 app.use("/api", router);
 
