@@ -35,7 +35,6 @@ function profileLink(role?: string | null) {
 
 export function ProfileMenu() {
   const { user, signOut } = useAuth();
-  const [location] = useLocation();
 
   const initials = getInitials(user?.firstName, user?.lastName);
   const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "User";
