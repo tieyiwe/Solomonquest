@@ -138,7 +138,7 @@ export function AgentWidget() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
+          className="fixed bottom-20 md:bottom-6 right-4 md:right-24 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
           title={`Chat with ${agentName}`}
         >
           <Sparkles className="h-6 w-6" />
@@ -147,7 +147,7 @@ export function AgentWidget() {
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-6 z-50 w-full md:w-96 h-[85vh] md:h-[600px] bg-white md:rounded-xl shadow-2xl border flex flex-col overflow-hidden">
+        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-24 z-50 w-full md:w-96 h-[85vh] md:h-[600px] bg-white md:rounded-xl shadow-2xl border flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b bg-primary text-primary-foreground shrink-0">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" />
