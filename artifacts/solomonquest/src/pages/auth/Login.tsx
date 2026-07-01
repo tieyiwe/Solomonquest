@@ -194,8 +194,8 @@ export default function Login() {
           /* ── Sign in view ── */
           <>
             <div className="space-y-2 text-center md:text-left">
-              <Link href="/">
-                <a className="inline-block text-xl font-bold text-primary mb-6">SolomonQuest</a>
+              <Link href="/" className="inline-block text-xl font-bold text-primary mb-6">
+                SolomonQuest
               </Link>
               <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome back</h1>
               <p className="text-muted-foreground">Sign in to your account to continue</p>
@@ -259,8 +259,8 @@ export default function Login() {
 
             <div className="text-center md:text-left text-sm text-muted-foreground">
               Don't have an account?{" "}
-              <Link href="/auth/register">
-                <a className="font-semibold text-primary hover:underline">Sign up</a>
+              <Link href="/auth/register" className="font-semibold text-primary hover:underline">
+                Sign up
               </Link>
             </div>
           </>
