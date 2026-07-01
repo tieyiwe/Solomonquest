@@ -16,7 +16,15 @@ CREATE TABLE IF NOT EXISTS video_sessions (
 ALTER TABLE video_sessions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "video_sessions_all" ON video_sessions;
 CREATE POLICY "video_sessions_all" ON video_sessions FOR ALL USING (true);
-ALTER PUBLICATION supabase_realtime ADD TABLE video_sessions;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'video_sessions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE video_sessions;
+  END IF;
+END $$;
 
 -- ─── School uniqueness ────────────────────────────────────────────────────────
 CREATE UNIQUE INDEX IF NOT EXISTS schools_name_unique ON schools (LOWER(name));
@@ -178,7 +186,15 @@ DROP POLICY IF EXISTS "messages_rls" ON internal_messages;
 CREATE POLICY "messages_rls" ON internal_messages FOR ALL USING (
   auth.uid() = from_user_id OR auth.uid() = to_user_id
 );
-ALTER PUBLICATION supabase_realtime ADD TABLE internal_messages;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'internal_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE internal_messages;
+  END IF;
+END $$;
 
 -- ─── Super Admin Platform Tables ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS platform_audit_log (
