@@ -28,6 +28,8 @@ import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { AgentWidget } from "@/components/agent/AgentWidget";
+import { NotesWidget } from "@/components/notes/NotesWidget";
+import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
 
 const adminLinks = [
   { href: "/dashboard/admin", label: "Overview", icon: LayoutDashboard },
@@ -269,6 +271,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
       {/* AI Agent */}
       <AgentWidget />
+
+      {/* Notes */}
+      <NotesWidget />
+      <StickyNotesLayer />
 
       {/* Help Center drawer */}
       {helpOpen && (

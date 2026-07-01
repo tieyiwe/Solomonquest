@@ -38,6 +38,11 @@ function actionLabel(action: PendingAction): string {
     const input = action.input as { title?: string };
     return `Post announcement: "${input.title ?? ""}"`;
   }
+  if (action.name === "send_broadcast") {
+    const input = action.input as { target_role?: string; method?: string; subject?: string; message?: string };
+    const via = input.method === "email" ? "email" : "in-app chat";
+    return `Send via ${via} to all ${input.target_role ?? "recipients"}s — "${input.subject ?? ""}": ${input.message ?? ""}`;
+  }
   return `Perform action: ${action.name}`;
 }
 

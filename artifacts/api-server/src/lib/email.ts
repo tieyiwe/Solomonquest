@@ -466,3 +466,36 @@ export async function sendEnhancedInvite({
 
   await send(to, subject, baseLayout(subject, body, { confetti: true }));
 }
+
+// ─── 9. Broadcast Message ─────────────────────────────────────────────────────
+
+export interface BroadcastEmailParams {
+  to: string;
+  recipientName: string;
+  subject: string;
+  message: string;
+  senderName: string;
+  schoolName: string;
+}
+
+export async function sendBroadcastEmail({
+  to,
+  recipientName,
+  subject,
+  message,
+  senderName,
+  schoolName,
+}: BroadcastEmailParams): Promise<void> {
+  const body = `
+    ${heading(subject)}
+    ${paragraph(`Hi <strong>${recipientName}</strong>,`)}
+    ${paragraph(message.replace(/\n/g, '<br/>'))}
+    <div style="margin:24px 0;padding:16px;background:#f0f4ff;border-left:4px solid ${PRIMARY};border-radius:0 4px 4px 0;">
+      <p style="margin:0;color:#666666;font-size:13px;">
+        Sent by <strong>${senderName}</strong> via ${schoolName} on SolomonQuest.
+      </p>
+    </div>
+  `;
+
+  await send(to, subject, baseLayout(subject, body));
+}

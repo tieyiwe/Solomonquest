@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Router } from "@/Router";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { NotesProvider } from "@/components/notes/NotesContext";
 
 export const queryClient = new QueryClient();
 
@@ -15,8 +16,10 @@ function App() {
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <AuthProvider>
-              <Router />
-              <Toaster />
+              <NotesProvider>
+                <Router />
+                <Toaster />
+              </NotesProvider>
             </AuthProvider>
           </WouterRouter>
         </TooltipProvider>
