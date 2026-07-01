@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
+import { AgentWidget } from "@/components/agent/AgentWidget";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -248,6 +249,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
         </main>
       </div>
 
+      <AgentWidget />
       <NotesWidget />
       <StickyNotesLayer />
     </div>
