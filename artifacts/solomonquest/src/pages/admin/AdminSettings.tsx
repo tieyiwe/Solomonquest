@@ -32,6 +32,7 @@ import {
   BookCheck,
   User,
   ArrowLeft,
+  Sparkles,
 } from "lucide-react";
 import {
   Select,
@@ -439,6 +440,90 @@ function ApplicationFormTab({ schoolId }: { schoolId: string | undefined }) {
         Save Form
       </Button>
     </div>
+  );
+}
+
+// ─── AI Agent Tab ──────────────────────────────────────────────────────────────
+
+function AgentTab() {
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      fetch("/api/agent/settings", {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      })
+        .then((r) => r.json())
+        .then((data) => { if (!cancelled && data.name) setName(data.name); })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setLoading(false); });
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.error("Agent name cannot be empty");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/agent/settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error ?? "Failed to save");
+      setName(json.name ?? trimmed);
+      toast.success("Agent name updated");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save agent name");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <Skeleton className="h-32 w-full max-w-md" />;
+  }
+
+  return (
+    <Card className="max-w-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Sparkles className="h-4 w-4 text-primary" />
+          AI Assistant
+        </CardTitle>
+        <CardDescription>
+          Your school's AI agent helps admins and teachers with questions and can draft reminders or
+          announcements. Give it a name your staff will recognize.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1.5">
+          <Label>Agent Name</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={40}
+            placeholder="Solomon"
+          />
+        </div>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Save
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -877,6 +962,7 @@ export default function AdminSettings() {
               { value: "form", label: "Application Form", icon: FileText },
               { value: "school", label: "School Settings", icon: Building2 },
               { value: "reminders", label: "Reminders", icon: Bell },
+              { value: "agent", label: "AI Assistant", icon: Sparkles },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -903,6 +989,9 @@ export default function AdminSettings() {
           </TabsContent>
           <TabsContent value="reminders" className="mt-6">
             <RemindersTab schoolId={schoolId} />
+          </TabsContent>
+          <TabsContent value="agent" className="mt-6">
+            <AgentTab />
           </TabsContent>
         </Tabs>
       </div>

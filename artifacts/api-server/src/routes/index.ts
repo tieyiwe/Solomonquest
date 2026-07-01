@@ -28,6 +28,7 @@ import messagesRouter from "./messages";
 import superAdminRouter from "./super-admin";
 import activityLogRouter from "./activityLog";
 import fileConverterRouter from "./fileConverter";
+import agentRouter from "./agent";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use(messagesRouter);
 router.use(superAdminRouter);
 router.use(activityLogRouter);
 router.use(fileConverterRouter);
+router.use(agentRouter);
 
 export default router;

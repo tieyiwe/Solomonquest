@@ -28,6 +28,7 @@ import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
+import { AgentWidget } from "@/components/agent/AgentWidget";
 
 const adminLinks = [
   { href: "/dashboard/admin", label: "Overview", icon: LayoutDashboard },
@@ -286,6 +287,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
       {/* Floating help button */}
       <HelpButton onClick={() => setHelpOpen(true)} />
+
+      {/* AI Agent */}
+      <AgentWidget />
 
       {/* Help Center drawer */}
       {helpOpen && (

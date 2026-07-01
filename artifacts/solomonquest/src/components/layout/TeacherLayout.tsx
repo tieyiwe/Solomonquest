@@ -4,6 +4,7 @@ import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
+import { AgentWidget } from "@/components/agent/AgentWidget";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -267,6 +268,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
       />
 
       <HelpButton onClick={() => setHelpOpen(true)} />
+      <AgentWidget />
       {helpOpen && (
         <HelpCenter role="teacher" onClose={() => setHelpOpen(false)} onStartTour={launchTour} />
       )}
