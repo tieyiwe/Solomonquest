@@ -101,7 +101,7 @@ export function NotesWidget() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-40 md:bottom-24 right-4 md:right-6 z-40 h-12 w-12 rounded-full bg-amber-400 text-amber-950 shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
+          className="fixed bottom-40 md:bottom-6 right-4 md:right-40 z-40 h-12 w-12 rounded-full bg-amber-400 text-amber-950 shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
           title="Notes"
         >
           <StickyNoteIcon className="h-5 w-5" />
@@ -109,7 +109,7 @@ export function NotesWidget() {
       )}
 
       {open && (
-        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-24 z-50 w-full md:w-96 h-[85vh] md:h-[600px] bg-white md:rounded-xl shadow-2xl border flex flex-col overflow-hidden">
+        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-40 z-50 w-full md:w-96 h-[85vh] md:h-[600px] bg-white md:rounded-xl shadow-2xl border flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b bg-amber-400 text-amber-950 shrink-0">
             <div className="flex items-center gap-2">
               <StickyNoteIcon className="h-4 w-4" />
