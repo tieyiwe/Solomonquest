@@ -230,7 +230,7 @@ router.get(
   "/chat/channels/:channelId/messages",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { channelId } = req.params;
+    const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
 
     const isMember = await assertChannelMember(channelId, req.userId!);
     if (!isMember) {
@@ -333,7 +333,7 @@ router.post(
   "/chat/channels/:channelId/messages",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { channelId } = req.params;
+    const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
 
     // Security: verify user is a member of the channel before allowing post
     const isMember = await assertChannelMember(channelId, req.userId!);
@@ -381,7 +381,7 @@ router.post(
       return;
     }
 
-    const profile = message.profiles as Record<string, unknown> | null;
+    const profile = message.profiles as unknown as Record<string, unknown> | null;
 
     res.status(201).json({
       id: message.id,
@@ -405,7 +405,8 @@ router.get(
   "/chat/channels/:channelId/messages/:messageId/thread",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { channelId, messageId } = req.params;
+    const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
+    const messageId = Array.isArray(req.params.messageId) ? req.params.messageId[0] : req.params.messageId;
 
     const isMember = await assertChannelMember(channelId, req.userId!);
     if (!isMember) {

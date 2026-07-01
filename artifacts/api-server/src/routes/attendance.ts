@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
@@ -60,7 +60,7 @@ router.post("/courses/:courseId/attendance", requireAuth, async (req, res): Prom
 });
 
 // POST /attendance/checkin - student self-check-in for live class
-router.post("/attendance/checkin", requireAuth, async (req, res): Promise<void> => {
+router.post("/attendance/checkin", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const { course_id } = req.body;
   const studentId = req.userId;
 

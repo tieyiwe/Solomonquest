@@ -247,7 +247,7 @@ router.delete(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
       const { data: school, error: schoolErr } = await supabaseAdmin
         .from("schools")
@@ -318,7 +318,7 @@ router.get(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
       const [schoolRes, usersRes, coursesRes, recentActivityRes] = await Promise.all([
         supabaseAdmin.from("schools").select("*").eq("id", id).single(),
@@ -357,7 +357,7 @@ router.patch(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
       const { data: school, error: fetchErr } = await supabaseAdmin
         .from("schools")
@@ -469,7 +469,7 @@ router.patch(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { role } = req.body as { role: string };
 
       if (!role) {
@@ -523,7 +523,7 @@ router.patch(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { suspended } = req.body as { suspended: boolean };
 
       const { data: profile, error: fetchErr } = await supabaseAdmin
@@ -571,7 +571,7 @@ router.delete(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
       const { data: profile } = await supabaseAdmin
         .from("profiles")
@@ -804,7 +804,7 @@ router.post(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
       const { data: request, error: fetchErr } = await supabaseAdmin
         .from("school_deletion_requests")
@@ -903,7 +903,7 @@ router.post(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { review_notes } = req.body as { review_notes?: string };
 
       const { data: request, error: fetchErr } = await supabaseAdmin
@@ -962,7 +962,7 @@ router.post(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
       // Verify approved deletion request exists
       const { data: request, error: reqErr } = await supabaseAdmin
@@ -1065,7 +1065,7 @@ router.post(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
       const { data: archiveEntry, error: fetchErr } = await supabaseAdmin
         .from("school_archive")

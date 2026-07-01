@@ -64,7 +64,7 @@ router.get("/submissions", requireAuth, async (req: AuthenticatedRequest, res) =
 });
 
 // PUT /grading/submissions/:id
-router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   try {
     const { id } = req.params;
     const { grade, feedback } = req.body;
@@ -94,7 +94,8 @@ router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, re
 
     if (fetchError) throw fetchError;
     if (!submission) {
-      return res.status(404).json({ error: "Submission not found" });
+      res.status(404).json({ error: "Submission not found" });
+      return;
     }
 
     const assignment = (submission as any).assignments;
@@ -103,7 +104,8 @@ router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, re
     // Security: verify teacher owns the course, or requester is admin/super_admin
     if (userRole !== "admin" && userRole !== "super_admin") {
       if (userRole !== "teacher" || course?.teacher_id !== userId) {
-        return res.status(403).json({ error: "Access denied: you do not own this course" });
+        res.status(403).json({ error: "Access denied: you do not own this course" });
+        return;
       }
     }
 
@@ -171,7 +173,7 @@ router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, re
 });
 
 // GET /grading/transcript/:student_id
-router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   try {
     const { student_id } = req.params;
     const userId = req.user?.id;
@@ -188,7 +190,8 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
           .single();
 
         if (studentProfileError || !studentProfile) {
-          return res.status(404).json({ error: "Student not found" });
+          res.status(404).json({ error: "Student not found" });
+          return;
         }
 
         const { data: callerProfile, error: callerProfileError } = await supabaseAdmin
@@ -198,11 +201,13 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
           .single();
 
         if (callerProfileError || !callerProfile) {
-          return res.status(403).json({ error: "Access denied" });
+          res.status(403).json({ error: "Access denied" });
+          return;
         }
 
         if (studentProfile.school_id !== callerProfile.school_id) {
-          return res.status(403).json({ error: "Access denied: different school" });
+          res.status(403).json({ error: "Access denied: different school" });
+          return;
         }
       } else if (userRole === "teacher") {
         // Teacher must be the teacher of at least one course the student is enrolled in
@@ -223,10 +228,12 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
         );
 
         if (!teachesStudent) {
-          return res.status(403).json({ error: "Access denied: you do not teach this student" });
+          res.status(403).json({ error: "Access denied: you do not teach this student" });
+          return;
         }
       } else {
-        return res.status(403).json({ error: "Access denied" });
+        res.status(403).json({ error: "Access denied" });
+        return;
       }
     }
 
@@ -330,12 +337,13 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
 });
 
 // GET /grading/gradebook?course_id=X
-router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   try {
     const { course_id } = req.query;
 
     if (!course_id) {
-      return res.status(400).json({ error: "course_id is required" });
+      res.status(400).json({ error: "course_id is required" });
+      return;
     }
 
     // Get all assignments for the course
@@ -365,7 +373,8 @@ router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res) => 
     const studentIds = (enrollments || []).map((e: any) => e.student_id);
 
     if (studentIds.length === 0) {
-      return res.json({ course_id, assignments, students: [] });
+      res.json({ course_id, assignments, students: [] });
+      return;
     }
 
     // Get all submissions for these students and assignments in the course
