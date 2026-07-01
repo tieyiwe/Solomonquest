@@ -2,6 +2,7 @@ import { Router, type IRouter, type Response } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { getAnthropicClient, AGENT_MODEL } from "../lib/anthropic";
+import { sendBroadcastEmail } from "../lib/email";
 import type Anthropic from "@anthropic-ai/sdk";
 
 const router: IRouter = Router();
@@ -45,6 +46,21 @@ const TOOLS: Anthropic.Tool[] = [
         is_pinned: { type: "boolean" },
       },
       required: ["title"],
+    },
+  },
+  {
+    name: "send_broadcast",
+    description:
+      "Draft and send a one-off message to every user of a given role in the school, either by email or as an in-app chat/inbox message. Admin only. Always write the actual message text yourself based on what the user asked for — don't leave it for them to fill in.",
+    input_schema: {
+      type: "object",
+      properties: {
+        target_role: { type: "string", enum: ["student", "teacher", "staff"] },
+        method: { type: "string", enum: ["email", "chat"] },
+        subject: { type: "string", description: "Email subject line (used as the message title for chat too)" },
+        message: { type: "string", description: "The full message body to send" },
+      },
+      required: ["target_role", "method", "subject", "message"],
     },
   },
 ];
@@ -96,7 +112,7 @@ Current school snapshot (always current as of this message):
 - Recent announcements:
 ${recentAnnouncements}
 
-You assist school admins and teachers. Be concise and practical. You can answer questions about the school using the snapshot above, and you can propose actions (creating reminders or announcements) using the tools available to you. Never claim to have performed an action yourself — when you call a tool, the user will be shown a confirmation prompt before anything actually happens, so phrase your responses accordingly (e.g. "I've drafted a reminder for you to review" rather than "I've sent the reminder").`;
+You assist school admins and teachers. Be concise and practical. You can answer questions about the school using the snapshot above, and you can propose actions (creating reminders, posting announcements, or — for admins only — broadcasting a message to every student, teacher, or staff member by email or in-app chat) using the tools available to you. When asked to send a message, write the full message text yourself in a professional tone matching what was requested; never leave placeholders for the user to fill in. Never claim to have performed an action yourself — when you call a tool, the user will be shown a confirmation prompt before anything actually happens, so phrase your responses accordingly (e.g. "I've drafted a message for you to review" rather than "I've sent the message").`;
 }
 
 // ─── GET /agent/settings ────────────────────────────────────────────────────────
@@ -269,11 +285,16 @@ router.post(
         { role: "user", content: message.trim() },
       ];
 
+      const isAdmin = userRole === "admin" || userRole === "super_admin";
+      const availableTools = isAdmin
+        ? TOOLS
+        : TOOLS.filter((t) => t.name !== "send_broadcast");
+
       const response = await anthropic.messages.create({
         model: AGENT_MODEL,
         max_tokens: 1024,
         system: systemPrompt,
-        tools: (userRole === "admin" || userRole === "super_admin" || userRole === "teacher") ? TOOLS : undefined,
+        tools: availableTools,
         messages: anthropicMessages,
       });
 
@@ -437,6 +458,87 @@ router.post(
         if (error) throw error;
         result = data;
         summary = `Announcement "${title}" posted.`;
+      } else if (tool === "send_broadcast") {
+        if (userRole !== "admin" && userRole !== "super_admin") {
+          res.status(403).json({ error: "Only admins can send broadcast messages" });
+          return;
+        }
+
+        const { target_role, method, subject, message } = input as {
+          target_role?: string;
+          method?: string;
+          subject?: string;
+          message?: string;
+        };
+
+        if (!target_role || !method || !subject || !message) {
+          res.status(400).json({ error: "target_role, method, subject, and message are required" });
+          return;
+        }
+        if (!["student", "teacher", "staff"].includes(target_role)) {
+          res.status(400).json({ error: "Invalid target_role" });
+          return;
+        }
+        if (!["email", "chat"].includes(method)) {
+          res.status(400).json({ error: "Invalid method" });
+          return;
+        }
+
+        const [{ data: recipients, error: recipientsError }, { data: school }, { data: senderProfile }] =
+          await Promise.all([
+            supabaseAdmin
+              .from("profiles")
+              .select("id, first_name, last_name")
+              .eq("school_id", schoolId)
+              .eq("role", target_role),
+            supabaseAdmin.from("schools").select("name").eq("id", schoolId).single(),
+            supabaseAdmin.from("profiles").select("first_name, last_name").eq("id", userId).single(),
+          ]);
+
+        if (recipientsError) throw recipientsError;
+        if (!recipients || recipients.length === 0) {
+          res.status(400).json({ error: `No users with role "${target_role}" found in this school` });
+          return;
+        }
+
+        const schoolName = school?.name ?? "your school";
+        const senderName = senderProfile
+          ? `${senderProfile.first_name ?? ""} ${senderProfile.last_name ?? ""}`.trim() || "A school administrator"
+          : "A school administrator";
+
+        if (method === "email") {
+          const results = await Promise.allSettled(
+            recipients.map(async (r: any) => {
+              const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(r.id);
+              const email = authUser?.user?.email;
+              if (!email) return;
+              await sendBroadcastEmail({
+                to: email,
+                recipientName: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || "there",
+                subject,
+                message,
+                senderName,
+                schoolName,
+              });
+            })
+          );
+          const sent = results.filter((r) => r.status === "fulfilled").length;
+          result = { recipientCount: recipients.length, sent };
+          summary = `Email "${subject}" sent to ${sent} of ${recipients.length} ${target_role}${recipients.length === 1 ? "" : "s"}.`;
+        } else {
+          const { error: insertError } = await supabaseAdmin.from("internal_messages").insert(
+            recipients.map((r: any) => ({
+              school_id: schoolId,
+              from_user_id: userId,
+              to_user_id: r.id,
+              subject,
+              body: message,
+            }))
+          );
+          if (insertError) throw insertError;
+          result = { recipientCount: recipients.length };
+          summary = `Message "${subject}" sent to ${recipients.length} ${target_role}${recipients.length === 1 ? "" : "s"} via in-app chat.`;
+        }
       } else {
         res.status(400).json({ error: `Unknown tool: ${tool}` });
         return;

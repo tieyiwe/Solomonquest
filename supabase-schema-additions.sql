@@ -452,6 +452,40 @@ CREATE POLICY "agent_conversations_own" ON public.agent_conversations FOR ALL US
 CREATE INDEX IF NOT EXISTS agent_conversations_user_idx
   ON public.agent_conversations (school_id, user_id, created_at);
 
+-- ─── Notes (with sharing + sticky-note mode) ───────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.notes (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id   uuid NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  owner_id    uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  title       text,
+  content     text NOT NULL DEFAULT '',
+  color       text NOT NULL DEFAULT '#fef08a',
+  is_sticky   boolean NOT NULL DEFAULT false,
+  pos_x       integer NOT NULL DEFAULT 80,
+  pos_y       integer NOT NULL DEFAULT 80,
+  width       integer NOT NULL DEFAULT 240,
+  height      integer NOT NULL DEFAULT 220,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.notes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "notes_all" ON public.notes;
+CREATE POLICY "notes_all" ON public.notes FOR ALL USING (true);
+CREATE INDEX IF NOT EXISTS notes_owner_idx ON public.notes (owner_id);
+
+CREATE TABLE IF NOT EXISTS public.note_shares (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  note_id     uuid NOT NULL REFERENCES public.notes(id) ON DELETE CASCADE,
+  user_id     uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  permission  text NOT NULL DEFAULT 'view' CHECK (permission IN ('view','edit')),
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (note_id, user_id)
+);
+ALTER TABLE public.note_shares ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "note_shares_all" ON public.note_shares;
+CREATE POLICY "note_shares_all" ON public.note_shares FOR ALL USING (true);
+CREATE INDEX IF NOT EXISTS note_shares_user_idx ON public.note_shares (user_id);
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
+import { NotesWidget } from "@/components/notes/NotesWidget";
+import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -260,6 +262,8 @@ export function StudentLayout({ children }: StudentLayoutProps) {
         onMoreClick={() => setIsMobileMenuOpen(true)}
         moreActive={bottomNavOverflowLinks.some((l) => isActive(l.href, l.exact))}
       />
+      <NotesWidget />
+      <StickyNotesLayer />
     </div>
   );
 }
