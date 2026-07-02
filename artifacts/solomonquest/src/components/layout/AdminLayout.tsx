@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useGetMySchool } from "@workspace/api-client-react";
 import {
@@ -24,7 +23,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
-import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
+import { HelpCenter } from "@/components/help/HelpCenter";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { AgentWidget } from "@/components/agent/AgentWidget";
@@ -52,10 +51,6 @@ const settingsSubLinks = [
   { href: "/dashboard/admin/branding", label: "Branding", icon: Paintbrush },
   { href: "/dashboard/admin/danger-zone", label: "Danger Zone", icon: AlertTriangle },
 ];
-
-function getInitials(firstName?: string | null, lastName?: string | null) {
-  return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U";
-}
 
 const settingsHrefs = new Set(settingsSubLinks.map((l) => l.href));
 const mainLinks = adminLinks.filter(
@@ -186,24 +181,17 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           <NavLinks />
         </div>
 
-        {/* User footer */}
+        {/* Footer */}
         <div className="p-3 border-t border-white/10">
-          <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
-            <Avatar className="h-8 w-8 border border-white/20">
-              <AvatarImage src={user?.avatarUrl || ""} />
-              <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                {getInitials(user?.firstName, user?.lastName)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 overflow-hidden">
-              <p className="text-white text-sm font-medium truncate">
-                {user?.firstName} {user?.lastName}
-              </p>
-              <p className="text-slate-400 text-xs capitalize truncate">
-                {user?.role?.replace("_", " ")}
-              </p>
-            </div>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-slate-400 hover:text-white hover:bg-white/8 mb-1"
+            onClick={() => setHelpOpen(true)}
+          >
+            <HelpCircle className="mr-2 h-3.5 w-3.5" />
+            Help Center
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -267,9 +255,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
       {/* Mobile Bottom Nav */}
       <BottomNav links={adminLinks} />
-
-      {/* Floating help button */}
-      <HelpButton onClick={() => setHelpOpen(true)} />
 
       {/* AI Agent */}
       <AgentWidget />

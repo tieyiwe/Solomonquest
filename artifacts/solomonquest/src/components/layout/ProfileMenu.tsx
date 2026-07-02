@@ -26,10 +26,8 @@ function roleLabel(role?: string | null) {
   return role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function profileLink(role?: string | null) {
-  if (role === "admin" || role === "super_admin") return "/dashboard/admin/settings";
-  if (role === "teacher") return "/dashboard/teacher";
-  return "/dashboard/student/profile";
+function profileLink(_role?: string | null) {
+  return "/profile";
 }
 
 export function ProfileMenu() {
