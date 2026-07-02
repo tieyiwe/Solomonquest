@@ -331,7 +331,7 @@ export function HelpButton({ onClick }: HelpButtonProps) {
     <button
       onClick={onClick}
       aria-label="Open Help Center"
-      className="fixed bottom-6 right-6 z-[9990] h-12 w-12 rounded-full bg-primary text-white shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center"
+      className="fixed bottom-6 left-6 z-[9990] h-12 w-12 rounded-full bg-primary text-white shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center"
     >
       <HelpCircle className="h-5 w-5" />
     </button>
