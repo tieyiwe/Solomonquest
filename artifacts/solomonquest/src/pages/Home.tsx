@@ -106,7 +106,7 @@ export default function Home() {
             ) : schools && schools.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {schools.map((school) => (
-                  <Link key={school.id} href={`/schools/${school.slug}`}>
+                  <Link key={school.id} href={`/${school.slug}`}>
                     <Card className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer h-full group border-border">
                       <div
                         className="h-36 relative"

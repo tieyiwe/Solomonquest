@@ -241,6 +241,12 @@ export function Router() {
           <ProtectedRoute><HelpPage /></ProtectedRoute>
         </Route>
 
+        {/* School public homepage at the platform root, e.g. solomonquest.com/lincoln-academy.
+            Placed last (before the 404 fallback) so it only matches when no more specific
+            route above claimed the path — /schools/:slug above still works too. */}
+        <Route path="/:slug/apply" component={SchoolApply} />
+        <Route path="/:slug" component={SchoolPublicPage} />
+
         <Route component={NotFound} />
       </Switch>
     </Suspense>

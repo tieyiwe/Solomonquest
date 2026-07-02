@@ -48,7 +48,14 @@ function baseLayout(
 
   const headerTitle = options?.headerTitle ?? "SolomonQuest";
   const headerContent = options?.headerLogoUrl
-    ? `<img src="${options.headerLogoUrl}" alt="${headerTitle}" height="36" style="height:36px;max-width:220px;display:block;object-fit:contain;" />`
+    ? `<table cellpadding="0" cellspacing="0"><tr>
+        <td style="padding-right:12px;vertical-align:middle;">
+          <img src="${options.headerLogoUrl}" alt="${headerTitle}" height="36" style="height:36px;max-width:120px;display:block;object-fit:contain;" />
+        </td>
+        <td style="vertical-align:middle;">
+          <p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">${headerTitle}</p>
+        </td>
+      </tr></table>`
     : `<p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">${headerTitle}</p>`;
 
   return `<!DOCTYPE html>

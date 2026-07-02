@@ -542,7 +542,7 @@ export default function AdminSchoolBranding() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => window.open(`/schools/${branding.slug}`, "_blank")}
+                onClick={() => window.open(`/${branding.slug}`, "_blank")}
               >
                 <Eye className="w-4 h-4 mr-1" />
                 Preview Live

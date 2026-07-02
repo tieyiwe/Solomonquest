@@ -313,7 +313,7 @@ export default function SchoolApply() {
             {school.name} is not accepting applications at this time. Check back later or contact the school for more information.
           </p>
           <Button asChild variant="outline">
-            <Link href={`/schools/${school.slug}`}>Back to {school.name}</Link>
+            <Link href={`/${school.slug}`}>Back to {school.name}</Link>
           </Button>
         </div>
       </PublicLayout>
@@ -329,7 +329,7 @@ export default function SchoolApply() {
           asChild
           className="mb-6 -ml-2 text-muted-foreground hover:text-foreground"
         >
-          <Link href={`/schools/${school.slug}`}>
+          <Link href={`/${school.slug}`}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to {school.name}
           </Link>
