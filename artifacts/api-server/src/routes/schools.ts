@@ -137,6 +137,17 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
     .update({ school_id: data.id, role: "admin" })
     .eq("id", req.userId);
 
+  // Auto-enroll the founding admin in the school's chat channels so chat
+  // works as soon as a second user (student, teacher, staff) joins —
+  // without this, only invited/joined users ever got enrolled, leaving the
+  // admin who actually created the school unable to chat with anyone.
+  try {
+    const { enrollUserInSchoolChannels } = await import("./chat");
+    await enrollUserInSchoolChannels(req.userId!, data.id);
+  } catch (e) {
+    logger.warn({ e }, "Failed to auto-enroll founding admin in chat channels");
+  }
+
   res.status(201).json(mapSchool(data));
 });
 

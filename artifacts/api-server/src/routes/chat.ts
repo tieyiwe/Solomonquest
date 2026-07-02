@@ -33,6 +33,19 @@ router.get(
   "/chat/channels",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
+    // Self-heal: make sure the current user is a member of every public
+    // channel in their school. Covers users who joined before their role's
+    // enrollment path existed (e.g. a founding admin from before this fix),
+    // or anyone whose membership otherwise never got created. Cheap and
+    // idempotent — a couple of indexed lookups, no-op if already enrolled.
+    if (req.userId && req.schoolId) {
+      try {
+        await enrollUserInSchoolChannels(req.userId, req.schoolId);
+      } catch (e) {
+        console.warn("[chat] Self-heal enrollment failed:", e);
+      }
+    }
+
     const { data: memberships, error } = await supabaseAdmin
       .from("chat_channel_members")
       .select(
