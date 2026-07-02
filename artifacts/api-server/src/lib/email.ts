@@ -31,7 +31,11 @@ const FROM = process.env.SMTP_FROM ?? 'SolomonQuest <solomonquest@tilogics.com>'
 const PRIMARY = '#1a1a2e';
 const ACCENT = '#e94560';
 
-function baseLayout(title: string, body: string, options?: { confetti?: boolean; headerTitle?: string }): string {
+function baseLayout(
+  title: string,
+  body: string,
+  options?: { confetti?: boolean; headerTitle?: string; headerLogoUrl?: string }
+): string {
   const confettiRow = options?.confetti
     ? `
           <!-- Confetti -->
@@ -41,6 +45,11 @@ function baseLayout(title: string, body: string, options?: { confetti?: boolean;
             </td>
           </tr>`
     : "";
+
+  const headerTitle = options?.headerTitle ?? "SolomonQuest";
+  const headerContent = options?.headerLogoUrl
+    ? `<img src="${options.headerLogoUrl}" alt="${headerTitle}" height="36" style="height:36px;max-width:220px;display:block;object-fit:contain;" />`
+    : `<p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">${headerTitle}</p>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -57,7 +66,7 @@ function baseLayout(title: string, body: string, options?: { confetti?: boolean;
           <!-- Header -->
           <tr>
             <td style="background:${PRIMARY};padding:28px 40px${options?.confetti ? " 6px" : ""};">
-              <p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">${options?.headerTitle ?? "SolomonQuest"}</p>
+              ${headerContent}
             </td>
           </tr>${confettiRow}
           <!-- Body -->
@@ -111,6 +120,7 @@ async function send(to: string, subject: string, html: string): Promise<void> {
 export interface TeacherInviteParams {
   to: string;
   schoolName: string;
+  schoolLogoUrl?: string;
   inviterName: string;
   inviteUrl: string;
   role?: string;
@@ -119,6 +129,7 @@ export interface TeacherInviteParams {
 export async function sendTeacherInvite({
   to,
   schoolName,
+  schoolLogoUrl,
   inviterName,
   inviteUrl,
   role = 'teacher',
@@ -142,7 +153,7 @@ export async function sendTeacherInvite({
     ${paragraph(`<span style="color:#999999;font-size:13px;">If you didn't expect this invitation, you can ignore this email — no account will be created without your action.</span>`)}
   `;
 
-  await send(to, subject, baseLayout(subject, body, { confetti: true, headerTitle: schoolName }));
+  await send(to, subject, baseLayout(subject, body, { confetti: true, headerTitle: schoolName, headerLogoUrl: schoolLogoUrl }));
 }
 
 // ─── 2. Course Assignment Notification ───────────────────────────────────────
@@ -410,6 +421,7 @@ export async function sendWelcomeEmail({
 export interface EnhancedInviteParams {
   to: string;
   schoolName: string;
+  schoolLogoUrl?: string;
   inviterName: string;
   inviteUrl: string;
   role?: string;
@@ -419,6 +431,7 @@ export interface EnhancedInviteParams {
 export async function sendEnhancedInvite({
   to,
   schoolName,
+  schoolLogoUrl,
   inviterName,
   inviteUrl,
   role = 'teacher',
@@ -464,7 +477,7 @@ export async function sendEnhancedInvite({
     ${paragraph('<span style="color:#999999;font-size:13px;">If you weren\'t expecting this invitation, you can safely ignore this email. No account will be created without your action.</span>')}
   `;
 
-  await send(to, subject, baseLayout(subject, body, { confetti: true, headerTitle: schoolName }));
+  await send(to, subject, baseLayout(subject, body, { confetti: true, headerTitle: schoolName, headerLogoUrl: schoolLogoUrl }));
 }
 
 // ─── 9. Broadcast Message ─────────────────────────────────────────────────────
