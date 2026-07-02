@@ -7,6 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { NotificationBell } from "@/components/NotificationBell";
+import { ProfileMenu } from "@/components/layout/ProfileMenu";
+import { AgentWidget } from "@/components/agent/AgentWidget";
+import { NotesWidget } from "@/components/notes/NotesWidget";
+import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
 import {
   LayoutDashboard,
   Users,
@@ -461,12 +465,7 @@ export default function AdminOverview() {
           </div>
 
           <NotificationBell />
-          <Avatar className="h-8 w-8 border">
-            <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-              {getInitials((user as any)?.firstName, (user as any)?.lastName)}
-            </AvatarFallback>
-          </Avatar>
+          <ProfileMenu />
         </header>
 
         {/* Page Body */}
@@ -809,6 +808,10 @@ export default function AdminOverview() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AgentWidget />
+      <NotesWidget />
+      <StickyNotesLayer />
     </div>
   );
 }
