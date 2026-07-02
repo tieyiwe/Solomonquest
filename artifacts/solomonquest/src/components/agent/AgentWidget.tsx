@@ -139,10 +139,11 @@ export function AgentWidget() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-20 md:bottom-6 right-4 md:right-24 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
+          className="fixed bottom-20 md:bottom-6 right-4 md:right-24 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex flex-col items-center justify-center gap-0.5 hover:scale-105 transition-transform"
           title={`Chat with ${agentName}`}
         >
-          <Sparkles className="h-6 w-6" />
+          <Sparkles className="h-4 w-4" />
+          <span className="text-[9px] font-semibold leading-none">Sol</span>
         </button>
       )}
 

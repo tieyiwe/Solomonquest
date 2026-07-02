@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -56,5 +56,17 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/auth", authLimiter);
 app.use("/api", apiLimiter);
 app.use("/api", router);
+
+// Global error handler — without this, any uncaught error (including CORS
+// rejections, which the `cors` package surfaces by calling next(err)) falls
+// through to Express's default HTML error page instead of JSON. Every
+// frontend fetch call expects JSON, so an HTML response manifests as
+// "Unexpected token '<', <!DOCTYPE...' is not valid JSON" — a misleading
+// error that looks like a network/parsing bug but is actually this.
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  logger.error({ err }, "Unhandled error");
+  if (res.headersSent) return;
+  res.status(err?.status ?? 500).json({ error: err?.message ?? "Internal server error" });
+});
 
 export default app;
