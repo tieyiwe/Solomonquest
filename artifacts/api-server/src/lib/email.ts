@@ -31,7 +31,7 @@ const FROM = process.env.SMTP_FROM ?? 'SolomonQuest <solomonquest@tilogics.com>'
 const PRIMARY = '#1a1a2e';
 const ACCENT = '#e94560';
 
-function baseLayout(title: string, body: string, options?: { confetti?: boolean }): string {
+function baseLayout(title: string, body: string, options?: { confetti?: boolean; headerTitle?: string }): string {
   const confettiRow = options?.confetti
     ? `
           <!-- Confetti -->
@@ -57,7 +57,7 @@ function baseLayout(title: string, body: string, options?: { confetti?: boolean 
           <!-- Header -->
           <tr>
             <td style="background:${PRIMARY};padding:28px 40px${options?.confetti ? " 6px" : ""};">
-              <p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">SolomonQuest</p>
+              <p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">${options?.headerTitle ?? "SolomonQuest"}</p>
             </td>
           </tr>${confettiRow}
           <!-- Body -->
@@ -142,7 +142,7 @@ export async function sendTeacherInvite({
     ${paragraph(`<span style="color:#999999;font-size:13px;">If you didn't expect this invitation, you can ignore this email — no account will be created without your action.</span>`)}
   `;
 
-  await send(to, subject, baseLayout(subject, body, { confetti: true }));
+  await send(to, subject, baseLayout(subject, body, { confetti: true, headerTitle: schoolName }));
 }
 
 // ─── 2. Course Assignment Notification ───────────────────────────────────────
@@ -464,7 +464,7 @@ export async function sendEnhancedInvite({
     ${paragraph('<span style="color:#999999;font-size:13px;">If you weren\'t expecting this invitation, you can safely ignore this email. No account will be created without your action.</span>')}
   `;
 
-  await send(to, subject, baseLayout(subject, body, { confetti: true }));
+  await send(to, subject, baseLayout(subject, body, { confetti: true, headerTitle: schoolName }));
 }
 
 // ─── 9. Broadcast Message ─────────────────────────────────────────────────────
