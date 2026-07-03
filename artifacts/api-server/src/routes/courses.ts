@@ -4,6 +4,34 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
+// Public: list a school's published courses for its public homepage —
+// no auth required, and school is taken from the school_id query param
+// rather than the caller's own school (GET /courses below does the
+// opposite: it's for an authenticated user's own school and ignores
+// school_id entirely).
+router.get("/courses/public", async (req, res): Promise<void> => {
+  const schoolId = req.query.school_id as string | undefined;
+  if (!schoolId) {
+    res.status(400).json({ error: "school_id query parameter is required" });
+    return;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("courses")
+    .select("*")
+    .eq("school_id", schoolId)
+    .eq("is_published", true)
+    .order("title");
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  const courses = await Promise.all((data ?? []).map(enrichCourse));
+  res.json(courses);
+});
+
 // Get my courses (teacher = teaching, student = enrolled)
 router.get("/courses/my", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const role = req.userRole;
