@@ -409,7 +409,7 @@ export default function SchoolPublicPage() {
       .then((r) => r.json())
       .then((data: School) => {
         setSchool(data);
-        return fetch(`/api/courses?school_id=${data.id}`);
+        return fetch(`/api/courses/public?school_id=${data.id}`);
       })
       .then((r) => r.json())
       .then((data: Course[]) => setCourses(Array.isArray(data) ? data : []))
