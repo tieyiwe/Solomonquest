@@ -38,6 +38,7 @@ import {
   Loader2,
   FileQuestion,
   AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -194,7 +195,9 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
     );
   }
 
-  if (!assignments || assignments.length === 0) {
+  const visibleAssignments = (assignments ?? []).filter((a: any) => a.isPublished !== false);
+
+  if (visibleAssignments.length === 0) {
     return (
       <Card className="border-dashed bg-muted/20">
         <CardContent className="flex flex-col items-center justify-center p-12 text-center">
@@ -211,46 +214,84 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
   return (
     <>
       <div className="space-y-3">
-        {assignments.map((assignment) => (
-          <Card
-            key={assignment.id}
-            className="hover:border-primary/40 transition-colors cursor-pointer"
-            onClick={() => {
-              setSelectedAssignmentId(assignment.id);
-              setSubmissionContent("");
-            }}
-          >
-            <CardContent className="flex items-start gap-4 p-4">
-              <div className="h-10 w-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
-                <CheckSquare className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2 flex-wrap">
-                  <p className="font-medium text-foreground">{assignment.title}</p>
-                  {assignment.pointsPossible != null && (
-                    <Badge variant="secondary" className="shrink-0">
-                      {assignment.pointsPossible} pts
-                    </Badge>
+        {visibleAssignments.map((assignment: any) => {
+          const isSubmitted = !!assignment.hasSubmitted;
+          const isOverdue =
+            !isSubmitted && assignment.dueDate && new Date(assignment.dueDate) < new Date();
+
+          return (
+            <Card
+              key={assignment.id}
+              className={cn(
+                "hover:border-primary/40 transition-colors cursor-pointer",
+                isSubmitted && "border-green-200 dark:border-green-900 bg-green-50/40 dark:bg-green-950/10",
+                isOverdue && "border-red-200 dark:border-red-900"
+              )}
+              onClick={() => {
+                setSelectedAssignmentId(assignment.id);
+                setSubmissionContent("");
+              }}
+            >
+              <CardContent className="flex items-start gap-4 p-4">
+                <div
+                  className={cn(
+                    "h-10 w-10 rounded-lg flex items-center justify-center shrink-0",
+                    isSubmitted
+                      ? "bg-green-100 dark:bg-green-900/30"
+                      : "bg-orange-100 dark:bg-orange-900/30"
+                  )}
+                >
+                  {isSubmitted ? (
+                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  ) : (
+                    <CheckSquare className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                   )}
                 </div>
-                {assignment.description && (
-                  <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                    {assignment.description}
-                  </p>
-                )}
-                {assignment.dueDate && (
-                  <p className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1 mt-1.5 font-medium">
-                    <Calendar className="h-3 w-3" />
-                    Due {format(new Date(assignment.dueDate), "MMM d, yyyy")}
-                  </p>
-                )}
-              </div>
-              <Button size="sm" variant="outline" className="shrink-0">
-                Submit
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <p className="font-medium text-foreground">{assignment.title}</p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {isSubmitted ? (
+                        <Badge className="bg-green-600 hover:bg-green-600 text-white">
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Completed
+                        </Badge>
+                      ) : isOverdue ? (
+                        <Badge variant="destructive">Overdue</Badge>
+                      ) : (
+                        <Badge variant="secondary">Pending</Badge>
+                      )}
+                      {assignment.pointsPossible != null && (
+                        <Badge variant="outline">{assignment.pointsPossible} pts</Badge>
+                      )}
+                    </div>
+                  </div>
+                  {assignment.description && (
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                      {assignment.description}
+                    </p>
+                  )}
+                  {assignment.dueDate && (
+                    <p
+                      className={cn(
+                        "text-xs flex items-center gap-1 mt-1.5 font-medium",
+                        isOverdue
+                          ? "text-red-600 dark:text-red-400"
+                          : "text-orange-600 dark:text-orange-400"
+                      )}
+                    >
+                      <Calendar className="h-3 w-3" />
+                      Due {format(new Date(assignment.dueDate), "MMM d, yyyy")}
+                    </p>
+                  )}
+                </div>
+                <Button size="sm" variant={isSubmitted ? "outline" : "default"} className="shrink-0">
+                  {isSubmitted ? "View Submission" : "Submit"}
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       <Dialog
@@ -277,8 +318,18 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
               </p>
             </div>
           )}
+          {(selectedAssignment as any)?.hasSubmitted ? (
+            <div className="flex items-center gap-2 rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/20 p-4">
+              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
+              <p className="text-sm text-foreground">
+                You've already submitted this assignment. You can resubmit below to replace your answer.
+              </p>
+            </div>
+          ) : null}
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground">Your Submission</label>
+            <label className="text-sm font-semibold text-foreground">
+              {(selectedAssignment as any)?.hasSubmitted ? "Resubmit" : "Your Submission"}
+            </label>
             <Textarea
               placeholder="Type your answer or paste a link to your work..."
               className="min-h-[150px] resize-none"
@@ -313,7 +364,7 @@ function QuizzesTab({ courseId }: { courseId: string }) {
   const { data: quizzes, isLoading } = useQuery<Quiz[]>({
     queryKey: ["course-quizzes", courseId],
     queryFn: async () => {
-      const res = await fetch(`/api/courses/${courseId}/quizzes`, {
+      const res = await fetch(`/api/quizzes?course_id=${courseId}`, {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       if (!res.ok) throw new Error("Failed to fetch quizzes");

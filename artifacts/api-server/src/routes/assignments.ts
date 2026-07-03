@@ -61,11 +61,17 @@ router.get("/assignments", requireAuth, async (req: AuthenticatedRequest, res): 
     return;
   }
 
-  const { data: assignments, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from("assignments")
     .select("*")
-    .eq("course_id", courseId)
-    .order("due_date", { ascending: true });
+    .eq("course_id", courseId);
+
+  // Students only see published assignments; teachers/admins see drafts too.
+  if (req.userRole !== "teacher" && req.userRole !== "admin") {
+    query = query.eq("is_published", true);
+  }
+
+  const { data: assignments, error } = await query.order("due_date", { ascending: true });
 
   if (error) {
     res.status(500).json({ error: error.message });
@@ -116,7 +122,7 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
     return;
   }
 
-  const { course_id, title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch } = req.body;
+  const { course_id, title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch, isPublished } = req.body;
 
   if (!course_id) {
     res.status(400).json({ error: "course_id is required" });
@@ -131,6 +137,8 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
     return;
   }
 
+  const publishNow = isPublished === true;
+
   const { data: assignment, error } = await supabaseAdmin
     .from("assignments")
     .insert({
@@ -141,7 +149,7 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
       points_possible: points ?? null,
       file_url: file_url ?? null,
       instructions: instructions ?? null,
-      is_published: true,
+      is_published: publishNow,
       assignment_type: assignment_type ?? "standard",
       video_url: video_url ?? null,
       require_full_watch: require_full_watch ?? false,
@@ -154,24 +162,8 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
     return;
   }
 
-  // Notify all enrolled students
-  const { data: enrollments } = await supabaseAdmin
-    .from("course_enrollments")
-    .select("student_id")
-    .eq("course_id", course_id)
-    .eq("status", "active");
-
-  if (enrollments && enrollments.length > 0) {
-    const notifications = enrollments.map((e: Record<string, unknown>) => ({
-      user_id: e.student_id as string,
-      title: "New Assignment",
-      message: `A new assignment "${title}" has been posted.`,
-      type: "assignment",
-      reference_id: assignment.id,
-      is_read: false,
-    }));
-
-    await supabaseAdmin.from("notifications").insert(notifications);
+  if (publishNow) {
+    await notifyStudentsOfPublish(course_id, assignment.id as string, title, "assignment");
   }
 
   res.status(201).json(await enrichAssignment(assignment));
@@ -204,7 +196,7 @@ router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
     }
   }
 
-  const { title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch } = req.body;
+  const { title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch, isPublished } = req.body;
 
   if (due_date !== undefined && due_date !== null && isNaN(Date.parse(due_date))) {
     res.status(400).json({ error: "due_date must be a valid date" });
@@ -221,6 +213,9 @@ router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
   if (assignment_type !== undefined) updates.assignment_type = assignment_type;
   if (video_url !== undefined) updates.video_url = video_url;
   if (require_full_watch !== undefined) updates.require_full_watch = require_full_watch;
+  if (isPublished !== undefined) updates.is_published = isPublished;
+
+  const wasPublished = existing.is_published === true;
 
   const { data, error } = await supabaseAdmin
     .from("assignments")
@@ -232,6 +227,10 @@ router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
   if (error || !data) {
     res.status(400).json({ error: error?.message ?? "Failed to update assignment" });
     return;
+  }
+
+  if (isPublished === true && !wasPublished) {
+    await notifyStudentsOfPublish(data.course_id as string, data.id as string, data.title as string, "assignment");
   }
 
   res.json(await enrichAssignment(data));
@@ -355,6 +354,13 @@ router.patch("/assignments/:id", requireAuth, async (req, res): Promise<void> =>
   if (videoUrl !== undefined) updates.video_url = videoUrl;
   if (requireFullWatch !== undefined) updates.require_full_watch = requireFullWatch;
 
+  const { data: existing } = await supabaseAdmin
+    .from("assignments")
+    .select("is_published")
+    .eq("id", id)
+    .single();
+  const wasPublished = existing?.is_published === true;
+
   const { data, error } = await supabaseAdmin
     .from("assignments")
     .update(updates)
@@ -367,8 +373,33 @@ router.patch("/assignments/:id", requireAuth, async (req, res): Promise<void> =>
     return;
   }
 
+  if (isPublished === true && !wasPublished) {
+    await notifyStudentsOfPublish(data.course_id as string, data.id as string, data.title as string, "assignment");
+  }
+
   res.json(await enrichAssignment(data));
 });
+
+async function notifyStudentsOfPublish(courseId: string, referenceId: string, title: string, type: string) {
+  const { data: enrollments } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("student_id")
+    .eq("course_id", courseId)
+    .eq("status", "active");
+
+  if (!enrollments || enrollments.length === 0) return;
+
+  const notifications = enrollments.map((e: Record<string, unknown>) => ({
+    user_id: e.student_id as string,
+    title: "New Assignment",
+    message: `A new assignment "${title}" has been posted.`,
+    type,
+    reference_id: referenceId,
+    is_read: false,
+  }));
+
+  await supabaseAdmin.from("notifications").insert(notifications);
+}
 
 async function enrichAssignment(a: Record<string, unknown>) {
   let courseTitle: string | null = null;

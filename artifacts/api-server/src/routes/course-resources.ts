@@ -19,6 +19,11 @@ router.get(
       .eq("course_id", courseId)
       .order("created_at", { ascending: false });
 
+    // Students only see published resources; teachers/admins see drafts too.
+    if (req.userRole !== "teacher" && req.userRole !== "admin") {
+      query = query.eq("is_published", true);
+    }
+
     if (section) {
       query = query.eq("section", section as string);
     }
@@ -46,7 +51,7 @@ router.post(
     }
 
     const { courseId } = req.params;
-    const { title, description, resourceType, fileUrl, externalUrl, section } =
+    const { title, description, resourceType, fileUrl, externalUrl, section, isPublished } =
       req.body;
 
     if (!title || !resourceType) {
@@ -66,6 +71,8 @@ router.post(
       return;
     }
 
+    const publishNow = isPublished === true;
+
     // Insert the resource
     const { data: resource, error: insertError } = await supabaseAdmin
       .from("course_resources")
@@ -78,6 +85,7 @@ router.post(
         external_url: externalUrl ?? null,
         section: section ?? null,
         created_by: req.userId,
+        is_published: publishNow,
       })
       .select()
       .single();
@@ -87,94 +95,160 @@ router.post(
       return;
     }
 
-    // Fetch enrolled students
-    const { data: enrollments, error: enrollError } = await supabaseAdmin
-      .from("enrollments")
-      .select("student_id")
-      .eq("course_id", courseId)
-      .eq("status", "active");
-
-    if (enrollError) {
-      console.error("[course-resources] Failed to fetch enrollments:", enrollError.message);
-      res.status(201).json(resource);
-      return;
-    }
-
-    const studentIds = (enrollments ?? []).map((e) => e.student_id as string);
-
-    if (studentIds.length > 0) {
-      // Insert in-app notifications for each student
-      const notifications = studentIds.map((studentId) => ({
-        user_id: studentId,
-        title: `New resource in ${course.title}`,
-        body: `${title} has been added`,
-        link: `/dashboard/student/courses/${courseId}`,
-      }));
-
-      const { error: notifError } = await supabaseAdmin
-        .from("notifications")
-        .insert(notifications);
-
-      if (notifError) {
-        console.error("[course-resources] Failed to insert notifications:", notifError.message);
-      }
-
-      // Fetch student auth profiles to get emails
-      try {
-        const { data: usersPage, error: usersError } =
-          await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-
-        if (usersError) {
-          console.error("[course-resources] Failed to list users:", usersError.message);
-        } else {
-          const userMap = new Map<string, { email: string; name?: string }>();
-          for (const u of usersPage.users) {
-            userMap.set(u.id, {
-              email: u.email ?? "",
-              name:
-                ((u.user_metadata?.first_name as string | undefined) ?? "") +
-                " " +
-                ((u.user_metadata?.last_name as string | undefined) ?? ""),
-            });
-          }
-
-          // Also fetch display names from profiles
-          const { data: profiles } = await supabaseAdmin
-            .from("profiles")
-            .select("id, first_name, last_name")
-            .in("id", studentIds);
-
-          const profileMap = new Map<string, string>();
-          for (const p of profiles ?? []) {
-            const name = [p.first_name, p.last_name].filter(Boolean).join(" ");
-            profileMap.set(p.id as string, name || "Student");
-          }
-
-          await Promise.allSettled(
-            studentIds.map(async (studentId) => {
-              const userInfo = userMap.get(studentId);
-              if (!userInfo?.email) return;
-
-              const studentName = profileMap.get(studentId) ?? "Student";
-
-              await sendResourceNotification({
-                to: userInfo.email,
-                studentName,
-                courseTitle: course.title as string,
-                resourceTitle: title,
-                resourceType,
-              });
-            })
-          );
-        }
-      } catch (err) {
-        console.error("[course-resources] Email notification error:", err);
-      }
+    if (publishNow) {
+      await notifyStudentsOfResource(courseId, course.title as string, title, resourceType);
     }
 
     res.status(201).json(resource);
   }
 );
+
+// PATCH /courses/:courseId/resources/:id — edit or publish/unpublish a resource
+router.patch(
+  "/courses/:courseId/resources/:id",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const role = req.userRole;
+    if (role !== "teacher" && role !== "admin") {
+      res.status(403).json({ error: "Forbidden: teacher or admin only" });
+      return;
+    }
+
+    const { courseId, id } = req.params;
+    const { title, description, resourceType, fileUrl, externalUrl, section, isPublished } = req.body;
+
+    const { data: existing } = await supabaseAdmin
+      .from("course_resources")
+      .select("is_published")
+      .eq("id", id)
+      .single();
+
+    const wasPublished = existing?.is_published === true;
+
+    const updates: Record<string, unknown> = {};
+    if (title !== undefined) updates.title = title;
+    if (description !== undefined) updates.description = description;
+    if (resourceType !== undefined) updates.resource_type = resourceType;
+    if (fileUrl !== undefined) updates.file_url = fileUrl;
+    if (externalUrl !== undefined) updates.external_url = externalUrl;
+    if (section !== undefined) updates.section = section;
+    if (isPublished !== undefined) updates.is_published = isPublished;
+
+    const { data, error } = await supabaseAdmin
+      .from("course_resources")
+      .update(updates)
+      .eq("id", id)
+      .eq("course_id", courseId)
+      .select()
+      .single();
+
+    if (error || !data) {
+      res.status(404).json({ error: "Resource not found" });
+      return;
+    }
+
+    if (isPublished === true && !wasPublished) {
+      const { data: course } = await supabaseAdmin
+        .from("courses")
+        .select("title")
+        .eq("id", courseId)
+        .single();
+
+      await notifyStudentsOfResource(
+        courseId,
+        (course?.title as string) ?? "your course",
+        data.title as string,
+        data.resource_type as string
+      );
+    }
+
+    res.json(data);
+  }
+);
+
+async function notifyStudentsOfResource(
+  courseId: string | string[],
+  courseTitle: string,
+  resourceTitle: string,
+  resourceType: string
+) {
+  const { data: enrollments, error: enrollError } = await supabaseAdmin
+    .from("enrollments")
+    .select("student_id")
+    .eq("course_id", courseId)
+    .eq("status", "active");
+
+  if (enrollError) {
+    console.error("[course-resources] Failed to fetch enrollments:", enrollError.message);
+    return;
+  }
+
+  const studentIds = (enrollments ?? []).map((e) => e.student_id as string);
+  if (studentIds.length === 0) return;
+
+  const notifications = studentIds.map((studentId) => ({
+    user_id: studentId,
+    title: `New resource in ${courseTitle}`,
+    body: `${resourceTitle} has been added`,
+    link: `/dashboard/student/courses/${courseId}`,
+  }));
+
+  const { error: notifError } = await supabaseAdmin.from("notifications").insert(notifications);
+  if (notifError) {
+    console.error("[course-resources] Failed to insert notifications:", notifError.message);
+  }
+
+  try {
+    const { data: usersPage, error: usersError } =
+      await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+
+    if (usersError) {
+      console.error("[course-resources] Failed to list users:", usersError.message);
+      return;
+    }
+
+    const userMap = new Map<string, { email: string; name?: string }>();
+    for (const u of usersPage.users) {
+      userMap.set(u.id, {
+        email: u.email ?? "",
+        name:
+          ((u.user_metadata?.first_name as string | undefined) ?? "") +
+          " " +
+          ((u.user_metadata?.last_name as string | undefined) ?? ""),
+      });
+    }
+
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles")
+      .select("id, first_name, last_name")
+      .in("id", studentIds);
+
+    const profileMap = new Map<string, string>();
+    for (const p of profiles ?? []) {
+      const name = [p.first_name, p.last_name].filter(Boolean).join(" ");
+      profileMap.set(p.id as string, name || "Student");
+    }
+
+    await Promise.allSettled(
+      studentIds.map(async (studentId) => {
+        const userInfo = userMap.get(studentId);
+        if (!userInfo?.email) return;
+
+        const studentName = profileMap.get(studentId) ?? "Student";
+
+        await sendResourceNotification({
+          to: userInfo.email,
+          studentName,
+          courseTitle,
+          resourceTitle,
+          resourceType,
+        });
+      })
+    );
+  } catch (err) {
+    console.error("[course-resources] Email notification error:", err);
+  }
+}
 
 // DELETE /courses/:courseId/resources/:id
 router.delete(

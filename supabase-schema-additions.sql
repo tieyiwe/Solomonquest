@@ -286,3 +286,10 @@ ALTER TABLE public.invitations ADD CONSTRAINT invitations_status_check
   CHECK (status IN ('pending','accepted','expired'));
 UPDATE public.invitations SET status = 'accepted' WHERE accepted_at IS NOT NULL AND status = 'pending';
 UPDATE public.invitations SET status = 'expired' WHERE accepted_at IS NULL AND expires_at < now() AND status = 'pending';
+
+-- ─── Course resources publish workflow ─────────────────────────────────────────
+-- Resources previously showed to students the instant a teacher added them.
+-- Add a draft/publish gate matching assignments and quizzes.
+ALTER TABLE public.course_resources ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT false;
+-- Existing resources were already visible to students; keep that behavior on upgrade.
+UPDATE public.course_resources SET is_published = true WHERE is_published IS NOT true;

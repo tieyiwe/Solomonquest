@@ -138,6 +138,8 @@ router.put("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<
     time_limit_minutes,
     attempt_limit,
     release_scores_immediately,
+    is_published,
+    due_date,
   } = req.body;
 
   const updates: Record<string, unknown> = {};
@@ -147,6 +149,8 @@ router.put("/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<
   if (attempt_limit !== undefined) updates.attempt_limit = attempt_limit;
   if (release_scores_immediately !== undefined)
     updates.release_scores_immediately = release_scores_immediately;
+  if (is_published !== undefined) updates.is_published = is_published;
+  if (due_date !== undefined) updates.due_date = due_date;
 
   try {
     const { data, error } = await supabaseAdmin
