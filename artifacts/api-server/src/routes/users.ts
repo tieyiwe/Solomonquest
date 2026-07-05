@@ -370,16 +370,35 @@ router.patch("/users/:id/role", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  // Admins (non-super_admin) may only change roles for users in the same school
+  // Admins (non-super_admin) may only change roles for users in the same
+  // school, and can never grant super_admin — that would be a privilege
+  // escalation to platform-wide access from a single-school role.
   if (req.userRole !== "super_admin") {
+    if (role === "super_admin") {
+      res.status(403).json({ error: "Only a super admin can grant super admin access" });
+      return;
+    }
+
     const { data: targetProfile } = await supabaseAdmin
       .from("profiles")
-      .select("school_id")
+      .select("school_id, role")
       .eq("id", id)
       .single();
 
     if (!targetProfile || targetProfile.school_id !== req.schoolId) {
       res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    // Also block demoting/modifying an existing super_admin from a
+    // regular admin account, for the same reason.
+    if (targetProfile.role === "super_admin") {
+      res.status(403).json({ error: "Only a super admin can change another super admin's role" });
+      return;
+    }
+
+    if (id === req.userId) {
+      res.status(403).json({ error: "You cannot change your own role" });
       return;
     }
   }

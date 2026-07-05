@@ -16,7 +16,14 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, ArrowLeft, CheckCircle2, XCircle, Loader2, Trash2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { AlertTriangle, ArrowLeft, CheckCircle2, XCircle, Loader2, Trash2, Crown } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 
@@ -83,6 +90,218 @@ function CheckRow({
         )}
       </span>
     </div>
+  );
+}
+
+// ─── Transfer Ownership ────────────────────────────────────────────────────────
+
+interface EligibleUser {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  role?: string | null;
+  email?: string | null;
+}
+
+type TransferStep = "select" | "confirm";
+
+function TransferOwnershipCard({
+  schoolId,
+  schoolName,
+  isOwner,
+}: {
+  schoolId: string;
+  schoolName: string;
+  isOwner: boolean;
+}) {
+  const [users, setUsers] = useState<EligibleUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [step, setStep] = useState<TransferStep>("select");
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [nameInput, setNameInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    setLoadingUsers(true);
+    apiFetch(`/api/users`)
+      .then((r) => r.json())
+      .then((data: EligibleUser[]) => {
+        setUsers(Array.isArray(data) ? data.filter((u) => u.role !== "student") : []);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingUsers(false));
+  }, [schoolId]);
+
+  const selectedUser = users.find((u) => u.id === selectedUserId);
+  const nameMatches = nameInput.trim().toLowerCase() === schoolName.trim().toLowerCase();
+
+  const handleOpen = () => {
+    setStep("select");
+    setSelectedUserId("");
+    setNameInput("");
+    setDialogOpen(true);
+  };
+
+  const handleConfirmSelection = () => {
+    if (!selectedUserId) return;
+    setStep("confirm");
+  };
+
+  const handleTransfer = async () => {
+    if (!nameMatches || !selectedUserId) return;
+    setSubmitting(true);
+    try {
+      const res = await apiFetch(`/api/schools/${schoolId}/transfer-ownership`, {
+        method: "POST",
+        body: JSON.stringify({ newOwnerId: selectedUserId, confirmSchoolName: nameInput.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data?.error ?? "Failed to transfer ownership");
+        return;
+      }
+      toast.success(
+        `Ownership transferred to ${[selectedUser?.firstName, selectedUser?.lastName].filter(Boolean).join(" ") || "the new owner"}.`
+      );
+      setDialogOpen(false);
+      // Reload so the rest of the app picks up the new owner/role state.
+      window.location.reload();
+    } catch {
+      toast.error("Failed to transfer ownership");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!isOwner) return null;
+
+  return (
+    <>
+      <Card className="border border-amber-200 shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-amber-100">
+              <Crown className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base text-gray-900">Transfer School Ownership</CardTitle>
+              <CardDescription>
+                Hand full ownership of this school to another admin, staff member, or teacher.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <p>
+              The new owner is promoted to admin if they aren't already. You will keep your own
+              admin access, but will no longer be the school's owner.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            className="border-amber-300 text-amber-700 hover:bg-amber-50 w-full sm:w-auto"
+            onClick={handleOpen}
+            disabled={loadingUsers || users.length === 0}
+          >
+            <Crown className="mr-2 h-4 w-4" />
+            Transfer Ownership
+          </Button>
+          {!loadingUsers && users.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No other admins, staff, or teachers found to transfer ownership to.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={(v) => !v && setDialogOpen(false)}>
+        <DialogContent className="sm:max-w-md">
+          {step === "select" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Transfer Ownership</DialogTitle>
+                <DialogDescription>
+                  Choose who should become the new owner of {schoolName}.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a new owner..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {[u.firstName, u.lastName].filter(Boolean).join(" ") || u.email}{" "}
+                        <span className="text-muted-foreground capitalize">({u.role})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button disabled={!selectedUserId} onClick={handleConfirmSelection}>
+                    Continue
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {step === "confirm" && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-amber-700">Are you absolutely sure?</DialogTitle>
+                <DialogDescription>
+                  You are about to permanently transfer ownership of {schoolName} to{" "}
+                  <strong>
+                    {[selectedUser?.firstName, selectedUser?.lastName].filter(Boolean).join(" ")}
+                  </strong>
+                  . This cannot be undone by you — only the new owner or a platform super admin
+                  can transfer it again.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div className="space-y-1.5">
+                  <Label>
+                    Type <span className="font-semibold text-gray-800">{schoolName}</span> to confirm:
+                  </Label>
+                  <Input
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    placeholder={schoolName}
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" onClick={() => setStep("select")}>
+                    Back
+                  </Button>
+                  <Button
+                    className="bg-amber-600 hover:bg-amber-700"
+                    disabled={!nameMatches || submitting}
+                    onClick={handleTransfer}
+                  >
+                    {submitting ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Crown className="mr-2 h-4 w-4" />
+                    )}
+                    Transfer Ownership
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -293,6 +512,18 @@ export default function AdminDangerZone() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Transfer ownership */}
+        {schoolId && school && (
+          <TransferOwnershipCard
+            schoolId={schoolId}
+            schoolName={school.name}
+            isOwner={
+              (school as any).ownerId === user?.id ||
+              (user as any)?.role === "super_admin"
+            }
+          />
         )}
 
         {/* Main deletion card */}

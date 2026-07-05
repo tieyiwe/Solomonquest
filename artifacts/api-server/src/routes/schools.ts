@@ -275,6 +275,130 @@ router.patch("/schools/:id", requireAuth, async (req: AuthenticatedRequest, res)
   res.json(mapSchool(data));
 });
 
+// POST /schools/:id/transfer-ownership — hand school ownership to another
+// admin/staff/teacher in the same school. Only the current owner or a
+// super_admin may initiate; the target is promoted to admin if needed.
+router.post(
+  "/schools/:id/transfer-ownership",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { newOwnerId, confirmSchoolName } = req.body as {
+      newOwnerId?: string;
+      confirmSchoolName?: string;
+    };
+
+    if (!newOwnerId) {
+      res.status(400).json({ error: "newOwnerId is required" });
+      return;
+    }
+
+    const { data: school, error: schoolError } = await supabaseAdmin
+      .from("schools")
+      .select("id, name, owner_id")
+      .eq("id", id)
+      .single();
+
+    if (schoolError || !school) {
+      res.status(404).json({ error: "School not found" });
+      return;
+    }
+
+    const isCurrentOwner = school.owner_id === req.userId;
+    const isSuperAdmin = req.userRole === "super_admin";
+    if (!isCurrentOwner && !isSuperAdmin) {
+      res.status(403).json({ error: "Only the current owner or a super admin can transfer ownership" });
+      return;
+    }
+
+    // Require the caller to re-type the school's exact name as a final
+    // confirmation step — mirrors the same pattern used for school deletion.
+    if (
+      !confirmSchoolName ||
+      confirmSchoolName.trim().toLowerCase() !== (school.name ?? "").trim().toLowerCase()
+    ) {
+      res.status(400).json({ error: "School name confirmation does not match" });
+      return;
+    }
+
+    if (newOwnerId === school.owner_id) {
+      res.status(400).json({ error: "This user already owns the school" });
+      return;
+    }
+
+    const { data: targetProfile, error: targetError } = await supabaseAdmin
+      .from("profiles")
+      .select("id, school_id, role, first_name, last_name")
+      .eq("id", newOwnerId)
+      .single();
+
+    if (targetError || !targetProfile) {
+      res.status(404).json({ error: "Target user not found" });
+      return;
+    }
+
+    if (targetProfile.school_id !== id) {
+      res.status(400).json({ error: "The new owner must already be a member of this school" });
+      return;
+    }
+
+    if (targetProfile.role === "student") {
+      res.status(400).json({ error: "A student cannot become the school owner — promote them to staff or teacher first" });
+      return;
+    }
+
+    // The owner must hold admin rights; promote if the target is currently
+    // teacher/staff.
+    if (targetProfile.role !== "admin" && targetProfile.role !== "super_admin") {
+      const { error: promoteError } = await supabaseAdmin
+        .from("profiles")
+        .update({ role: "admin" })
+        .eq("id", newOwnerId);
+
+      if (promoteError) {
+        res.status(500).json({ error: promoteError.message });
+        return;
+      }
+    }
+
+    const { data: updatedSchool, error: updateError } = await supabaseAdmin
+      .from("schools")
+      .update({ owner_id: newOwnerId })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (updateError || !updatedSchool) {
+      res.status(500).json({ error: updateError?.message ?? "Failed to transfer ownership" });
+      return;
+    }
+
+    const newOwnerName =
+      [targetProfile.first_name, targetProfile.last_name].filter(Boolean).join(" ") || "A new owner";
+
+    await supabaseAdmin.from("notifications").insert([
+      {
+        user_id: newOwnerId,
+        type: "info",
+        message: `You are now the owner of ${school.name}.`,
+        is_read: false,
+      },
+      ...(school.owner_id
+        ? [
+            {
+              user_id: school.owner_id,
+              type: "info",
+              message: `You transferred ownership of ${school.name} to ${newOwnerName}.`,
+              is_read: false,
+            },
+          ]
+        : []),
+    ]);
+
+    res.json(mapSchool(updatedSchool));
+  }
+);
+
 // POST /schools/:id/request-deletion — school admin initiates deletion request
 router.post("/schools/:id/request-deletion", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
