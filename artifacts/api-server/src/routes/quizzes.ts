@@ -629,7 +629,9 @@ router.get(
 
         res.json(data ?? []);
       } else {
-        // Students: only return their own attempts
+        // Students: return an attempt summary (used/limit/remaining), not the
+        // raw attempt rows — the quiz-take page uses this to decide whether
+        // the student can still start a new attempt.
         const { data, error } = await supabaseAdmin
           .from("quiz_attempts")
           .select("*")
@@ -642,7 +644,22 @@ router.get(
           return;
         }
 
-        res.json(data ?? []);
+        const { data: quiz } = await supabaseAdmin
+          .from("quizzes")
+          .select("attempt_limit")
+          .eq("id", id)
+          .single();
+
+        const attemptsUsed = (data ?? []).length;
+        const attemptLimit = quiz?.attempt_limit ?? null;
+        const remainingAttempts = attemptLimit != null ? Math.max(0, attemptLimit - attemptsUsed) : null;
+
+        res.json({
+          attempts_used: attemptsUsed,
+          attempt_limit: attemptLimit,
+          remaining_attempts: remainingAttempts,
+          attempts: data ?? [],
+        });
       }
     } catch (err: any) {
       res.status(500).json({ error: err.message });

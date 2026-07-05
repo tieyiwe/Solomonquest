@@ -40,7 +40,13 @@ import {
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
+
+function safeFormat(value: string | null | undefined, fmt: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return isValid(date) ? format(date, fmt) : null;
+}
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -126,9 +132,9 @@ function ResourcesTab({ courseId }: { courseId: string }) {
               {resource.description && (
                 <p className="text-sm text-muted-foreground truncate">{resource.description}</p>
               )}
-              {resource.uploadedAt && (
+              {safeFormat(resource.uploadedAt, "MMM d, yyyy") && (
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Uploaded {format(new Date(resource.uploadedAt), "MMM d, yyyy")}
+                  Uploaded {safeFormat(resource.uploadedAt, "MMM d, yyyy")}
                 </p>
               )}
             </div>
@@ -271,7 +277,7 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
                       {assignment.description}
                     </p>
                   )}
-                  {assignment.dueDate && (
+                  {safeFormat(assignment.dueDate, "MMM d, yyyy") && (
                     <p
                       className={cn(
                         "text-xs flex items-center gap-1 mt-1.5 font-medium",
@@ -281,7 +287,7 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
                       )}
                     >
                       <Calendar className="h-3 w-3" />
-                      Due {format(new Date(assignment.dueDate), "MMM d, yyyy")}
+                      Due {safeFormat(assignment.dueDate, "MMM d, yyyy")}
                     </p>
                   )}
                 </div>
@@ -301,10 +307,10 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{selectedAssignment?.title}</DialogTitle>
-            {selectedAssignment?.dueDate && (
+            {safeFormat(selectedAssignment?.dueDate, "EEEE, MMMM d, yyyy") && (
               <p className="text-sm text-orange-600 dark:text-orange-400 flex items-center gap-1 font-medium mt-1">
                 <Calendar className="h-3.5 w-3.5" />
-                Due {format(new Date(selectedAssignment.dueDate), "EEEE, MMMM d, yyyy")}
+                Due {safeFormat(selectedAssignment?.dueDate, "EEEE, MMMM d, yyyy")}
               </p>
             )}
           </DialogHeader>
@@ -420,10 +426,10 @@ function QuizzesTab({ courseId }: { courseId: string }) {
                     {quiz.time_limit_minutes} min
                   </span>
                 )}
-                {quiz.due_date && (
+                {safeFormat(quiz.due_date, "MMM d") && (
                   <span className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1 font-medium">
                     <Calendar className="h-3 w-3" />
-                    Due {format(new Date(quiz.due_date), "MMM d")}
+                    Due {safeFormat(quiz.due_date, "MMM d")}
                   </span>
                 )}
               </div>
@@ -497,9 +503,9 @@ function VideoTab({ courseId }: { courseId: string }) {
           <div className="h-3 w-3 rounded-full bg-green-500 animate-pulse shrink-0" />
           <div className="flex-1">
             <p className="font-semibold text-green-700 dark:text-green-400">Live Class in Progress</p>
-            {videoSession.started_at && (
+            {safeFormat(videoSession.started_at, "h:mm a") && (
               <p className="text-xs text-green-600/70 dark:text-green-400/70">
-                Started {format(new Date(videoSession.started_at), "h:mm a")}
+                Started {safeFormat(videoSession.started_at, "h:mm a")}
               </p>
             )}
           </div>

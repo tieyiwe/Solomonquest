@@ -42,7 +42,7 @@ import {
   Upload,
   Send,
 } from "lucide-react";
-import { format, isPast, isToday, isWithinInterval, addDays } from "date-fns";
+import { format, isPast, isToday, isWithinInterval, addDays, isValid } from "date-fns";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -52,6 +52,7 @@ type DuePriority = "overdue" | "today" | "soon" | "future" | "none";
 function getDuePriority(dueDate?: string | null): DuePriority {
   if (!dueDate) return "none";
   const date = new Date(dueDate);
+  if (!isValid(date)) return "none";
   if (isPast(date) && !isToday(date)) return "overdue";
   if (isToday(date)) return "today";
   if (isWithinInterval(date, { start: new Date(), end: addDays(new Date(), 7) })) return "soon";
@@ -61,6 +62,7 @@ function getDuePriority(dueDate?: string | null): DuePriority {
 function DueDateBadge({ dueDate }: { dueDate?: string | null }) {
   if (!dueDate) return <span className="text-xs text-muted-foreground">No due date</span>;
   const date = new Date(dueDate);
+  if (!isValid(date)) return <span className="text-xs text-muted-foreground">No due date</span>;
   const priority = getDuePriority(dueDate);
 
   const colorMap: Record<DuePriority, string> = {
@@ -168,7 +170,7 @@ function SubmitDialog({
       </DialogHeader>
 
       {/* Due date banner */}
-      {assignment.dueDate && (
+      {assignment.dueDate && isValid(new Date(assignment.dueDate)) && (
         <div
           className={cn(
             "flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-lg",

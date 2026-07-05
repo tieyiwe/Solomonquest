@@ -53,7 +53,13 @@ import {
   FileQuestion,
   Trash2,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
+
+function safeFormat(value: string | null | undefined, fmt: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return isValid(date) ? format(date, fmt) : null;
+}
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -976,10 +982,10 @@ export default function TeacherCourseDetail() {
                             )}
                           </div>
                           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-muted-foreground">
-                            {assignment.dueDate && (
+                            {safeFormat(assignment.dueDate, "MMM d, yyyy") && (
                               <span className="flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
-                                Due {format(new Date(assignment.dueDate), "MMM d, yyyy")}
+                                Due {safeFormat(assignment.dueDate, "MMM d, yyyy")}
                               </span>
                             )}
                             <span>{assignment.pointsPossible ?? 0} pts</span>
@@ -1185,10 +1191,10 @@ export default function TeacherCourseDetail() {
                                 {quiz.time_limit_minutes} min
                               </span>
                             )}
-                            {quiz.due_date && (
+                            {safeFormat(quiz.due_date, "MMM d, yyyy") && (
                               <span className="flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
-                                Due {format(new Date(quiz.due_date), "MMM d, yyyy")}
+                                Due {safeFormat(quiz.due_date, "MMM d, yyyy")}
                               </span>
                             )}
                           </div>
