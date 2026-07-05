@@ -406,6 +406,8 @@ router.get(
         createdAt: m.created_at,
         sender: {
           id: m.sender_id,
+          name:
+            [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Unknown",
           firstName: profile?.first_name ?? null,
           lastName: profile?.last_name ?? null,
           avatarUrl: profile?.avatar_url ?? null,
@@ -481,6 +483,8 @@ router.post(
       createdAt: message.created_at,
       sender: {
         id: message.sender_id,
+        name:
+          [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Unknown",
         firstName: profile?.first_name ?? null,
         lastName: profile?.last_name ?? null,
         avatarUrl: profile?.avatar_url ?? null,
@@ -538,6 +542,8 @@ router.get(
         createdAt: m.created_at,
         sender: {
           id: m.sender_id,
+          name:
+            [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Unknown",
           firstName: profile?.first_name ?? null,
           lastName: profile?.last_name ?? null,
           avatarUrl: profile?.avatar_url ?? null,
