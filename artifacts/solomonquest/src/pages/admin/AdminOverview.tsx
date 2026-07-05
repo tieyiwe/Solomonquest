@@ -336,7 +336,7 @@ export default function AdminOverview() {
   }
 
   useEffect(() => {
-    apiFetch<DashboardStats>("/api/dashboard")
+    apiFetch<DashboardStats>("/api/dashboard/admin/stats")
       .then(setStats)
       .catch(() => toast.error("Failed to load dashboard stats"))
       .finally(() => setStatsLoading(false));
