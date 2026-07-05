@@ -253,11 +253,13 @@ function Avatar({
 }: {
   name: string;
   userId?: string | null;
-  size?: "xs" | "sm" | "md";
+  size?: "2xs" | "xs" | "sm" | "md";
 }) {
   const color = useParticipantColor(userId, name);
   const sz =
-    size === "xs"
+    size === "2xs"
+      ? "w-5 h-5 text-[8px]"
+      : size === "xs"
       ? "w-6 h-6 text-[10px]"
       : size === "sm"
       ? "w-7 h-7 text-xs"
@@ -715,74 +717,143 @@ function NewChannelDialog({
 // Inline thread preview (collapsed)
 // ---------------------------------------------------------------------------
 
-function InlineThreadPreview({
+function ThreadComposer({
   count,
   channelId,
   parentId,
-  onExpand,
+  currentUserId,
+  currentUserName,
 }: {
   count: number;
   channelId: string;
   parentId: string;
-  onExpand: () => void;
+  currentUserId: string;
+  currentUserName: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [replies, setReplies] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [replyCount, setReplyCount] = useState(count);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const fetchReplies = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`/api/chat/channels/${channelId}/messages/${parentId}/thread`);
+      if (res.ok) setReplies(await res.json());
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }, [channelId, parentId]);
 
   async function toggle() {
-    if (!expanded) {
-      setLoading(true);
-      try {
-        const res = await apiFetch(
-          `/api/chat/channels/${channelId}/messages/${parentId}/thread`
-        );
-        if (res.ok) setReplies(await res.json());
-      } catch {
-        /* ignore */
-      } finally {
-        setLoading(false);
-      }
-    }
+    if (!expanded) await fetchReplies();
     setExpanded((v) => !v);
   }
 
+  // Live-update the reply list while expanded, so replies from other
+  // members appear immediately without needing to collapse/reopen.
+  useEffect(() => {
+    if (!expanded) return;
+    const sub = supabase
+      .channel(`thread-inline:${channelId}:${parentId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages", filter: `channel_id=eq.${channelId}` },
+        (payload) => {
+          const msg = payload.new as ChatMessage;
+          if (msg.thread_parent_id !== parentId) return;
+          setReplies((prev) => (prev.find((r) => r.id === msg.id) ? prev : [...prev, msg]));
+          setReplyCount((c) => c + 1);
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(sub);
+    };
+  }, [expanded, channelId, parentId]);
+
+  useEffect(() => {
+    if (expanded) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [replies.length, expanded]);
+
+  async function sendReply(content: string) {
+    const optimisticId = `opt-${Date.now()}`;
+    const optimistic: ChatMessage = {
+      id: optimisticId,
+      channel_id: channelId,
+      content,
+      thread_parent_id: parentId,
+      created_at: new Date().toISOString(),
+      sender: { id: currentUserId, name: currentUserName },
+      _optimistic: true,
+    };
+    setReplies((prev) => [...prev, optimistic]);
+    setReplyCount((c) => c + 1);
+    try {
+      const res = await apiFetch(`/api/chat/channels/${channelId}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ content, thread_parent_id: parentId }),
+      });
+      if (!res.ok) throw new Error();
+      const saved: ChatMessage = await res.json();
+      setReplies((prev) => prev.map((r) => (r.id === optimisticId ? saved : r)));
+    } catch {
+      setReplies((prev) => prev.filter((r) => r.id !== optimisticId));
+      setReplyCount((c) => Math.max(0, c - 1));
+      toast.error("Failed to send reply");
+    }
+  }
+
   return (
-    <div className="mt-1 ml-1">
+    <div className="mt-1">
       <button
-        className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-600 font-medium"
+        className={`flex items-center gap-1.5 text-xs font-medium transition-opacity ${
+          replyCount > 0
+            ? "text-blue-500 hover:text-blue-600"
+            : "text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100"
+        }`}
         onClick={toggle}
       >
-        {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5" />
+        {replyCount > 0 ? (
+          <>
+            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            <MessageSquare className="w-3.5 h-3.5" />
+            {replyCount} {replyCount === 1 ? "reply" : "replies"}
+          </>
         ) : (
-          <ChevronRight className="w-3.5 h-3.5" />
+          <>
+            <MessageSquare className="w-3.5 h-3.5" />
+            Reply
+          </>
         )}
-        <MessageSquare className="w-3.5 h-3.5" />
-        {count} {count === 1 ? "reply" : "replies"}
       </button>
 
       {expanded && (
-        <div className="mt-2 ml-4 border-l-2 border-border pl-3 space-y-2">
+        <div className="mt-2 ml-4 border-l-2 border-border pl-3 space-y-2.5">
           {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
           {replies.map((r) => (
-            <div key={r.id} className="flex gap-2">
-              <Avatar name={r.sender?.name ?? "?"} userId={r.sender?.id} size="xs" />
-              <div className="min-w-0">
+            <div key={r.id} className={`flex gap-2 ${r._optimistic ? "opacity-50" : ""}`}>
+              <Avatar name={r.sender?.name ?? "?"} userId={r.sender?.id} size="2xs" />
+              <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs font-semibold">{r.sender?.name}</span>
                   <span className="text-[10px] text-muted-foreground">{formatTs(r.created_at)}</span>
                 </div>
-                <p className="text-xs text-foreground whitespace-pre-wrap break-words">{r.content}</p>
+                {r.attachmentUrl ? (
+                  <AttachmentBubble msg={r} />
+                ) : (
+                  <p className="text-xs text-foreground whitespace-pre-wrap break-words">{r.content}</p>
+                )}
               </div>
             </div>
           ))}
-          <button
-            className="text-xs text-blue-500 hover:underline"
-            onClick={onExpand}
-          >
-            Open in thread panel →
-          </button>
+          <div ref={bottomRef} />
+          <div className="pt-1">
+            <MessageInput onSend={sendReply} placeholder="Reply..." compact />
+          </div>
         </div>
       )}
     </div>
@@ -797,14 +868,16 @@ function MessageItem({
   msg,
   grouped = false,
   compact = false,
-  onOpenThread,
+  currentUserId,
+  currentUserName,
 }: {
   msg: ChatMessage;
   grouped?: boolean;
   /** Smaller avatar + narrower gutter, used for thread replies so they read
    * as visually subordinate to the parent message they're replying to. */
   compact?: boolean;
-  onOpenThread: (msg: ChatMessage) => void;
+  currentUserId: string;
+  currentUserName: string;
 }) {
   const online = isOnline(msg.sender?.online_at);
   const threadCount = msg.thread_count ?? 0;
@@ -819,17 +892,6 @@ function MessageItem({
         grouped ? "py-0.5" : "py-1.5 mt-1.5"
       }`}
     >
-      {/* Hover action: Reply in thread */}
-      <div className="absolute right-4 top-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          className="flex items-center gap-1 text-xs text-muted-foreground bg-background border rounded-md px-2 py-1 shadow-sm hover:bg-accent hover:text-foreground"
-          onClick={() => onOpenThread(msg)}
-        >
-          <MessageSquare className="w-3 h-3" />
-          Reply
-        </button>
-      </div>
-
       {/* Avatar — only shown for the first message in a consecutive run from
           the same sender, Slack-style; grouped messages show the time on
           hover in the same column instead. */}
@@ -868,13 +930,16 @@ function MessageItem({
           </p>
         )}
 
-        {/* Inline thread preview */}
-        {threadCount > 0 && !msg._optimistic && (
-          <InlineThreadPreview
+        {/* Reply / thread composer — always available (shows just "Reply" on
+            hover when there are no replies yet), expands in place under this
+            message rather than opening a separate panel. */}
+        {!msg._optimistic && (
+          <ThreadComposer
             count={threadCount}
             channelId={msg.channel_id}
             parentId={msg.id}
-            onExpand={() => onOpenThread(msg)}
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
           />
         )}
       </div>
@@ -986,11 +1051,14 @@ function MessageInput({
   onSendFile,
   placeholder,
   disabled,
+  compact = false,
 }: {
   onSend: (content: string) => void;
   onSendFile?: (file: File) => void;
   placeholder?: string;
   disabled?: boolean;
+  /** Smaller, chrome-free variant used for inline thread replies. */
+  compact?: boolean;
 }) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -1028,8 +1096,12 @@ function MessageInput({
   }
 
   return (
-    <div className="px-4 py-3 border-t bg-background flex-shrink-0">
-      <div className="flex items-end gap-2 bg-muted/40 border rounded-lg px-3 py-2">
+    <div className={compact ? "flex-shrink-0" : "px-4 py-3 border-t bg-background flex-shrink-0"}>
+      <div
+        className={`flex items-end gap-2 bg-muted/40 border rounded-lg ${
+          compact ? "px-2 py-1.5" : "px-3 py-2"
+        }`}
+      >
         {onSendFile && (
           <>
             <input
@@ -1069,9 +1141,11 @@ function MessageInput({
           <Send className="w-4 h-4" />
         </button>
       </div>
-      <p className="text-[10px] text-muted-foreground mt-1">
-        Enter to send &middot; Shift+Enter for new line
-      </p>
+      {!compact && (
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Enter to send &middot; Shift+Enter for new line
+        </p>
+      )}
     </div>
   );
 }
@@ -1079,143 +1153,6 @@ function MessageInput({
 // ---------------------------------------------------------------------------
 // Thread panel
 // ---------------------------------------------------------------------------
-
-function ThreadPanel({
-  channel,
-  parentMessage,
-  currentUserId,
-  currentUserName,
-  onClose,
-}: {
-  channel: Channel;
-  parentMessage: ChatMessage;
-  currentUserId: string;
-  currentUserName: string;
-  onClose: () => void;
-}) {
-  const [replies, setReplies] = useState<ChatMessage[]>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  const fetchReplies = useCallback(async () => {
-    try {
-      const res = await apiFetch(
-        `/api/chat/channels/${channel.id}/messages/${parentMessage.id}/thread`
-      );
-      if (res.ok) setReplies(await res.json());
-    } catch {
-      /* ignore */
-    }
-  }, [channel.id, parentMessage.id]);
-
-  useEffect(() => {
-    fetchReplies();
-  }, [fetchReplies]);
-
-  useEffect(() => {
-    const sub = supabase
-      .channel(`chat-thread:${channel.id}:${parentMessage.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "chat_messages",
-          filter: `channel_id=eq.${channel.id}`,
-        },
-        (payload) => {
-          const msg = payload.new as ChatMessage;
-          if (msg.thread_parent_id === parentMessage.id) {
-            setReplies((prev) => {
-              if (prev.find((r) => r.id === msg.id)) return prev;
-              return [...prev, msg];
-            });
-          }
-        }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(sub);
-    };
-  }, [channel.id, parentMessage.id]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [replies.length]);
-
-  async function sendReply(content: string) {
-    const optimistic: ChatMessage = {
-      id: `opt-${Date.now()}`,
-      channel_id: channel.id,
-      content,
-      thread_parent_id: parentMessage.id,
-      created_at: new Date().toISOString(),
-      sender: { id: currentUserId, name: currentUserName },
-      _optimistic: true,
-    };
-    setReplies((prev) => [...prev, optimistic]);
-    try {
-      const res = await apiFetch(`/api/chat/channels/${channel.id}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ content, thread_parent_id: parentMessage.id }),
-      });
-      if (!res.ok) throw new Error();
-      setReplies((prev) => prev.filter((r) => r.id !== optimistic.id));
-    } catch {
-      setReplies((prev) => prev.filter((r) => r.id !== optimistic.id));
-      toast.error("Failed to send reply");
-    }
-  }
-
-  return (
-    <div className="w-[320px] flex-shrink-0 border-l bg-background flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
-        <div className="min-w-0">
-          <h3 className="font-semibold text-sm">Thread</h3>
-          <p className="text-xs text-muted-foreground truncate max-w-[240px]">
-            {parentMessage.content}
-          </p>
-        </div>
-        <button
-          className="w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ml-2"
-          onClick={onClose}
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Parent message */}
-      <div className="px-4 py-3 border-b bg-muted/30">
-        <div className="flex gap-2">
-          <Avatar name={parentMessage.sender?.name ?? "?"} userId={parentMessage.sender?.id} />
-          <div className="min-w-0">
-            <div className="flex items-baseline gap-2">
-              <span className="font-semibold text-sm">{parentMessage.sender?.name}</span>
-              <span className="text-xs text-muted-foreground">{formatTs(parentMessage.created_at)}</span>
-            </div>
-            <p className="text-sm whitespace-pre-wrap break-words">{parentMessage.content}</p>
-          </div>
-        </div>
-        {replies.length > 0 && (
-          <p className="text-xs text-muted-foreground mt-2 ml-11">
-            {replies.length} {replies.length === 1 ? "reply" : "replies"}
-          </p>
-        )}
-      </div>
-
-      {/* Replies */}
-      <div className="flex-1 overflow-y-auto py-2">
-        {replies.map((r) => (
-          <MessageItem key={r.id} msg={r} compact onOpenThread={() => {}} />
-        ))}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input */}
-      <MessageInput onSend={sendReply} placeholder="Reply in thread..." />
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Sidebar section
@@ -1482,7 +1419,6 @@ export default function ChatPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [threadMessage, setThreadMessage] = useState<ChatMessage | null>(null);
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const messagesBottomRef = useRef<HTMLDivElement>(null);
@@ -1895,7 +1831,6 @@ export default function ChatPage() {
       return [...prev, ch];
     });
     setActiveChannel(ch);
-    setThreadMessage(null);
   }
 
   async function openDmWith(userId: string, name: string): Promise<boolean> {
@@ -1934,7 +1869,6 @@ export default function ChatPage() {
   async function selectChannel(ch: Channel) {
     setActiveChannel(ch);
     setMessages([]);
-    setThreadMessage(null);
     try {
       const res = await apiFetch(`/api/chat/channels/${ch.id}`);
       if (res.ok) {
@@ -2126,7 +2060,8 @@ export default function ChatPage() {
                       key={m.id}
                       msg={m}
                       grouped={grouped}
-                      onOpenThread={setThreadMessage}
+                      currentUserId={currentUserId}
+                      currentUserName={currentUserName}
                     />
                   );
                 })}
@@ -2141,17 +2076,6 @@ export default function ChatPage() {
               placeholder={`Message ${activeChannel.type === "direct" ? "" : "#"}${activeChannel.name}`}
             />
           </div>
-
-          {/* Thread panel */}
-          {threadMessage && (
-            <ThreadPanel
-              channel={activeChannel}
-              parentMessage={threadMessage}
-              currentUserId={currentUserId}
-              currentUserName={currentUserName}
-              onClose={() => setThreadMessage(null)}
-            />
-          )}
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center">
