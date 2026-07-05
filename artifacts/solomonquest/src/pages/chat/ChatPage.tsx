@@ -37,6 +37,7 @@ import {
   Archive,
   ArchiveRestore,
   Trash2,
+  ArrowLeft,
   Smile,
 } from "lucide-react";
 import {
@@ -1525,15 +1526,21 @@ export default function ChatPage() {
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* ------------------------------------------------------------------ */}
-      {/* Dashboard icon rail (Supabase-style) */}
+      {/* Dashboard icon rail (Supabase-style) — hidden on mobile once a
+          conversation is open, so it doesn't obstruct it like a native app */}
       {/* ------------------------------------------------------------------ */}
-      <DashboardRail role={user?.role} />
+      <div className={activeChannel ? "hidden md:flex" : "flex"}>
+        <DashboardRail role={user?.role} />
+      </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Chat Sidebar */}
+      {/* Chat Sidebar — full-width on mobile when no conversation is open,
+          hidden on mobile once one is (single-pane, like a native app) */}
       {/* ------------------------------------------------------------------ */}
       <aside
-        className="w-[240px] flex-shrink-0 flex flex-col overflow-hidden"
+        className={`flex-shrink-0 flex-col overflow-hidden w-full md:w-[240px] ${
+          activeChannel ? "hidden md:flex" : "flex"
+        }`}
         style={{ backgroundColor: "#1e1e2e" }}
       >
         {/* Workspace header */}
@@ -1608,8 +1615,15 @@ export default function ChatPage() {
           {/* Messages column */}
           <div className="flex flex-col flex-1 min-w-0">
             {/* Channel header */}
-            <header className="flex items-center justify-between px-5 py-3 border-b bg-background flex-shrink-0 shadow-sm">
+            <header className="flex items-center justify-between px-3 md:px-5 py-3 border-b bg-background flex-shrink-0 shadow-sm">
               <div className="flex items-center gap-2 min-w-0">
+                <button
+                  onClick={() => setActiveChannel(null)}
+                  className="md:hidden -ml-1 p-1.5 rounded-md hover:bg-muted text-muted-foreground shrink-0"
+                  title="Back to conversations"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
                 <ChannelIcon type={activeChannel.type} className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                 <h2 className="font-bold text-base truncate">{activeChannel.name}</h2>
                 {activeChannel.member_count != null && (
