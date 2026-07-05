@@ -739,19 +739,26 @@ function InlineThreadPreview({
 function MessageItem({
   msg,
   grouped = false,
+  compact = false,
   onOpenThread,
 }: {
   msg: ChatMessage;
   grouped?: boolean;
+  /** Smaller avatar + narrower gutter, used for thread replies so they read
+   * as visually subordinate to the parent message they're replying to. */
+  compact?: boolean;
   onOpenThread: (msg: ChatMessage) => void;
 }) {
   const online = isOnline(msg.sender?.online_at);
   const threadCount = msg.thread_count ?? 0;
   const time = new Date(msg.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const gutterWidth = compact ? "w-7" : "w-9";
 
   return (
     <div
-      className={`group flex gap-3 px-4 hover:bg-muted/40 transition-colors relative ${
+      className={`group flex gap-3 hover:bg-muted/40 transition-colors relative ${
+        compact ? "pl-8 pr-4" : "px-4"
+      } ${
         grouped ? "py-0.5" : "py-1.5 mt-1.5"
       }`}
     >
@@ -769,14 +776,14 @@ function MessageItem({
       {/* Avatar — only shown for the first message in a consecutive run from
           the same sender, Slack-style; grouped messages show the time on
           hover in the same column instead. */}
-      <div className="relative flex-shrink-0 w-9">
+      <div className={`relative flex-shrink-0 ${gutterWidth}`}>
         {grouped ? (
           <span className="hidden group-hover:block text-[10px] text-muted-foreground text-center leading-9 select-none">
             {time}
           </span>
         ) : (
           <div className="mt-0.5">
-            <Avatar name={msg.sender?.name ?? "?"} userId={msg.sender?.id} />
+            <Avatar name={msg.sender?.name ?? "?"} userId={msg.sender?.id} size={compact ? "sm" : "md"} />
             {online && (
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />
             )}
@@ -1056,7 +1063,7 @@ function ThreadPanel({
       {/* Replies */}
       <div className="flex-1 overflow-y-auto py-2">
         {replies.map((r) => (
-          <MessageItem key={r.id} msg={r} onOpenThread={() => {}} />
+          <MessageItem key={r.id} msg={r} compact onOpenThread={() => {}} />
         ))}
         <div ref={bottomRef} />
       </div>
