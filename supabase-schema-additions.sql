@@ -326,6 +326,30 @@ CREATE POLICY "Allow all on transcripts" ON public.transcripts FOR ALL USING (tr
 -- definition existed, so CREATE TABLE IF NOT EXISTS in schema-extended.sql
 -- silently skipped it and it's missing columns the app requires (seen as
 -- "Could not find the 'type' column of 'chat_channels' in the schema cache").
+--
+-- Some of those environments also used a legacy column name, channel_type,
+-- that is NOT NULL with no default — simply adding a separate `type` column
+-- (as an earlier version of this migration did) left channel_type's NOT NULL
+-- requirement in place, so every insert (which only sets `type`) then failed
+-- with "null value in column channel_type violates not-null constraint".
+-- Migrate off channel_type onto `type` wholesale if it's present.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'chat_channels' AND column_name = 'channel_type'
+  ) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'chat_channels' AND column_name = 'type'
+    ) THEN
+      ALTER TABLE public.chat_channels ADD COLUMN type text;
+    END IF;
+    UPDATE public.chat_channels SET type = channel_type WHERE type IS NULL;
+    ALTER TABLE public.chat_channels ALTER COLUMN channel_type DROP NOT NULL;
+  END IF;
+END $$;
+
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS course_id uuid REFERENCES public.courses(id) ON DELETE SET NULL;
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS type text;
 UPDATE public.chat_channels SET type = 'private' WHERE type IS NULL;
