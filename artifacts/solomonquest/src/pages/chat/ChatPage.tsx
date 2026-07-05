@@ -151,12 +151,47 @@ const CONVERSATION_COLORS = [
   "#4f46e5", // indigo
 ];
 
-const ParticipantColorContext = createContext<Map<string, string>>(new Map());
+interface ParticipantColorRegistry {
+  getColor(userId?: string | null, name?: string): string;
+}
+
+const noopRegistry: ParticipantColorRegistry = {
+  getColor: (_userId, name) => nameColor(name ?? "?"),
+};
+
+const ParticipantColorContext = createContext<ParticipantColorRegistry>(noopRegistry);
+
+/**
+ * Assigns each distinct speaker in a conversation a color the first time
+ * they're seen — by any Avatar anywhere (main message list, inline thread
+ * preview, or the full thread panel), not just top-level channel messages.
+ * That's what keeps someone's color consistent between the main feed and a
+ * thread reply even if the reply loads before their first channel message
+ * does.
+ */
+function useParticipantColorRegistry(resetKey: string | null): ParticipantColorRegistry {
+  // Recreated whenever the active conversation changes, so a new chat always
+  // restarts its color assignment at brown/green rather than carrying over
+  // colors from whichever conversation was open before.
+  const assignments = useMemo(() => new Map<string, string>(), [resetKey]);
+  return useMemo(
+    () => ({
+      getColor(userId?: string | null, name?: string) {
+        if (!userId) return nameColor(name ?? "?");
+        const existing = assignments.get(userId);
+        if (existing) return existing;
+        const color = CONVERSATION_COLORS[assignments.size % CONVERSATION_COLORS.length];
+        assignments.set(userId, color);
+        return color;
+      },
+    }),
+    [assignments]
+  );
+}
 
 function useParticipantColor(userId?: string | null, name?: string): string {
-  const colorMap = useContext(ParticipantColorContext);
-  if (userId && colorMap.has(userId)) return colorMap.get(userId)!;
-  return nameColor(name ?? "?");
+  const registry = useContext(ParticipantColorContext);
+  return registry.getColor(userId, name);
 }
 
 function initials(name: string): string {
@@ -1571,28 +1606,17 @@ export default function ChatPage() {
 
   const topMessages = messages.filter((m) => !m.thread_parent_id);
 
-  // Assign each distinct speaker in this conversation a color in the order
-  // they first appear, so any two (or more) people chatting always get
-  // visually distinct colors instead of an occasional hash collision.
-  const participantColorMap = useMemo(() => {
-    const map = new Map<string, string>();
-    let next = 0;
-    for (const m of messages) {
-      const id = m.sender?.id;
-      if (id && !map.has(id)) {
-        map.set(id, CONVERSATION_COLORS[next % CONVERSATION_COLORS.length]);
-        next += 1;
-      }
-    }
-    return map;
-  }, [messages]);
+  // Each distinct speaker in this conversation gets a color the first time
+  // they're seen anywhere (main feed, inline thread preview, or the full
+  // thread panel) — see useParticipantColorRegistry above.
+  const participantColorRegistry = useParticipantColorRegistry(activeChannel?.id ?? null);
 
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
 
   return (
-    <ParticipantColorContext.Provider value={participantColorMap}>
+    <ParticipantColorContext.Provider value={participantColorRegistry}>
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* ------------------------------------------------------------------ */}
       {/* Dashboard icon rail (Supabase-style) — hidden on mobile once a
