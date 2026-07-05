@@ -7,6 +7,7 @@ import {
   useUpdateCourse,
   useDeleteCourse,
   useListUsers,
+  useListPrograms,
   getListCoursesQueryKey,
 } from "@workspace/api-client-react";
 import { supabase } from "@/lib/supabase";
@@ -78,6 +79,7 @@ interface CourseFormData {
   termEndDate: string;
   description: string;
   teacherId: string;
+  programId: string;
   isPublished: boolean;
   isLive: boolean;
   classDate: string;
@@ -92,6 +94,7 @@ const defaultForm: CourseFormData = {
   termEndDate: "",
   description: "",
   teacherId: "",
+  programId: "",
   isPublished: false,
   isLive: false,
   classDate: "",
@@ -135,6 +138,7 @@ function CourseFormDialog({
   const createCourse = useCreateCourse();
   const updateCourse = useUpdateCourse();
   const { data: teachers } = useListUsers({ role: "teacher" });
+  const { data: programs } = useListPrograms();
 
   const semesterOptions = generateSemesterOptions(new Date().getFullYear());
 
@@ -148,6 +152,7 @@ function CourseFormDialog({
           termEndDate: (course as any).termEndDate || "",
           description: course.description || "",
           teacherId: course.teacherId || "",
+          programId: (course as any).programId || "",
           isPublished: course.isPublished || false,
           isLive: (course as any).isLive || false,
           classDate: (course as any).classDate || "",
@@ -199,6 +204,7 @@ function CourseFormDialog({
       termEndDate: form.termEndDate || undefined,
       description: form.description || undefined,
       teacherId: form.teacherId || undefined,
+      programId: form.programId || undefined,
       isPublished: form.isPublished,
       isLive: form.isLive,
       classDate: form.isLive && form.classDate ? form.classDate : undefined,
@@ -340,6 +346,27 @@ function CourseFormDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Program</Label>
+            <Select value={form.programId} onValueChange={(v) => set("programId", v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="No program — standalone course" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">No program — standalone course</SelectItem>
+                {(programs ?? []).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Students enrolled in any course of this program are automatically enrolled in all
+              of its other courses and can chat with everyone in the program.
+            </p>
           </div>
 
           {/* Live Class Toggle */}
@@ -490,7 +517,13 @@ export default function AdminCourses() {
   const [editCourse, setEditCourse] = useState<Course | null>(null);
 
   const { data: courses, isLoading } = useListCourses();
+  const { data: programs } = useListPrograms();
   const deleteCourse = useDeleteCourse();
+
+  const programNameById = (programs ?? []).reduce<Record<string, string>>((acc, p) => {
+    acc[p.id] = p.name;
+    return acc;
+  }, {});
 
   const filtered = (courses ?? []).filter((c) =>
     `${c.title} ${c.code} ${c.teacherName}`.toLowerCase().includes(search.toLowerCase())
@@ -604,6 +637,11 @@ export default function AdminCourses() {
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <p className="font-medium text-gray-900 text-sm">{course.title}</p>
+                                {(course as any).programId && programNameById[(course as any).programId] && (
+                                  <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 border text-xs">
+                                    {programNameById[(course as any).programId]}
+                                  </Badge>
+                                )}
                                 {isLive ? (
                                   <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs gap-1">
                                     <Radio className="h-3 w-3" />

@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { sendApplicationStatusUpdate } from "../lib/email";
+import { enrollStudentInCourse } from "../lib/enrollment";
 
 const router: IRouter = Router();
 
@@ -376,23 +377,15 @@ router.patch(
         .eq("application_id", id);
 
       if (courseSelections && courseSelections.length > 0) {
-        const enrollmentRows = courseSelections.map(
-          (sel: Record<string, unknown>) => ({
-            course_id: sel.course_id,
-            student_id: existing.applicant_id,
-            status: "active",
-          })
-        );
-
-        const { error: enrollError } = await supabaseAdmin
-          .from("course_enrollments")
-          .insert(enrollmentRows);
-
-        if (enrollError) {
-          console.error(
-            "[applications] Failed to enroll student in courses:",
-            enrollError.message
-          );
+        for (const sel of courseSelections as Record<string, unknown>[]) {
+          try {
+            await enrollStudentInCourse(sel.course_id as string, existing.applicant_id as string);
+          } catch (enrollError: any) {
+            console.error(
+              "[applications] Failed to enroll student in course:",
+              enrollError.message
+            );
+          }
         }
       }
 

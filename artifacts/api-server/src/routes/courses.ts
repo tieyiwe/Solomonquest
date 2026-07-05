@@ -1,6 +1,11 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { enrollStudentInCourse } from "../lib/enrollment";
+
+function canManageCourses(role: string | undefined): boolean {
+  return role === "admin" || role === "super_admin" || role === "teacher";
+}
 
 const router: IRouter = Router();
 
@@ -113,6 +118,11 @@ router.get("/courses", requireAuth, async (req: AuthenticatedRequest, res): Prom
 
 // Create course
 router.post("/courses", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!canManageCourses(req.userRole)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const { title, programId, teacherId, code, term, termStartDate, termEndDate, description } = req.body;
 
   if (!title) {
@@ -164,7 +174,12 @@ router.get("/courses/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 // Update course
-router.patch("/courses/:id", requireAuth, async (req, res): Promise<void> => {
+router.patch("/courses/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!canManageCourses(req.userRole)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const { title, programId, teacherId, code, term, termStartDate, termEndDate, description, isPublished } = req.body;
 
@@ -195,7 +210,12 @@ router.patch("/courses/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 // Delete course
-router.delete("/courses/:id", requireAuth, async (req, res): Promise<void> => {
+router.delete("/courses/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!canManageCourses(req.userRole)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
   const { error } = await supabaseAdmin.from("courses").delete().eq("id", id);
@@ -262,22 +282,14 @@ router.post("/courses/:id/enroll", requireAuth, async (req, res): Promise<void> 
     return;
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("course_enrollments")
-    .insert({ course_id: id, student_id: studentId, status: "active" })
-    .select()
-    .single();
-
-  if (error) {
-    res.status(400).json({ error: error.message });
+  try {
+    await enrollStudentInCourse(id, studentId);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || "Failed to enroll student" });
     return;
   }
 
-  res.status(201).json({
-    courseId: data.course_id,
-    studentId: data.student_id,
-    status: data.status,
-  });
+  res.status(201).json({ courseId: id, studentId, status: "active" });
 });
 
 // Update live class settings

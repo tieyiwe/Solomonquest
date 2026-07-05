@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Paintbrush,
   ChevronDown,
+  Layers,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
@@ -32,6 +33,7 @@ const adminLinks = [
   { href: "/dashboard/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/admin/users", label: "Users", icon: Users },
   { href: "/dashboard/admin/courses", label: "Courses", icon: BookOpen },
+  { href: "/dashboard/admin/programs", label: "Programs", icon: Layers },
   { href: "/dashboard/admin/admissions", label: "Admissions", icon: CheckSquare },
   { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
   { href: "/dashboard/admin/analytics", label: "Analytics", icon: BarChart2 },

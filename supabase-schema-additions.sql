@@ -408,6 +408,19 @@ ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_name text;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_type text;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_size bigint;
 
+-- ─── Program-wide chat channel ──────────────────────────────────────────────────
+-- Enrolling in any course of a program auto-enrolls the student in every other
+-- course in that program, and all students enrolled anywhere in the program
+-- share one 'program'-typed chat channel. Widen the type check constraint
+-- (previously school/course/direct/private) to allow it.
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS program_id uuid REFERENCES public.programs(id) ON DELETE CASCADE;
+ALTER TABLE public.chat_channels DROP CONSTRAINT IF EXISTS chat_channels_type_check;
+ALTER TABLE public.chat_channels ADD CONSTRAINT chat_channels_type_check CHECK (type IN ('school','course','direct','private','program'));
+
+-- A program should only ever have one auto-managed chat channel.
+CREATE UNIQUE INDEX IF NOT EXISTS chat_channels_one_per_program
+  ON public.chat_channels (program_id) WHERE type = 'program';
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';
