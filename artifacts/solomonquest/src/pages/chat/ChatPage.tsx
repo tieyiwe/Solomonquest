@@ -498,6 +498,13 @@ function NewChannelDialog({
       toast.error("Enter a channel name");
       return;
     }
+    // A channel is a group conversation — you plus at least 2 others (3
+    // total). Anything smaller is just a direct message, which has its own
+    // frictionless flow above and doesn't need a name.
+    if (selectedUsers.length < 2) {
+      toast.error("A channel needs at least 3 people — pick 2 more, or use Direct Message for just one person");
+      return;
+    }
     setLoading(true);
     try {
       const res = await apiFetch("/api/chat/channels", {
@@ -1234,16 +1241,18 @@ export default function ChatPage() {
       // them client-side so the "Archived" section can still show its
       // contents without a second round trip.
       const res = await apiFetch("/api/chat/channels?archived=true");
-      if (res.ok) {
-        const data: Channel[] = await res.json();
-        setChannels(data);
-        if (!activeChannel) {
-          const firstActive = data.find((c) => !c.isArchived);
-          if (firstActive) setActiveChannel(firstActive);
-        }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Failed to load channels (${res.status})`);
       }
-    } catch {
-      /* ignore */
+      const data: Channel[] = await res.json();
+      setChannels(data);
+      if (!activeChannel) {
+        const firstActive = data.find((c) => !c.isArchived);
+        if (firstActive) setActiveChannel(firstActive);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load channels");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

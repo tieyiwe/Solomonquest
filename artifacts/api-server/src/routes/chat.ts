@@ -260,6 +260,18 @@ router.post(
       }
     }
 
+    // A channel is a group conversation — the creator plus at least 2 others
+    // (3 people total). Anything smaller should be a direct message instead.
+    if (type === "private") {
+      const otherMembers = new Set(memberIds.filter((mid) => mid !== req.userId));
+      if (otherMembers.size < 2) {
+        res.status(400).json({
+          error: "A channel needs at least 3 people. Use a direct message for just one other person.",
+        });
+        return;
+      }
+    }
+
     // Insert channel
     const { data: channel, error: channelError } = await supabaseAdmin
       .from("chat_channels")
