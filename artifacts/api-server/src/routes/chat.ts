@@ -39,7 +39,6 @@ router.get(
       .from("chat_channel_members")
       .select(
         `
-        id,
         last_seen,
         chat_channels (
           id,
@@ -732,7 +731,7 @@ export async function enrollUserInSchoolChannels(
   if (creatorId && creatorId !== userId) {
     const { data: adminMembership } = await supabaseAdmin
       .from("chat_channel_members")
-      .select("id")
+      .select("channel_id")
       .eq("channel_id", general.id)
       .eq("user_id", creatorId)
       .maybeSingle();
