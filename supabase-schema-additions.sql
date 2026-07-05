@@ -293,3 +293,30 @@ UPDATE public.invitations SET status = 'expired' WHERE accepted_at IS NULL AND e
 ALTER TABLE public.course_resources ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT false;
 -- Existing resources were already visible to students; keep that behavior on upgrade.
 UPDATE public.course_resources SET is_published = true WHERE is_published IS NOT true;
+
+-- ─── Structured course semester/term dates ─────────────────────────────────────
+-- courses.term stays a free-text label (e.g. "Spring 2026" or a custom name),
+-- but admins can now also pin down real start/end dates for that term so the
+-- transcript can show accurate semester dates regardless of which label was
+-- picked (standard or custom).
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS term_start_date date;
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS term_end_date date;
+
+-- Defensive: the "transcripts" table is referenced by the grading routes but
+-- had no tracked migration in this repo. Create it if it doesn't already
+-- exist so fresh environments don't 500 on every grade/transcript call.
+CREATE TABLE IF NOT EXISTS public.transcripts (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id     uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  school_id      uuid REFERENCES public.schools(id) ON DELETE CASCADE,
+  course_id      uuid REFERENCES public.courses(id) ON DELETE SET NULL,
+  assignment_id  uuid REFERENCES public.assignments(id) ON DELETE SET NULL,
+  submission_id  uuid UNIQUE,
+  grade          text,
+  feedback       text,
+  graded_at      timestamptz,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.transcripts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on transcripts" ON public.transcripts;
+CREATE POLICY "Allow all on transcripts" ON public.transcripts FOR ALL USING (true) WITH CHECK (true);

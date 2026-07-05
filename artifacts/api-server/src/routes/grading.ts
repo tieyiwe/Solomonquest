@@ -230,6 +230,16 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
       }
     }
 
+    const { data: studentProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("id", student_id)
+      .single();
+
+    const studentName =
+      [studentProfile?.first_name, studentProfile?.last_name].filter(Boolean).join(" ") ||
+      "Student";
+
     const { data: transcripts, error } = await supabaseAdmin
       .from("transcripts")
       .select(`
@@ -244,17 +254,20 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
         assignments:assignment_id (
           id,
           title,
-          max_grade,
+          points_possible,
           due_date
         ),
         courses:course_id (
           id,
-          name,
-          code
+          title,
+          code,
+          term,
+          teacher_id
         ),
         submissions:submission_id (
           id,
-          submitted_at
+          submitted_at,
+          status
         )
       `)
       .eq("student_id", student_id)
@@ -262,66 +275,75 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
 
     if (error) throw error;
 
-    // Organize by course and calculate GPA
+    // Look up teacher names for any courses involved
+    const teacherIds = Array.from(
+      new Set(
+        (transcripts || [])
+          .map((t: any) => t.courses?.teacher_id)
+          .filter((id: unknown): id is string => !!id)
+      )
+    );
+    const teacherMap = new Map<string, string>();
+    if (teacherIds.length > 0) {
+      const { data: teacherProfiles } = await supabaseAdmin
+        .from("profiles")
+        .select("id, first_name, last_name")
+        .in("id", teacherIds);
+      for (const p of teacherProfiles ?? []) {
+        teacherMap.set(p.id, [p.first_name, p.last_name].filter(Boolean).join(" ") || "Teacher");
+      }
+    }
+
+    // Organize by course
     const courseMap: Record<string, any> = {};
 
     for (const t of transcripts || []) {
       const course: any = (t as any).courses;
       const assignment: any = (t as any).assignments;
+      const submission: any = (t as any).submissions;
       const courseId = t.course_id ?? "unknown";
 
       if (!courseMap[courseId]) {
         courseMap[courseId] = {
-          course_id: courseId,
-          course_name: course?.name ?? null,
-          course_code: course?.code ?? null,
+          id: courseId,
+          title: course?.title ?? "Unknown Course",
+          code: course?.code ?? null,
+          term: course?.term ?? null,
+          teacherName: course?.teacher_id ? teacherMap.get(course.teacher_id) ?? null : null,
           assignments: [],
-          total_grade: 0,
-          graded_count: 0,
-          course_average: null,
+          courseAverage: null,
         };
       }
 
-      const numGrade = parseFloat(t.grade);
-      if (!isNaN(numGrade)) {
-        courseMap[courseId].total_grade += numGrade;
-        courseMap[courseId].graded_count += 1;
-      }
-
       courseMap[courseId].assignments.push({
-        transcript_id: t.id,
-        assignment_id: t.assignment_id,
-        assignment_title: assignment?.title ?? null,
-        max_grade: assignment?.max_grade ?? null,
-        due_date: assignment?.due_date ?? null,
-        grade: t.grade,
-        feedback: t.feedback,
-        graded_at: t.graded_at,
-        submission_id: t.submission_id,
-        submitted_at: (t as any).submissions?.submitted_at ?? null,
+        id: t.assignment_id ?? t.id,
+        title: assignment?.title ?? "Assignment",
+        grade: t.grade != null ? parseFloat(t.grade) : null,
+        pointsPossible: assignment?.points_possible ?? null,
+        submittedAt: submission?.submitted_at ?? null,
+        status: submission?.status ?? (t.grade != null ? "graded" : "pending"),
       });
     }
 
-    // Calculate course averages and GPA
-    let totalAverage = 0;
-    let courseCount = 0;
-
+    // Calculate per-course averages
     const courses = Object.values(courseMap).map((c: any) => {
-      if (c.graded_count > 0) {
-        c.course_average = parseFloat((c.total_grade / c.graded_count).toFixed(2));
-        totalAverage += c.course_average;
-        courseCount += 1;
-      }
-      delete c.total_grade;
-      delete c.graded_count;
+      const graded = c.assignments.filter(
+        (a: any) => a.grade != null && a.pointsPossible
+      );
+      c.courseAverage =
+        graded.length > 0
+          ? Math.round(
+              (graded.reduce((sum: number, a: any) => sum + a.grade / a.pointsPossible, 0) /
+                graded.length) *
+                100
+            )
+          : null;
       return c;
     });
 
-    const gpa = courseCount > 0 ? parseFloat((totalAverage / courseCount).toFixed(2)) : null;
-
     res.json({
-      student_id,
-      gpa,
+      studentName,
+      studentId: student_id,
       courses,
     });
   } catch (error: any) {

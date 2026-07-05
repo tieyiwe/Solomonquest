@@ -113,7 +113,7 @@ router.get("/courses", requireAuth, async (req: AuthenticatedRequest, res): Prom
 
 // Create course
 router.post("/courses", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  const { title, programId, teacherId, code, term, description } = req.body;
+  const { title, programId, teacherId, code, term, termStartDate, termEndDate, description } = req.body;
 
   if (!title) {
     res.status(400).json({ error: "title is required" });
@@ -129,6 +129,8 @@ router.post("/courses", requireAuth, async (req: AuthenticatedRequest, res): Pro
       teacher_id: teacherId ?? null,
       code: code ?? null,
       term: term ?? null,
+      term_start_date: termStartDate ?? null,
+      term_end_date: termEndDate ?? null,
       description: description ?? null,
       is_published: false,
     })
@@ -164,7 +166,7 @@ router.get("/courses/:id", requireAuth, async (req, res): Promise<void> => {
 // Update course
 router.patch("/courses/:id", requireAuth, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { title, programId, teacherId, code, term, description, isPublished } = req.body;
+  const { title, programId, teacherId, code, term, termStartDate, termEndDate, description, isPublished } = req.body;
 
   const updates: Record<string, unknown> = {};
   if (title !== undefined) updates.title = title;
@@ -172,6 +174,8 @@ router.patch("/courses/:id", requireAuth, async (req, res): Promise<void> => {
   if (teacherId !== undefined) updates.teacher_id = teacherId;
   if (code !== undefined) updates.code = code;
   if (term !== undefined) updates.term = term;
+  if (termStartDate !== undefined) updates.term_start_date = termStartDate;
+  if (termEndDate !== undefined) updates.term_end_date = termEndDate;
   if (description !== undefined) updates.description = description;
   if (isPublished !== undefined) updates.is_published = isPublished;
 
@@ -358,6 +362,8 @@ async function enrichCourse(c: Record<string, unknown>) {
     title: c.title,
     code: c.code,
     term: c.term,
+    termStartDate: c.term_start_date,
+    termEndDate: c.term_end_date,
     description: c.description,
     isPublished: c.is_published,
     teacherName,

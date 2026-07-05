@@ -68,11 +68,14 @@ import {
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Course } from "@workspace/api-client-react";
+import { generateSemesterOptions, CUSTOM_SEMESTER_VALUE } from "@/lib/semesters";
 
 interface CourseFormData {
   title: string;
   code: string;
   term: string;
+  termStartDate: string;
+  termEndDate: string;
   description: string;
   teacherId: string;
   isPublished: boolean;
@@ -85,6 +88,8 @@ const defaultForm: CourseFormData = {
   title: "",
   code: "",
   term: "",
+  termStartDate: "",
+  termEndDate: "",
   description: "",
   teacherId: "",
   isPublished: false,
@@ -131,12 +136,16 @@ function CourseFormDialog({
   const updateCourse = useUpdateCourse();
   const { data: teachers } = useListUsers({ role: "teacher" });
 
+  const semesterOptions = generateSemesterOptions(new Date().getFullYear());
+
   const [form, setForm] = useState<CourseFormData>(() =>
     course
       ? {
           title: course.title || "",
           code: course.code || "",
           term: course.term || "",
+          termStartDate: (course as any).termStartDate || "",
+          termEndDate: (course as any).termEndDate || "",
           description: course.description || "",
           teacherId: course.teacherId || "",
           isPublished: course.isPublished || false,
@@ -148,8 +157,33 @@ function CourseFormDialog({
   );
   const [isSaving, setIsSaving] = useState(false);
 
+  // A course's term matches a standard option only if its label AND dates
+  // line up exactly; otherwise it was a custom term (or has no dates yet).
+  const matchingStandard = semesterOptions.find(
+    (o) => o.label === form.term && o.startDate === form.termStartDate && o.endDate === form.termEndDate
+  );
+  const [semesterChoice, setSemesterChoice] = useState<string>(
+    form.term ? (matchingStandard ? matchingStandard.value : CUSTOM_SEMESTER_VALUE) : ""
+  );
+
   const set = (key: keyof CourseFormData, value: string | boolean) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  const handleSemesterChoice = (value: string) => {
+    setSemesterChoice(value);
+    if (value === CUSTOM_SEMESTER_VALUE) {
+      return;
+    }
+    const option = semesterOptions.find((o) => o.value === value);
+    if (option) {
+      setForm((f) => ({
+        ...f,
+        term: option.label,
+        termStartDate: option.startDate,
+        termEndDate: option.endDate,
+      }));
+    }
+  };
 
   const handleSubmit = async () => {
     if (!form.title.trim()) {
@@ -161,6 +195,8 @@ function CourseFormDialog({
       title: form.title,
       code: form.code || undefined,
       term: form.term || undefined,
+      termStartDate: form.termStartDate || undefined,
+      termEndDate: form.termEndDate || undefined,
       description: form.description || undefined,
       teacherId: form.teacherId || undefined,
       isPublished: form.isPublished,
@@ -236,23 +272,58 @@ function CourseFormDialog({
               onChange={(e) => set("description", e.target.value)}
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>Course Code</Label>
-              <Input
-                placeholder="MATH101"
-                value={form.code}
-                onChange={(e) => set("code", e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Term</Label>
-              <Input
-                placeholder="Fall 2025"
-                value={form.term}
-                onChange={(e) => set("term", e.target.value)}
-              />
-            </div>
+          <div className="space-y-1.5">
+            <Label>Course Code</Label>
+            <Input
+              placeholder="MATH101"
+              value={form.code}
+              onChange={(e) => set("code", e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Semester / Term</Label>
+            <Select value={semesterChoice} onValueChange={handleSemesterChoice}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a semester..." />
+              </SelectTrigger>
+              <SelectContent>
+                {semesterOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+                <SelectItem value={CUSTOM_SEMESTER_VALUE}>Custom…</SelectItem>
+              </SelectContent>
+            </Select>
+            {semesterChoice === CUSTOM_SEMESTER_VALUE && (
+              <div className="space-y-1.5 pt-1">
+                <Input
+                  placeholder="Custom term name, e.g. Trimester 1 2026"
+                  value={form.term}
+                  onChange={(e) => set("term", e.target.value)}
+                />
+              </div>
+            )}
+            {semesterChoice && (
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Start Date</Label>
+                  <Input
+                    type="date"
+                    value={form.termStartDate}
+                    onChange={(e) => set("termStartDate", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">End Date</Label>
+                  <Input
+                    type="date"
+                    value={form.termEndDate}
+                    onChange={(e) => set("termEndDate", e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Assign Teacher</Label>
