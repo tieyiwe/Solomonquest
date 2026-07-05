@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Link, useLocation } from "wouter";
@@ -136,6 +136,29 @@ function nameColor(name: string): string {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
+// Colors assigned by speaking order within a single conversation, so any two
+// people talking are guaranteed visually distinct rather than left to a name
+// hash that could collide. First two speakers are brown and green; anyone
+// past that gets the next color down the list.
+const CONVERSATION_COLORS = [
+  "#92400e", // brown
+  "#16a34a", // green
+  "#2563eb", // blue
+  "#db2777", // pink
+  "#7c3aed", // purple
+  "#0891b2", // cyan
+  "#ea580c", // orange
+  "#4f46e5", // indigo
+];
+
+const ParticipantColorContext = createContext<Map<string, string>>(new Map());
+
+function useParticipantColor(userId?: string | null, name?: string): string {
+  const colorMap = useContext(ParticipantColorContext);
+  if (userId && colorMap.has(userId)) return colorMap.get(userId)!;
+  return nameColor(name ?? "?");
+}
+
 function initials(name: string): string {
   return (name || "?")
     .split(" ")
@@ -168,11 +191,14 @@ function isOnline(onlineAt?: string | null): boolean {
 
 function Avatar({
   name,
+  userId,
   size = "md",
 }: {
   name: string;
+  userId?: string | null;
   size?: "xs" | "sm" | "md";
 }) {
+  const color = useParticipantColor(userId, name);
   const sz =
     size === "xs"
       ? "w-6 h-6 text-[10px]"
@@ -182,7 +208,7 @@ function Avatar({
   return (
     <div
       className={`${sz} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`}
-      style={{ backgroundColor: nameColor(name) }}
+      style={{ backgroundColor: color }}
     >
       {initials(name)}
     </div>
@@ -684,7 +710,7 @@ function InlineThreadPreview({
           {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
           {replies.map((r) => (
             <div key={r.id} className="flex gap-2">
-              <Avatar name={r.sender?.name ?? "?"} size="xs" />
+              <Avatar name={r.sender?.name ?? "?"} userId={r.sender?.id} size="xs" />
               <div className="min-w-0">
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs font-semibold">{r.sender?.name}</span>
@@ -712,16 +738,23 @@ function InlineThreadPreview({
 
 function MessageItem({
   msg,
+  grouped = false,
   onOpenThread,
 }: {
   msg: ChatMessage;
+  grouped?: boolean;
   onOpenThread: (msg: ChatMessage) => void;
 }) {
   const online = isOnline(msg.sender?.online_at);
   const threadCount = msg.thread_count ?? 0;
+  const time = new Date(msg.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
   return (
-    <div className="group flex gap-3 px-4 py-1.5 hover:bg-gray-50/5 rounded-lg transition-colors relative">
+    <div
+      className={`group flex gap-3 px-4 hover:bg-muted/40 transition-colors relative ${
+        grouped ? "py-0.5" : "py-1.5 mt-1.5"
+      }`}
+    >
       {/* Hover action: Reply in thread */}
       <div className="absolute right-4 top-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
@@ -733,20 +766,32 @@ function MessageItem({
         </button>
       </div>
 
-      {/* Avatar */}
-      <div className="relative flex-shrink-0 mt-0.5">
-        <Avatar name={msg.sender?.name ?? "?"} />
-        {online && (
-          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />
+      {/* Avatar — only shown for the first message in a consecutive run from
+          the same sender, Slack-style; grouped messages show the time on
+          hover in the same column instead. */}
+      <div className="relative flex-shrink-0 w-9">
+        {grouped ? (
+          <span className="hidden group-hover:block text-[10px] text-muted-foreground text-center leading-9 select-none">
+            {time}
+          </span>
+        ) : (
+          <div className="mt-0.5">
+            <Avatar name={msg.sender?.name ?? "?"} userId={msg.sender?.id} />
+            {online && (
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />
+            )}
+          </div>
         )}
       </div>
 
       {/* Body */}
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="font-semibold text-sm">{msg.sender?.name}</span>
-          <span className="text-xs text-muted-foreground">{formatTs(msg.created_at)}</span>
-        </div>
+        {!grouped && (
+          <div className="flex items-baseline gap-2">
+            <span className="font-semibold text-sm">{msg.sender?.name}</span>
+            <span className="text-xs text-muted-foreground">{formatTs(msg.created_at)}</span>
+          </div>
+        )}
         <p
           className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${
             msg._optimistic ? "opacity-50" : ""
@@ -992,7 +1037,7 @@ function ThreadPanel({
       {/* Parent message */}
       <div className="px-4 py-3 border-b bg-muted/30">
         <div className="flex gap-2">
-          <Avatar name={parentMessage.sender?.name ?? "?"} />
+          <Avatar name={parentMessage.sender?.name ?? "?"} userId={parentMessage.sender?.id} />
           <div className="min-w-0">
             <div className="flex items-baseline gap-2">
               <span className="font-semibold text-sm">{parentMessage.sender?.name}</span>
@@ -1519,11 +1564,28 @@ export default function ChatPage() {
 
   const topMessages = messages.filter((m) => !m.thread_parent_id);
 
+  // Assign each distinct speaker in this conversation a color in the order
+  // they first appear, so any two (or more) people chatting always get
+  // visually distinct colors instead of an occasional hash collision.
+  const participantColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    let next = 0;
+    for (const m of messages) {
+      const id = m.sender?.id;
+      if (id && !map.has(id)) {
+        map.set(id, CONVERSATION_COLORS[next % CONVERSATION_COLORS.length]);
+        next += 1;
+      }
+    }
+    return map;
+  }, [messages]);
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
 
   return (
+    <ParticipantColorContext.Provider value={participantColorMap}>
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* ------------------------------------------------------------------ */}
       {/* Dashboard icon rail (Supabase-style) — hidden on mobile once a
@@ -1670,9 +1732,22 @@ export default function ChatPage() {
                 </div>
               )}
               <div className="space-y-0.5">
-                {topMessages.map((m) => (
-                  <MessageItem key={m.id} msg={m} onOpenThread={setThreadMessage} />
-                ))}
+                {topMessages.map((m, i) => {
+                  const prev = topMessages[i - 1];
+                  const grouped =
+                    !!prev &&
+                    prev.sender?.id === m.sender?.id &&
+                    new Date(m.created_at).getTime() - new Date(prev.created_at).getTime() <
+                      5 * 60 * 1000;
+                  return (
+                    <MessageItem
+                      key={m.id}
+                      msg={m}
+                      grouped={grouped}
+                      onOpenThread={setThreadMessage}
+                    />
+                  );
+                })}
               </div>
               <div ref={messagesBottomRef} />
             </div>
@@ -1709,5 +1784,6 @@ export default function ChatPage() {
         </div>
       )}
     </div>
+    </ParticipantColorContext.Provider>
   );
 }
