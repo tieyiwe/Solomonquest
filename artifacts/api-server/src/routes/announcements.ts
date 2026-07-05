@@ -28,6 +28,11 @@ router.get("/announcements", requireAuth, async (req: AuthenticatedRequest, res)
 });
 
 router.post("/announcements", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const { title, content, courseId, isPinned } = req.body;
 
   if (!title) {
@@ -56,8 +61,34 @@ router.post("/announcements", requireAuth, async (req: AuthenticatedRequest, res
   res.status(201).json(await enrichAnnouncement(data));
 });
 
-router.delete("/announcements/:id", requireAuth, async (req, res): Promise<void> => {
+router.delete("/announcements/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const { data: existing } = await supabaseAdmin
+    .from("announcements")
+    .select("school_id, posted_by")
+    .eq("id", id)
+    .single();
+
+  if (!existing) {
+    res.status(404).json({ error: "Announcement not found" });
+    return;
+  }
+
+  if (req.userRole !== "super_admin" && existing.school_id !== req.schoolId) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  if (req.userRole === "teacher" && existing.posted_by !== req.userId) {
+    res.status(403).json({ error: "You can only delete your own announcements" });
+    return;
+  }
 
   const { error } = await supabaseAdmin.from("announcements").delete().eq("id", id);
 

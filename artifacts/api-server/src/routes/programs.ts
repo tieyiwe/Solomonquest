@@ -20,6 +20,11 @@ router.get("/programs", requireAuth, async (req: AuthenticatedRequest, res): Pro
 });
 
 router.post("/programs", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const { name, code, description, level } = req.body;
 
   if (!name) {
@@ -48,14 +53,15 @@ router.post("/programs", requireAuth, async (req: AuthenticatedRequest, res): Pr
   res.status(201).json(mapProgram(data));
 });
 
-router.get("/programs/:id", requireAuth, async (req, res): Promise<void> => {
+router.get("/programs/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
-  const { data, error } = await supabaseAdmin
-    .from("programs")
-    .select("*")
-    .eq("id", id)
-    .single();
+  let query = supabaseAdmin.from("programs").select("*").eq("id", id);
+  if (req.userRole !== "super_admin") {
+    query = query.eq("school_id", req.schoolId ?? "");
+  }
+
+  const { data, error } = await query.single();
 
   if (error || !data) {
     res.status(404).json({ error: "Program not found" });
@@ -65,7 +71,12 @@ router.get("/programs/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(mapProgram(data));
 });
 
-router.patch("/programs/:id", requireAuth, async (req, res): Promise<void> => {
+router.patch("/programs/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const { name, code, description, level, isActive } = req.body;
 
@@ -76,12 +87,12 @@ router.patch("/programs/:id", requireAuth, async (req, res): Promise<void> => {
   if (level !== undefined) updates.level = level;
   if (isActive !== undefined) updates.is_active = isActive;
 
-  const { data, error } = await supabaseAdmin
-    .from("programs")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
+  let query = supabaseAdmin.from("programs").update(updates).eq("id", id);
+  if (req.userRole !== "super_admin") {
+    query = query.eq("school_id", req.schoolId ?? "");
+  }
+
+  const { data, error } = await query.select().single();
 
   if (error || !data) {
     res.status(404).json({ error: "Program not found" });
@@ -91,13 +102,20 @@ router.patch("/programs/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(mapProgram(data));
 });
 
-router.delete("/programs/:id", requireAuth, async (req, res): Promise<void> => {
+router.delete("/programs/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
-  const { error } = await supabaseAdmin
-    .from("programs")
-    .delete()
-    .eq("id", id);
+  let query = supabaseAdmin.from("programs").delete().eq("id", id);
+  if (req.userRole !== "super_admin") {
+    query = query.eq("school_id", req.schoolId ?? "");
+  }
+
+  const { error } = await query;
 
   if (error) {
     res.status(404).json({ error: "Program not found" });

@@ -205,6 +205,11 @@ router.get(
       return;
     }
 
+    if (req.userRole !== "super_admin" && topic.school_id !== req.schoolId) {
+      res.status(404).json({ error: "Topic not found" });
+      return;
+    }
+
     const [enrichedTopic, commentsRes, topicReactionsRes] = await Promise.all([
       enrichTopic(topic),
       supabaseAdmin

@@ -1,11 +1,51 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-router.get("/courses/:courseId/attendance", requireAuth, async (req, res): Promise<void> => {
+/**
+ * Verifies the caller may access attendance for this course: must be an
+ * admin/super_admin of the course's school, or the teacher who teaches it.
+ * Students are never allowed (they have their own self-check-in endpoint).
+ */
+async function assertCourseTeacherOrAdmin(
+  req: AuthenticatedRequest,
+  courseId: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  const { data: course, error } = await supabaseAdmin
+    .from("courses")
+    .select("id, school_id, teacher_id")
+    .eq("id", courseId)
+    .single();
+
+  if (error || !course) {
+    return { ok: false, status: 404, error: "Course not found" };
+  }
+
+  if (req.userRole === "teacher" && course.teacher_id !== req.userId) {
+    return { ok: false, status: 403, error: "You do not teach this course" };
+  }
+
+  if (req.userRole !== "super_admin" && course.school_id !== req.schoolId) {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  return { ok: true };
+}
+
+router.get("/courses/:courseId/attendance", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const courseId = Array.isArray(req.params.courseId) ? req.params.courseId[0] : req.params.courseId;
+
+  const access = await assertCourseTeacherOrAdmin(req, courseId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
 
   const { data, error } = await supabaseAdmin
     .from("attendance")
@@ -22,8 +62,15 @@ router.get("/courses/:courseId/attendance", requireAuth, async (req, res): Promi
   res.json(records);
 });
 
-router.post("/courses/:courseId/attendance", requireAuth, async (req, res): Promise<void> => {
+router.post("/courses/:courseId/attendance", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const courseId = Array.isArray(req.params.courseId) ? req.params.courseId[0] : req.params.courseId;
+
+  const access = await assertCourseTeacherOrAdmin(req, courseId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
   const { studentId, sessionDate, status } = req.body;
 
   if (!studentId || !sessionDate || !status) {
@@ -60,7 +107,7 @@ router.post("/courses/:courseId/attendance", requireAuth, async (req, res): Prom
 });
 
 // POST /attendance/checkin - student self-check-in for live class
-router.post("/attendance/checkin", requireAuth, async (req, res): Promise<void> => {
+router.post("/attendance/checkin", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const { course_id } = req.body;
   const studentId = req.userId;
 
@@ -133,13 +180,19 @@ router.post("/attendance/checkin", requireAuth, async (req, res): Promise<void> 
 });
 
 // GET /attendance/live-class?course_id=X - teacher/admin gets today's check-in list
-router.get("/attendance/live-class", requireAuth, async (req, res): Promise<void> => {
-  const course_id = Array.isArray(req.query.course_id)
-    ? req.query.course_id[0]
-    : req.query.course_id;
+router.get("/attendance/live-class", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const course_id = (
+    Array.isArray(req.query.course_id) ? req.query.course_id[0] : req.query.course_id
+  ) as string | undefined;
 
   if (!course_id) {
     res.status(400).json({ error: "course_id is required" });
+    return;
+  }
+
+  const access = await assertCourseTeacherOrAdmin(req, course_id);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
     return;
   }
 

@@ -346,7 +346,7 @@ router.get("/analytics/teacher", requireAuth, async (req: AuthenticatedRequest, 
 
       // Attendance
       const { data: attendanceData } = await supabaseAdmin
-        .from("attendance_records")
+        .from("attendance")
         .select("course_id, student_id, status, session_date")
         .in("course_id", myCourseIds);
 

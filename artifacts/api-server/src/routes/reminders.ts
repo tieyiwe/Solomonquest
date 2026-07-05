@@ -157,11 +157,11 @@ async function enrichReminder(r: Record<string, unknown>) {
   if (r.course_id) {
     const { data: course } = await supabaseAdmin
       .from("courses")
-      .select("name")
+      .select("title")
       .eq("id", r.course_id as string)
       .single();
     if (course) {
-      courseName = course.name ?? null;
+      courseName = course.title ?? null;
     }
   }
 

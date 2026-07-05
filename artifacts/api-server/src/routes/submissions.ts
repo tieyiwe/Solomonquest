@@ -4,11 +4,49 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
+/** Verifies the caller may see/grade submissions for this assignment's course. */
+async function assertAssignmentTeacherOrAdmin(
+  req: AuthenticatedRequest,
+  assignmentId: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  const { data: assignment, error } = await supabaseAdmin
+    .from("assignments")
+    .select("id, course_id, courses(school_id, teacher_id)")
+    .eq("id", assignmentId)
+    .single();
+
+  if (error || !assignment) {
+    return { ok: false, status: 404, error: "Assignment not found" };
+  }
+
+  const course = (assignment as any).courses as { school_id: string; teacher_id: string } | null;
+
+  if (req.userRole === "teacher" && course?.teacher_id !== req.userId) {
+    return { ok: false, status: 403, error: "You do not teach this course" };
+  }
+
+  if (req.userRole !== "super_admin" && course?.school_id !== req.schoolId) {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  return { ok: true };
+}
+
 // List submissions for an assignment
-router.get("/assignments/:assignmentId/submissions", requireAuth, async (req, res): Promise<void> => {
+router.get("/assignments/:assignmentId/submissions", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const assignmentId = Array.isArray(req.params.assignmentId)
     ? req.params.assignmentId[0]
     : req.params.assignmentId;
+
+  const access = await assertAssignmentTeacherOrAdmin(req, assignmentId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
 
   const { data, error } = await supabaseAdmin
     .from("submissions")
@@ -56,12 +94,29 @@ router.post("/assignments/:assignmentId/submissions", requireAuth, async (req: A
 });
 
 // Grade a submission
-router.patch("/submissions/:id/grade", requireAuth, async (req, res): Promise<void> => {
+router.patch("/submissions/:id/grade", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const { grade } = req.body;
 
   if (grade === undefined || grade === null) {
     res.status(400).json({ error: "grade is required" });
+    return;
+  }
+
+  const { data: existing, error: fetchError } = await supabaseAdmin
+    .from("submissions")
+    .select("assignment_id")
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !existing) {
+    res.status(404).json({ error: "Submission not found" });
+    return;
+  }
+
+  const access = await assertAssignmentTeacherOrAdmin(req, existing.assignment_id as string);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
     return;
   }
 
