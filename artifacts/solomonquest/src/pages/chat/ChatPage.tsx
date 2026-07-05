@@ -325,7 +325,13 @@ function PeopleSearch({
 // New Channel Dialog
 // ---------------------------------------------------------------------------
 
-function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
+function NewChannelDialog({
+  onCreated,
+  onOpenDm,
+}: {
+  onCreated: (ch: Channel) => void;
+  onOpenDm: (userId: string, name: string) => Promise<boolean>;
+}) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"private" | "direct">("private");
   const [channelName, setChannelName] = useState("");
@@ -364,6 +370,12 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
   }, [userQuery, searchUsers]);
 
   function toggleUser(u: UserResult) {
+    if (mode === "direct") {
+      // A direct message is always exactly one other person — picking someone
+      // new replaces the previous pick instead of building a group.
+      setSelectedUsers((prev) => (prev[0]?.id === u.id ? [] : [u]));
+      return;
+    }
     setSelectedUsers((prev) =>
       prev.find((x) => x.id === u.id) ? prev.filter((x) => x.id !== u.id) : [...prev, u]
     );
@@ -371,14 +383,26 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
 
   async function handleCreate() {
     if (selectedUsers.length === 0) {
-      toast.error("Select at least one user");
+      toast.error("Select a user");
       return;
     }
-    const name =
-      mode === "direct"
-        ? selectedUsers.map((u) => u.name).join(", ")
-        : channelName.trim();
-    if (mode === "private" && !name) {
+
+    if (mode === "direct") {
+      // DMs don't need a channel name/dialog round trip — reuse the same
+      // dedup-aware logic the sidebar's quick "Find people" search uses.
+      setLoading(true);
+      const ok = await onOpenDm(selectedUsers[0].id, selectedUsers[0].name);
+      setLoading(false);
+      if (ok) {
+        setOpen(false);
+        setSelectedUsers([]);
+        setUserQuery("");
+      }
+      return;
+    }
+
+    const name = channelName.trim();
+    if (!name) {
       toast.error("Enter a channel name");
       return;
     }
@@ -388,15 +412,15 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
         method: "POST",
         body: JSON.stringify({ name, type: mode, memberIds: selectedUsers.map((u) => u.id) }),
       });
-      if (!res.ok) throw new Error();
-      const ch: Channel = await res.json();
-      onCreated(ch);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
+      onCreated(body as Channel);
       setOpen(false);
       setChannelName("");
       setSelectedUsers([]);
       setUserQuery("");
-    } catch {
-      toast.error("Failed to create channel");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create channel");
     } finally {
       setLoading(false);
     }
@@ -414,7 +438,7 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>New Channel</DialogTitle>
+          <DialogTitle>{mode === "direct" ? "New Direct Message" : "New Channel"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div className="flex gap-2">
@@ -490,7 +514,13 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
           )}
 
           <Button className="w-full" onClick={handleCreate} disabled={loading}>
-            {loading ? "Creating..." : "Create"}
+            {loading
+              ? mode === "direct"
+                ? "Opening..."
+                : "Creating..."
+              : mode === "direct"
+              ? "Message"
+              : "Create"}
           </Button>
         </div>
       </DialogContent>
@@ -1221,13 +1251,13 @@ export default function ChatPage() {
     setThreadMessage(null);
   }
 
-  async function openDmWith(userId: string, name: string) {
+  async function openDmWith(userId: string, name: string): Promise<boolean> {
     try {
       const res = await apiFetch("/api/chat/channels", {
         method: "POST",
         body: JSON.stringify({ name, type: "direct", memberIds: [userId] }),
       });
-      const body = await res.json();
+      const body = await res.json().catch(() => ({}));
       if (res.status === 409) {
         // DM already exists — find it in state or re-fetch then select it
         const existingId: string = body.channelId;
@@ -1243,12 +1273,14 @@ export default function ChatPage() {
             if (found) selectChannel(found);
           }
         }
-        return;
+        return true;
       }
-      if (!res.ok) throw new Error(body.error ?? "Failed");
+      if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
       handleChannelCreated(body as Channel);
-    } catch {
-      toast.error("Failed to open conversation");
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to open conversation");
+      return false;
     }
   }
 
@@ -1312,14 +1344,14 @@ export default function ChatPage() {
             channels={directChannels}
             activeId={activeChannel?.id ?? null}
             onSelect={selectChannel}
-            actions={<NewChannelDialog onCreated={handleChannelCreated} />}
+            actions={<NewChannelDialog onCreated={handleChannelCreated} onOpenDm={openDmWith} />}
           />
           <SidebarSection
             label="Private Channels"
             channels={privateChannels}
             activeId={activeChannel?.id ?? null}
             onSelect={selectChannel}
-            actions={<NewChannelDialog onCreated={handleChannelCreated} />}
+            actions={<NewChannelDialog onCreated={handleChannelCreated} onOpenDm={openDmWith} />}
           />
         </nav>
 
