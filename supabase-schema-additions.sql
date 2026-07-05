@@ -359,6 +359,20 @@ ALTER TABLE public.chat_channels ADD CONSTRAINT chat_channels_type_check CHECK (
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id);
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS is_private boolean NOT NULL DEFAULT false;
 
+-- ─── chat_calls table ───────────────────────────────────────────────────────────
+-- Referenced by the chat video-call routes but had no tracked migration.
+CREATE TABLE IF NOT EXISTS public.chat_calls (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id  uuid NOT NULL REFERENCES public.chat_channels(id) ON DELETE CASCADE,
+  jitsi_room  text NOT NULL,
+  status      text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'ended')),
+  started_at  timestamptz NOT NULL DEFAULT now(),
+  ended_at    timestamptz
+);
+ALTER TABLE public.chat_calls ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on chat_calls" ON public.chat_calls;
+CREATE POLICY "Allow all on chat_calls" ON public.chat_calls FOR ALL USING (true) WITH CHECK (true);
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

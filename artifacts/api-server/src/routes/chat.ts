@@ -12,7 +12,7 @@ async function assertChannelMember(
 ): Promise<boolean> {
   const { data } = await supabaseAdmin
     .from("chat_channel_members")
-    .select("id")
+    .select("channel_id")
     .eq("channel_id", channelId)
     .eq("user_id", userId)
     .maybeSingle();

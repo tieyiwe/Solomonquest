@@ -1206,11 +1206,14 @@ export default function ChatPage() {
         method: "POST",
         body: JSON.stringify({ content }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Request failed (${res.status})`);
+      }
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
-    } catch {
+    } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
-      toast.error("Failed to send message");
+      toast.error(err instanceof Error ? err.message : "Failed to send message");
     }
   }
 
@@ -1220,20 +1223,31 @@ export default function ChatPage() {
 
   async function startVideoCall() {
     if (!activeChannel) return;
+    // Open the tab synchronously, in direct response to the click, so the
+    // browser doesn't treat it as a popup and block it — the fetch below is
+    // async, and by the time it resolves the "user gesture" window has
+    // often already closed in Safari/Chrome's popup heuristics.
+    const popup = window.open("", "_blank");
     try {
       const res = await apiFetch("/api/video/chat-calls", {
         method: "POST",
         body: JSON.stringify({ channel_id: activeChannel.id }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Request failed (${res.status})`);
+      }
       const data = await res.json();
-      window.open(`https://meet.jit.si/${data.jitsi_room}`, "_blank");
-    } catch {
-      toast.error("Failed to start video call");
+      const url = `https://meet.jit.si/${data.jitsi_room}`;
+      if (popup) popup.location.href = url;
+      else window.open(url, "_blank");
+    } catch (err) {
+      popup?.close();
+      toast.error(err instanceof Error ? err.message : "Failed to start video call");
     }
   }
 
-  async function joinCall() {
+  function joinCall() {
     if (!activeChannel?.active_call?.jitsi_room) return;
     window.open(`https://meet.jit.si/${activeChannel.active_call.jitsi_room}`, "_blank");
   }

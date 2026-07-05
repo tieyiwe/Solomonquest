@@ -168,12 +168,35 @@ router.put("/sessions/:id/end", requireAuth, async (req: AuthenticatedRequest, r
   }
 });
 
-// POST /video/chat-calls - start group call in chat channel
+// POST /video/chat-calls - start (or join) the group call for a chat channel
 router.post("/chat-calls", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { channel_id } = req.body;
 
-    const jitsi_room = "solomonquest-chat-" + channel_id.slice(0, 8) + "-" + Date.now();
+    if (!channel_id) {
+      return res.status(400).json({ error: "channel_id is required" });
+    }
+
+    // If someone already started a call in this channel, reuse the same
+    // Jitsi room instead of minting a new one — otherwise each participant
+    // who clicks "Start Video Call" lands in their own separate room and
+    // never actually meets the other person.
+    const { data: existingCall } = await supabaseAdmin
+      .from("chat_calls")
+      .select("id, jitsi_room, channel_id, status, started_at")
+      .eq("channel_id", channel_id)
+      .eq("status", "active")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingCall) {
+      return res.status(200).json(existingCall);
+    }
+
+    // Stable, deterministic room name per channel (no timestamp) so it's
+    // reconstructible even if the chat_calls row is missing for any reason.
+    const jitsi_room = "solomonquest-chat-" + String(channel_id).slice(0, 8);
 
     const { data: call, error: callError } = await supabaseAdmin
       .from("chat_calls")
