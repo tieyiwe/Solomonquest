@@ -174,12 +174,7 @@ router.put("/users/me/online", requireAuth, async (req: AuthenticatedRequest, re
 // GET /users/search - search users by name, email, or student ID
 // Scoped to requester's school; all authenticated users can search within their school
 router.get("/users/search", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  const queryParam = req.query.query as string | undefined;
-
-  if (!queryParam) {
-    res.status(400).json({ error: "query parameter is required" });
-    return;
-  }
+  const queryParam = (req.query.query as string | undefined)?.trim();
 
   // Always scope search to caller's school
   let dbQuery = supabaseAdmin
@@ -199,13 +194,23 @@ router.get("/users/search", requireAuth, async (req: AuthenticatedRequest, res):
     dbQuery = dbQuery.eq("school_id", req.schoolId);
   }
 
-  // Search by name, student ID, or email
-  const q = queryParam.replace(/'/g, "");
-  dbQuery = dbQuery.or(
-    `unique_student_id.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%,internal_email.ilike.%${q}%`
-  );
+  if (req.userId) {
+    dbQuery = dbQuery.neq("id", req.userId);
+  }
 
-  const { data, error } = await dbQuery.limit(20);
+  // No query yet: return everyone in the school, alphabetical by first name,
+  // so the UI can show a browsable directory before the user types anything.
+  if (queryParam) {
+    const q = queryParam.replace(/'/g, "");
+    dbQuery = dbQuery.or(
+      `unique_student_id.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%,internal_email.ilike.%${q}%`
+    );
+  }
+
+  const { data, error } = await dbQuery
+    .order("first_name", { ascending: true })
+    .order("last_name", { ascending: true })
+    .limit(queryParam ? 20 : 50);
 
   if (error) {
     res.status(500).json({ error: "Search failed" });

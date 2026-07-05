@@ -106,13 +106,14 @@ const AVATAR_COLORS = [
 ];
 
 function nameColor(name: string): string {
+  const safe = name || "?";
   let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  for (let i = 0; i < safe.length; i++) h = safe.charCodeAt(i) + ((h << 5) - h);
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
 function initials(name: string): string {
-  return name
+  return (name || "?")
     .split(" ")
     .map((w) => w[0])
     .join("")
@@ -218,6 +219,7 @@ interface PersonResult {
   internal_email?: string | null;
   role?: string | null;
   avatar_url?: string | null;
+  unique_student_id?: string | null;
 }
 
 function PeopleSearch({
@@ -230,19 +232,24 @@ function PeopleSearch({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PersonResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  async function runSearch(q: string) {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`/api/users/search?query=${encodeURIComponent(q)}`);
+      if (res.ok) setResults(await res.json());
+    } catch { /* ignore */ } finally { setLoading(false); }
+  }
+
   useEffect(() => {
+    if (!open) return;
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (!query.trim()) { setResults([]); return; }
-    timerRef.current = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const res = await apiFetch(`/api/users/search?query=${encodeURIComponent(query)}`);
-        if (res.ok) setResults(await res.json());
-      } catch { /* ignore */ } finally { setLoading(false); }
-    }, 300);
-  }, [query]);
+    // Empty query still hits the API — it returns the whole school directory,
+    // alphabetically, so people can browse before typing anything.
+    timerRef.current = setTimeout(() => runSearch(query.trim()), query.trim() ? 300 : 0);
+  }, [query, open]);
 
   function fullName(p: PersonResult) {
     return [p.first_name, p.last_name].filter(Boolean).join(" ") || p.internal_email || "Unknown";
@@ -256,6 +263,8 @@ function PeopleSearch({
           className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md bg-white/8 border border-white/10 text-white placeholder:text-[#72767d] focus:outline-none focus:ring-1 focus:ring-white/20"
           placeholder="Find people..."
           value={query}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
           onChange={(e) => setQuery(e.target.value)}
         />
         {query && (
@@ -268,7 +277,7 @@ function PeopleSearch({
         )}
       </div>
 
-      {(results.length > 0 || loading) && (
+      {open && (results.length > 0 || loading) && (
         <div className="absolute left-2 right-2 mt-1 rounded-md border border-white/10 overflow-hidden z-50" style={{ backgroundColor: "#2b2d42" }}>
           {loading && (
             <p className="px-3 py-2 text-xs text-[#72767d]">Searching…</p>
@@ -328,14 +337,22 @@ function NewChannelDialog({ onCreated }: { onCreated: (ch: Channel) => void }) {
 
   const searchUsers = useCallback((q: string) => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (!q.trim()) {
-      setUserResults([]);
-      return;
-    }
     searchTimeout.current = setTimeout(async () => {
       try {
         const res = await apiFetch(`/api/users/search?query=${encodeURIComponent(q)}`);
-        if (res.ok) setUserResults(await res.json());
+        if (res.ok) {
+          const raw: PersonResult[] = await res.json();
+          setUserResults(
+            raw.map((p) => ({
+              id: p.id,
+              name:
+                [p.first_name, p.last_name].filter(Boolean).join(" ") ||
+                p.internal_email ||
+                "Unknown",
+              unique_student_id: p.unique_student_id ?? "",
+            }))
+          );
+        }
       } catch {
         /* ignore */
       }
