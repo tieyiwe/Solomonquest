@@ -57,6 +57,17 @@ const mainLinks = adminLinks.filter(
   (l) => l.href !== "/dashboard/admin/settings" && l.href !== "/dashboard/admin/reminders" && l.href !== "/dashboard/admin/branding"
 );
 
+// Only the 4 most-used destinations get a bottom-nav tab of their own — the
+// rest live behind "More", which opens the same drawer as the hamburger.
+const bottomNavPrimaryLinks = [
+  adminLinks[0], // Overview
+  adminLinks[1], // Users
+  adminLinks[2], // Courses
+  { href: "/chat", label: "Chat", icon: MessageSquare },
+];
+const bottomNavPrimaryHrefs = new Set(bottomNavPrimaryLinks.map((l) => l.href));
+const bottomNavOverflowLinks = adminLinks.filter((l) => !bottomNavPrimaryHrefs.has(l.href));
+
 function NavLinks({ onClose }: { onClose?: () => void }) {
   const [location] = useLocation();
   const isInSettings =
@@ -150,6 +161,7 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
+  const [location] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const { data: school } = useGetMySchool({ query: { enabled: !!user?.schoolId } });
@@ -261,7 +273,14 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Mobile Bottom Nav */}
-      <BottomNav links={adminLinks} />
+      <BottomNav
+        links={bottomNavPrimaryLinks}
+        moreCount={bottomNavOverflowLinks.length}
+        onMoreClick={() => setIsMobileOpen(true)}
+        moreActive={bottomNavOverflowLinks.some(
+          (l) => location === l.href || location.startsWith(`${l.href}/`)
+        )}
+      />
 
       {/* Floating help button */}
       <HelpButton onClick={() => setHelpOpen(true)} />

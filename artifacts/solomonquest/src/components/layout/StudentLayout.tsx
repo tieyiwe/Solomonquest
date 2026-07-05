@@ -23,6 +23,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { BottomNav } from "@/components/layout/BottomNav";
 import {
   useGetMySchool,
   useGetMyCourses,
@@ -59,6 +60,12 @@ export function StudentLayout({ children }: StudentLayoutProps) {
     { href: "/dashboard/student/transcript", label: "Transcript", icon: Scroll, exact: false },
     { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
   ];
+
+  // Only the 4 most-used destinations get their own bottom-nav tab — the
+  // rest live behind "More", which opens the same drawer as the hamburger.
+  const bottomNavPrimaryLinks = [navLinks[0], navLinks[1], navLinks[2], navLinks[6]];
+  const bottomNavPrimaryHrefs = new Set(bottomNavPrimaryLinks.map((l) => l.href));
+  const bottomNavOverflowLinks = navLinks.filter((l) => !bottomNavPrimaryHrefs.has(l.href));
 
   const isActive = (href: string, exact: boolean) => {
     if (exact) return location === href;
@@ -241,10 +248,18 @@ export function StudentLayout({ children }: StudentLayoutProps) {
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background has-bottom-nav md:pb-8">
           {children}
         </main>
       </div>
+
+      {/* Mobile Bottom Nav */}
+      <BottomNav
+        links={bottomNavPrimaryLinks}
+        moreCount={bottomNavOverflowLinks.length}
+        onMoreClick={() => setIsMobileMenuOpen(true)}
+        moreActive={bottomNavOverflowLinks.some((l) => isActive(l.href, l.exact))}
+      />
     </div>
   );
 }

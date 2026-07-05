@@ -25,6 +25,7 @@ import {
   BarChart2,
   CalendarCheck,
   AlarmClock,
+  MessageSquare,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useGetMySchool, useGetMyCourses } from "@workspace/api-client-react";
@@ -59,6 +60,12 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
     { href: "/dashboard/teacher/reminders", label: "Reminders", icon: AlarmClock, exact: false },
     { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
   ];
+
+  // Only the 4 most-used destinations get their own bottom-nav tab — the
+  // rest live behind "More", which opens the same drawer as the hamburger.
+  const bottomNavPrimaryLinks = [navLinks[0], navLinks[1], navLinks[2], navLinks[7]];
+  const bottomNavPrimaryHrefs = new Set(bottomNavPrimaryLinks.map((l) => l.href));
+  const bottomNavOverflowLinks = navLinks.filter((l) => !bottomNavPrimaryHrefs.has(l.href));
 
   const isActive = (href: string, exact: boolean) => {
     if (exact) return location === href;
@@ -252,7 +259,12 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
       </div>
 
       {/* Mobile Bottom Nav */}
-      <BottomNav links={navLinks} />
+      <BottomNav
+        links={bottomNavPrimaryLinks}
+        moreCount={bottomNavOverflowLinks.length}
+        onMoreClick={() => setIsMobileMenuOpen(true)}
+        moreActive={bottomNavOverflowLinks.some((l) => isActive(l.href, l.exact))}
+      />
 
       <HelpButton onClick={() => setHelpOpen(true)} />
       {helpOpen && (
