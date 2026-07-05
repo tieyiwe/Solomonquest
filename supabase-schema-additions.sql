@@ -320,3 +320,21 @@ CREATE TABLE IF NOT EXISTS public.transcripts (
 ALTER TABLE public.transcripts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all on transcripts" ON public.transcripts;
 CREATE POLICY "Allow all on transcripts" ON public.transcripts FOR ALL USING (true) WITH CHECK (true);
+
+-- ─── Backfill chat_channels columns ────────────────────────────────────────────
+-- On some environments chat_channels was created before this table's full
+-- definition existed, so CREATE TABLE IF NOT EXISTS in schema-extended.sql
+-- silently skipped it and it's missing columns the app requires (seen as
+-- "Could not find the 'type' column of 'chat_channels' in the schema cache").
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS course_id uuid REFERENCES public.courses(id) ON DELETE SET NULL;
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS type text;
+UPDATE public.chat_channels SET type = 'private' WHERE type IS NULL;
+ALTER TABLE public.chat_channels ALTER COLUMN type SET NOT NULL;
+ALTER TABLE public.chat_channels DROP CONSTRAINT IF EXISTS chat_channels_type_check;
+ALTER TABLE public.chat_channels ADD CONSTRAINT chat_channels_type_check CHECK (type IN ('school','course','direct','private'));
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id);
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS is_private boolean NOT NULL DEFAULT false;
+
+-- Force PostgREST to pick up the columns above immediately instead of
+-- waiting for its schema cache to refresh on its own.
+NOTIFY pgrst, 'reload schema';
