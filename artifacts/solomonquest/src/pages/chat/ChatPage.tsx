@@ -38,6 +38,9 @@ import {
   ArchiveRestore,
   Trash2,
   ArrowLeft,
+  Paperclip,
+  Download,
+  Loader2,
   Smile,
 } from "lucide-react";
 import {
@@ -102,6 +105,10 @@ interface ChatMessage {
   thread_parent_id?: string | null;
   thread_count?: number;
   created_at: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  attachmentType?: string | null;
+  attachmentSize?: number | null;
   sender: {
     id: string;
     name: string;
@@ -109,6 +116,7 @@ interface ChatMessage {
     online_at?: string | null;
   };
   _optimistic?: boolean;
+  _uploading?: boolean;
 }
 
 interface UserResult {
@@ -818,7 +826,7 @@ function MessageItem({
           onClick={() => onOpenThread(msg)}
         >
           <MessageSquare className="w-3 h-3" />
-          Reply in thread
+          Reply
         </button>
       </div>
 
@@ -848,13 +856,17 @@ function MessageItem({
             <span className="text-xs text-muted-foreground">{formatTs(msg.created_at)}</span>
           </div>
         )}
-        <p
-          className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${
-            msg._optimistic ? "opacity-50" : ""
-          }`}
-        >
-          {msg.content}
-        </p>
+        {msg.attachmentUrl ? (
+          <AttachmentBubble msg={msg} />
+        ) : (
+          <p
+            className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${
+              msg._optimistic ? "opacity-50" : ""
+            }`}
+          >
+            {msg.content}
+          </p>
+        )}
 
         {/* Inline thread preview */}
         {threadCount > 0 && !msg._optimistic && (
@@ -867,6 +879,60 @@ function MessageItem({
         )}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Attachment bubble — image preview or a file card, shown in place of text
+// ---------------------------------------------------------------------------
+
+function formatFileSize(bytes?: number | null): string {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AttachmentBubble({ msg }: { msg: ChatMessage }) {
+  if (msg._uploading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 border rounded-lg px-3 py-2 max-w-xs">
+        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+        <span className="truncate">Uploading {msg.attachmentName}...</span>
+      </div>
+    );
+  }
+
+  const isImage = (msg.attachmentType ?? "").startsWith("image/");
+
+  if (isImage) {
+    return (
+      <a href={msg.attachmentUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="block mt-1">
+        <img
+          src={msg.attachmentUrl ?? ""}
+          alt={msg.attachmentName ?? "Image attachment"}
+          className="max-w-xs max-h-64 rounded-lg border object-cover hover:opacity-90 transition-opacity"
+        />
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={msg.attachmentUrl ?? "#"}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-2.5 text-sm bg-muted/50 border rounded-lg px-3 py-2.5 max-w-xs hover:bg-muted transition-colors"
+    >
+      <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
+        <FileText className="w-4 h-4 text-primary" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="font-medium truncate">{msg.attachmentName}</p>
+        <p className="text-xs text-muted-foreground">{formatFileSize(msg.attachmentSize)}</p>
+      </div>
+      <Download className="w-4 h-4 text-muted-foreground shrink-0" />
+    </a>
   );
 }
 
@@ -917,15 +983,18 @@ function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
 
 function MessageInput({
   onSend,
+  onSendFile,
   placeholder,
   disabled,
 }: {
   onSend: (content: string) => void;
+  onSendFile?: (file: File) => void;
   placeholder?: string;
   disabled?: boolean;
 }) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -952,9 +1021,34 @@ function MessageInput({
     ref.current?.focus();
   }
 
+  function handleFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file && onSendFile) onSendFile(file);
+    e.target.value = "";
+  }
+
   return (
     <div className="px-4 py-3 border-t bg-background flex-shrink-0">
       <div className="flex items-end gap-2 bg-muted/40 border rounded-lg px-3 py-2">
+        {onSendFile && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf"
+              onChange={handleFilePicked}
+            />
+            <button
+              className="flex-shrink-0 p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
+              title="Attach a file"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
+          </>
+        )}
         <textarea
           ref={ref}
           className="flex-1 resize-none bg-transparent text-sm min-h-[24px] max-h-32 focus:outline-none leading-relaxed"
@@ -1662,6 +1756,43 @@ export default function ChatPage() {
   // Send message
   // -------------------------------------------------------------------------
 
+  async function sendAttachment(file: File) {
+    if (!activeChannel) return;
+    const optimisticId = `opt-${Date.now()}`;
+    const optimistic: ChatMessage = {
+      id: optimisticId,
+      channel_id: activeChannel.id,
+      content: file.name,
+      created_at: new Date().toISOString(),
+      attachmentName: file.name,
+      attachmentType: file.type,
+      attachmentSize: file.size,
+      sender: { id: currentUserId, name: currentUserName },
+      _optimistic: true,
+      _uploading: true,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    try {
+      const token = await getToken();
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/chat/channels/${activeChannel.id}/attachments`, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+        body: form,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Request failed (${res.status})`);
+      }
+      const saved: ChatMessage = await res.json();
+      setMessages((prev) => prev.map((m) => (m.id === optimisticId ? saved : m)));
+    } catch (err) {
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      toast.error(err instanceof Error ? err.message : "Failed to send file");
+    }
+  }
+
   async function sendMessage(content: string) {
     if (!activeChannel) return;
     const optimistic: ChatMessage = {
@@ -2006,6 +2137,7 @@ export default function ChatPage() {
             {/* Message input */}
             <MessageInput
               onSend={sendMessage}
+              onSendFile={sendAttachment}
               placeholder={`Message ${activeChannel.type === "direct" ? "" : "#"}${activeChannel.name}`}
             />
           </div>

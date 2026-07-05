@@ -1,8 +1,32 @@
 import { Router, type IRouter } from "express";
+import multer from "multer";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { scanFile } from "../lib/fileScan";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+const ATTACHMENTS_BUCKET = "chat-attachments";
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+
+let bucketReady: Promise<void> | null = null;
+/** Lazily ensures the storage bucket exists — created on first use rather
+ * than requiring a manual dashboard step. */
+function ensureAttachmentsBucket(): Promise<void> {
+  if (!bucketReady) {
+    bucketReady = supabaseAdmin.storage
+      .createBucket(ATTACHMENTS_BUCKET, { public: true, fileSizeLimit: 25 * 1024 * 1024 })
+      .then(() => undefined)
+      .catch((err) => {
+        // "already exists" is expected after the first successful call
+        if (!String(err?.message ?? err).toLowerCase().includes("already exists")) {
+          logger.error({ err }, "Failed to create chat-attachments bucket");
+        }
+      });
+  }
+  return bucketReady;
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -343,6 +367,10 @@ router.get(
         thread_parent_id,
         created_at,
         sender_id,
+        attachment_url,
+        attachment_name,
+        attachment_type,
+        attachment_size,
         profiles:sender_id (
           first_name,
           last_name,
@@ -404,6 +432,10 @@ router.get(
         threadParentId: m.thread_parent_id,
         replyCount: replyCounts[m.id as string] ?? 0,
         createdAt: m.created_at,
+        attachmentUrl: m.attachment_url ?? null,
+        attachmentName: m.attachment_name ?? null,
+        attachmentType: m.attachment_type ?? null,
+        attachmentSize: m.attachment_size ?? null,
         sender: {
           id: m.sender_id,
           name:
@@ -493,6 +525,114 @@ router.post(
   }
 );
 
+// ─── POST /chat/channels/:channelId/attachments ──────────────────────────────
+// Uploads pass through this server (not client-direct-to-storage, unlike the
+// rest of the app) specifically so the file can be scanned before it's ever
+// stored or shown to anyone.
+
+router.post(
+  "/chat/channels/:channelId/attachments",
+  requireAuth,
+  upload.single("file"),
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const { channelId } = req.params;
+
+    const isMember = await assertChannelMember(channelId, req.userId!);
+    if (!isMember) {
+      res.status(403).json({ error: "Not a member of this channel" });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({ error: "No file uploaded" });
+      return;
+    }
+
+    const threadParentId = (req.body as { threadParentId?: string }).threadParentId;
+
+    const scan = await scanFile(req.file.buffer, req.file.originalname);
+    if (!scan.allowed) {
+      res.status(422).json({ error: scan.reason ?? "This file could not be sent.", flagged: true });
+      return;
+    }
+
+    await ensureAttachmentsBucket();
+
+    const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${channelId}/${Date.now()}-${safeName}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from(ATTACHMENTS_BUCKET)
+      .upload(path, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
+
+    if (uploadError) {
+      res.status(500).json({ error: uploadError.message });
+      return;
+    }
+
+    const { data: publicUrlData } = supabaseAdmin.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path);
+
+    const { data: message, error } = await supabaseAdmin
+      .from("chat_messages")
+      .insert({
+        channel_id: channelId,
+        sender_id: req.userId,
+        content: req.file.originalname,
+        thread_parent_id: threadParentId ?? null,
+        attachment_url: publicUrlData.publicUrl,
+        attachment_name: req.file.originalname,
+        attachment_type: req.file.mimetype,
+        attachment_size: req.file.size,
+      })
+      .select(
+        `
+        id,
+        content,
+        thread_parent_id,
+        created_at,
+        sender_id,
+        attachment_url,
+        attachment_name,
+        attachment_type,
+        attachment_size,
+        profiles:sender_id (
+          first_name,
+          last_name,
+          avatar_url
+        )
+      `
+      )
+      .single();
+
+    if (error) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+
+    const profile = message.profiles as Record<string, unknown> | null;
+
+    res.status(201).json({
+      id: message.id,
+      channelId,
+      content: message.content,
+      threadParentId: message.thread_parent_id,
+      createdAt: message.created_at,
+      attachmentUrl: message.attachment_url,
+      attachmentName: message.attachment_name,
+      attachmentType: message.attachment_type,
+      attachmentSize: message.attachment_size,
+      sender: {
+        id: message.sender_id,
+        name:
+          [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Unknown",
+        firstName: profile?.first_name ?? null,
+        lastName: profile?.last_name ?? null,
+        avatarUrl: profile?.avatar_url ?? null,
+      },
+    });
+  }
+);
+
 // ─── GET /chat/channels/:channelId/messages/:messageId/thread ────────────────
 
 router.get(
@@ -516,6 +656,10 @@ router.get(
         thread_parent_id,
         created_at,
         sender_id,
+        attachment_url,
+        attachment_name,
+        attachment_type,
+        attachment_size,
         profiles:sender_id (
           first_name,
           last_name,
@@ -540,6 +684,10 @@ router.get(
         content: m.content,
         threadParentId: m.thread_parent_id,
         createdAt: m.created_at,
+        attachmentUrl: m.attachment_url ?? null,
+        attachmentName: m.attachment_name ?? null,
+        attachmentType: m.attachment_type ?? null,
+        attachmentSize: m.attachment_size ?? null,
         sender: {
           id: m.sender_id,
           name:

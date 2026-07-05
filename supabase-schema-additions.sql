@@ -400,6 +400,14 @@ BEGIN
   END IF;
 END $$;
 
+-- ─── Chat attachments ───────────────────────────────────────────────────────────
+-- Files pass through the API server (multer) so they can be scanned before
+-- ever being stored or shown to anyone — see POST /chat/channels/:id/attachments.
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_url text;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_name text;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_type text;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_size bigint;
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';
