@@ -39,7 +39,6 @@ router.get(
       .from("chat_channel_members")
       .select(
         `
-        last_seen,
         chat_channels (
           id,
           name,
@@ -68,7 +67,6 @@ router.get(
           courseId: channel.course_id,
           createdAt: channel.created_at,
           isArchived: channel.is_archived ?? false,
-          lastSeen: m.last_seen,
           unreadCount: 0,
         };
       })
