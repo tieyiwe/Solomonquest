@@ -373,6 +373,16 @@ ALTER TABLE public.chat_calls ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all on chat_calls" ON public.chat_calls;
 CREATE POLICY "Allow all on chat_calls" ON public.chat_calls FOR ALL USING (true) WITH CHECK (true);
 
+-- ─── Backfill chat_messages columns ────────────────────────────────────────────
+-- Same story as chat_channels: this environment's chat_messages table predates
+-- its full column set, so it was missing thread_parent_id (seen as "Could not
+-- find the 'thread_parent_id' column of 'chat_messages' in the schema cache").
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS thread_parent_id uuid REFERENCES public.chat_messages(id) ON DELETE SET NULL;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS is_edited boolean NOT NULL DEFAULT false;
+
+-- ─── Channel archiving ──────────────────────────────────────────────────────────
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false;
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

@@ -33,6 +33,11 @@ import {
   AlarmClock,
   Scroll,
   GraduationCap,
+  MoreVertical,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+  Smile,
 } from "lucide-react";
 import {
   Dialog,
@@ -41,6 +46,23 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,6 +77,7 @@ interface Channel {
   member_count?: number;
   active_call?: { jitsi_room: string } | null;
   createdAt?: string | null;
+  isArchived?: boolean;
 }
 
 interface ChatMessage {
@@ -183,28 +206,97 @@ function SidebarChannel({
   ch,
   active,
   onClick,
+  onArchive,
+  onDelete,
 }: {
   ch: Channel;
   active: boolean;
   onClick: () => void;
+  onArchive?: (ch: Channel, archived: boolean) => void;
+  onDelete?: (ch: Channel) => void;
 }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+    <div
+      className={`group relative w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
         active
           ? "bg-white/10 text-white"
           : "text-[#b9bbbe] hover:bg-white/5 hover:text-white"
       }`}
     >
-      <ChannelIcon type={ch.type} className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
-      <span className="flex-1 truncate text-left">{ch.name}</span>
+      <button onClick={onClick} className="flex-1 flex items-center gap-2 min-w-0 text-left">
+        <ChannelIcon type={ch.type} className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+        <span className="flex-1 truncate text-left">{ch.name}</span>
+      </button>
       {(ch.unread_count ?? 0) > 0 && (
-        <span className="text-xs font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-tight">
+        <span className="text-xs font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-tight shrink-0">
           {ch.unread_count}
         </span>
       )}
-    </button>
+      {(onArchive || onDelete) && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/10 transition-opacity"
+              title="Channel options"
+            >
+              <MoreVertical className="w-3.5 h-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            {onArchive && (
+              <DropdownMenuItem onClick={() => onArchive(ch, !ch.isArchived)}>
+                {ch.isArchived ? (
+                  <>
+                    <ArchiveRestore className="w-3.5 h-3.5 mr-2" />
+                    Unarchive
+                  </>
+                ) : (
+                  <>
+                    <Archive className="w-3.5 h-3.5 mr-2" />
+                    Archive
+                  </>
+                )}
+              </DropdownMenuItem>
+            )}
+            {onDelete && (
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => setConfirmOpen(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
+      {onDelete && (
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete "{ch.name}"?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This permanently deletes the conversation and all its messages for everyone in it.
+                This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => onDelete(ch)}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </div>
   );
 }
 
@@ -673,6 +765,47 @@ function MessageItem({
 // Message input
 // ---------------------------------------------------------------------------
 
+const EMOJI_OPTIONS = [
+  "😀", "😂", "😊", "😍", "🤔", "😢", "😮", "😡",
+  "👍", "👎", "👏", "🙌", "🙏", "💪", "🤝", "👋",
+  "❤️", "🔥", "🎉", "✅", "⭐", "💯", "🚀", "😅",
+  "😴", "🤗", "🤯", "🥳", "😎", "🙄", "😬", "🤦",
+];
+
+function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex-shrink-0 p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          title="Add emoji"
+        >
+          <Smile className="w-4 h-4" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="end" className="w-64 p-2">
+        <div className="grid grid-cols-8 gap-1">
+          {EMOJI_OPTIONS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              className="text-lg rounded hover:bg-muted p-1 transition-colors"
+              onClick={() => {
+                onPick(emoji);
+                setOpen(false);
+              }}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function MessageInput({
   onSend,
   placeholder,
@@ -705,6 +838,11 @@ function MessageInput({
     }
   }
 
+  function handleEmojiPick(emoji: string) {
+    setText((t) => t + emoji);
+    ref.current?.focus();
+  }
+
   return (
     <div className="px-4 py-3 border-t bg-background flex-shrink-0">
       <div className="flex items-end gap-2 bg-muted/40 border rounded-lg px-3 py-2">
@@ -718,6 +856,7 @@ function MessageInput({
           rows={1}
           disabled={disabled}
         />
+        <EmojiPicker onPick={handleEmojiPick} />
         <button
           className="flex-shrink-0 p-1.5 rounded-md text-primary disabled:opacity-30 hover:bg-primary/10 transition-colors"
           disabled={!text.trim() || disabled}
@@ -885,12 +1024,16 @@ function SidebarSection({
   activeId,
   onSelect,
   actions,
+  onArchive,
+  onDelete,
 }: {
   label: string;
   channels: Channel[];
   activeId: string | null;
   onSelect: (ch: Channel) => void;
   actions?: React.ReactNode;
+  onArchive?: (ch: Channel, archived: boolean) => void;
+  onDelete?: (ch: Channel) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -922,6 +1065,8 @@ function SidebarSection({
               ch={ch}
               active={ch.id === activeId}
               onClick={() => onSelect(ch)}
+              onArchive={onArchive}
+              onDelete={onDelete}
             />
           ))}
           {channels.length === 0 && (
@@ -1070,11 +1215,14 @@ export default function ChatPage() {
   // Derived channel groups
   // -------------------------------------------------------------------------
 
-  const schoolAndCourseChannels = channels.filter(
+  const activeChannels = channels.filter((c) => !c.isArchived);
+  const archivedChannels = channels.filter((c) => c.isArchived);
+
+  const schoolAndCourseChannels = activeChannels.filter(
     (c) => c.type === "public" || c.type === "course"
   );
-  const directChannels = channels.filter((c) => c.type === "direct");
-  const privateChannels = channels.filter((c) => c.type === "private");
+  const directChannels = activeChannels.filter((c) => c.type === "direct");
+  const privateChannels = activeChannels.filter((c) => c.type === "private");
 
   // -------------------------------------------------------------------------
   // Fetch channels on mount
@@ -1082,11 +1230,17 @@ export default function ChatPage() {
 
   const fetchChannels = useCallback(async () => {
     try {
-      const res = await apiFetch("/api/chat/channels");
+      // ?archived=true returns both archived and active channels — we split
+      // them client-side so the "Archived" section can still show its
+      // contents without a second round trip.
+      const res = await apiFetch("/api/chat/channels?archived=true");
       if (res.ok) {
         const data: Channel[] = await res.json();
         setChannels(data);
-        if (!activeChannel && data.length > 0) setActiveChannel(data[0]);
+        if (!activeChannel) {
+          const firstActive = data.find((c) => !c.isArchived);
+          if (firstActive) setActiveChannel(firstActive);
+        }
       }
     } catch {
       /* ignore */
@@ -1097,6 +1251,45 @@ export default function ChatPage() {
   useEffect(() => {
     fetchChannels();
   }, [fetchChannels]);
+
+  async function archiveChannel(ch: Channel, archived: boolean) {
+    try {
+      const res = await apiFetch(`/api/chat/channels/${ch.id}/archive`, {
+        method: "PUT",
+        body: JSON.stringify({ archived }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Request failed (${res.status})`);
+      }
+      setChannels((prev) => prev.map((c) => (c.id === ch.id ? { ...c, isArchived: archived } : c)));
+      if (archived && activeChannel?.id === ch.id) {
+        const nextActive = channels.find((c) => c.id !== ch.id && !c.isArchived) ?? null;
+        setActiveChannel(nextActive);
+      }
+      toast.success(archived ? `Archived "${ch.name}"` : `Unarchived "${ch.name}"`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update channel");
+    }
+  }
+
+  async function deleteChannel(ch: Channel) {
+    try {
+      const res = await apiFetch(`/api/chat/channels/${ch.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Request failed (${res.status})`);
+      }
+      setChannels((prev) => prev.filter((c) => c.id !== ch.id));
+      if (activeChannel?.id === ch.id) {
+        const nextActive = channels.find((c) => c.id !== ch.id && !c.isArchived) ?? null;
+        setActiveChannel(nextActive);
+      }
+      toast.success(`Deleted "${ch.name}"`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete channel");
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Fetch messages when channel changes
@@ -1359,6 +1552,8 @@ export default function ChatPage() {
             activeId={activeChannel?.id ?? null}
             onSelect={selectChannel}
             actions={<NewChannelDialog onCreated={handleChannelCreated} onOpenDm={openDmWith} />}
+            onArchive={archiveChannel}
+            onDelete={deleteChannel}
           />
           <SidebarSection
             label="Private Channels"
@@ -1366,7 +1561,19 @@ export default function ChatPage() {
             activeId={activeChannel?.id ?? null}
             onSelect={selectChannel}
             actions={<NewChannelDialog onCreated={handleChannelCreated} onOpenDm={openDmWith} />}
+            onArchive={archiveChannel}
+            onDelete={deleteChannel}
           />
+          {archivedChannels.length > 0 && (
+            <SidebarSection
+              label="Archived"
+              channels={archivedChannels}
+              activeId={activeChannel?.id ?? null}
+              onSelect={selectChannel}
+              onArchive={archiveChannel}
+              onDelete={deleteChannel}
+            />
+          )}
         </nav>
 
         {/* Current user */}

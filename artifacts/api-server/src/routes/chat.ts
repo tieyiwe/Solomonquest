@@ -33,6 +33,8 @@ router.get(
   "/chat/channels",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
+    const includeArchived = req.query.archived === "true";
+
     const { data: memberships, error } = await supabaseAdmin
       .from("chat_channel_members")
       .select(
@@ -44,7 +46,8 @@ router.get(
           name,
           type,
           course_id,
-          created_at
+          created_at,
+          is_archived
         )
       `
       )
@@ -65,13 +68,91 @@ router.get(
           type: channel.type,
           courseId: channel.course_id,
           createdAt: channel.created_at,
+          isArchived: channel.is_archived ?? false,
           lastSeen: m.last_seen,
           unreadCount: 0,
         };
       })
-      .filter(Boolean);
+      .filter((c): c is NonNullable<typeof c> => c !== null)
+      .filter((c) => includeArchived || !c.isArchived);
 
     res.json(channels);
+  }
+);
+
+// ─── PUT /chat/channels/:channelId/archive ───────────────────────────────────
+
+router.put(
+  "/chat/channels/:channelId/archive",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
+    const { archived } = req.body as { archived?: boolean };
+
+    const isMember = await assertChannelMember(channelId, req.userId!);
+    if (!isMember) {
+      res.status(403).json({ error: "Not a member of this channel" });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("chat_channels")
+      .update({ is_archived: archived !== false })
+      .eq("id", channelId)
+      .select("id, is_archived")
+      .single();
+
+    if (error || !data) {
+      res.status(404).json({ error: error?.message ?? "Channel not found" });
+      return;
+    }
+
+    res.json({ id: data.id, isArchived: data.is_archived });
+  }
+);
+
+// ─── DELETE /chat/channels/:channelId ────────────────────────────────────────
+
+router.delete(
+  "/chat/channels/:channelId",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
+
+    const { data: channel, error: fetchError } = await supabaseAdmin
+      .from("chat_channels")
+      .select("id, type, created_by")
+      .eq("id", channelId)
+      .single();
+
+    if (fetchError || !channel) {
+      res.status(404).json({ error: "Channel not found" });
+      return;
+    }
+
+    const isMember = await assertChannelMember(channelId, req.userId!);
+    const isOwner = channel.created_by === req.userId;
+    const isAdmin = req.userRole === "admin" || req.userRole === "super_admin";
+    // Anyone in a DM can delete it (there's no single "owner" of a direct
+    // message); private/public channels require the creator or an admin.
+    const canDelete = channel.type === "direct" ? isMember : isMember && (isOwner || isAdmin);
+
+    if (!canDelete) {
+      res.status(403).json({ error: "You do not have permission to delete this channel" });
+      return;
+    }
+
+    const { error: deleteError } = await supabaseAdmin
+      .from("chat_channels")
+      .delete()
+      .eq("id", channelId);
+
+    if (deleteError) {
+      res.status(500).json({ error: deleteError.message });
+      return;
+    }
+
+    res.sendStatus(204);
   }
 );
 
