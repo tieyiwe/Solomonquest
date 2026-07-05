@@ -377,5 +377,22 @@ CREATE POLICY "Allow all on quiz_answers" ON public.quiz_answers FOR ALL USING (
 -- ------------------------------------------------------------
 -- 5. Supabase Realtime
 -- ------------------------------------------------------------
-ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+-- ALTER PUBLICATION ... ADD TABLE has no IF NOT EXISTS form, so re-running
+-- this file after a prior partial run errors with "already member of
+-- publication". Guard each one so the file stays safe to re-run.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'chat_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'notifications'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+  END IF;
+END $$;
