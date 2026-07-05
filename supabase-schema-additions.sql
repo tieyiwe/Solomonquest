@@ -383,6 +383,23 @@ ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS is_edited boolean NOT 
 -- ─── Channel archiving ──────────────────────────────────────────────────────────
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false;
 
+-- ─── In-app ringing calls ───────────────────────────────────────────────────────
+-- Who started a call, so other members' clients know to ring (and the
+-- initiator's own client knows not to ring itself), plus realtime delivery
+-- of new calls / call-ended so the incoming-call UI and the caller's view
+-- both update live.
+ALTER TABLE public.chat_calls ADD COLUMN IF NOT EXISTS started_by uuid REFERENCES public.profiles(id);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'chat_calls'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_calls;
+  END IF;
+END $$;
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

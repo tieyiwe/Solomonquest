@@ -81,6 +81,20 @@ interface Channel {
   isArchived?: boolean;
 }
 
+interface IncomingCall {
+  id: string;
+  jitsiRoom: string;
+  channelId: string;
+  channelName: string;
+}
+
+interface ActiveCall {
+  id: string;
+  jitsiRoom: string;
+  channelId: string;
+  channelName: string;
+}
+
 interface ChatMessage {
   id: string;
   channel_id: string;
@@ -1291,12 +1305,92 @@ function DashboardRail({ role }: { role?: string | null }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Incoming call — rings until accepted, declined, or the caller hangs up
+// ---------------------------------------------------------------------------
+
+function IncomingCallBanner({
+  call,
+  onAccept,
+  onDecline,
+}: {
+  call: IncomingCall;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-20 bg-black/20 px-4">
+      <div className="w-full max-w-sm rounded-2xl shadow-2xl bg-card border overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
+        <div className="p-5 flex items-center gap-3">
+          <div className="relative shrink-0">
+            <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+              <Phone className="h-5 w-5 text-primary animate-pulse" />
+            </div>
+            <span className="absolute inset-0 rounded-full border-2 border-primary/40 animate-ping" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-foreground truncate">Incoming video call</p>
+            <p className="text-sm text-muted-foreground truncate">{call.channelName}</p>
+          </div>
+        </div>
+        <div className="flex border-t">
+          <button
+            onClick={onDecline}
+            className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+          >
+            <X className="h-4 w-4" />
+            Decline
+          </button>
+          <button
+            onClick={onAccept}
+            className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors"
+          >
+            <Phone className="h-4 w-4" />
+            Join
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Active call — embedded Jitsi, in-app instead of a separate tab
+// ---------------------------------------------------------------------------
+
+function ActiveCallOverlay({ call, onEnd }: { call: ActiveCall; onEnd: () => void }) {
+  const jitsiUrl = `https://meet.jit.si/${call.jitsiRoom}#config.prejoinPageEnabled=false`;
+
+  return (
+    <div className="fixed inset-0 z-[90] bg-black flex flex-col">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-[#1a1a1a] flex-shrink-0">
+        <div className="flex items-center gap-2 text-white min-w-0">
+          <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+          <span className="text-sm font-medium truncate">{call.channelName}</span>
+        </div>
+        <Button size="sm" variant="destructive" onClick={onEnd}>
+          <Phone className="h-3.5 w-3.5 mr-1.5 rotate-[135deg]" />
+          Leave Call
+        </Button>
+      </div>
+      <iframe
+        src={jitsiUrl}
+        className="flex-1 w-full border-0"
+        allow="camera; microphone; display-capture; fullscreen; autoplay"
+        title="Video call"
+      />
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const { user } = useAuth();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [threadMessage, setThreadMessage] = useState<ChatMessage | null>(null);
+  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const messagesBottomRef = useRef<HTMLDivElement>(null);
 
   const currentUserId: string = (user as any)?.id ?? "";
@@ -1460,6 +1554,94 @@ export default function ChatPage() {
   }, [activeChannel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // -------------------------------------------------------------------------
+  // Incoming call ringing — subscribed for every channel the user belongs
+  // to (not just the one currently open), so a call rings even if you're
+  // looking at a different conversation.
+  // -------------------------------------------------------------------------
+
+  const channelsRef = useRef<Channel[]>([]);
+  channelsRef.current = channels;
+  const activeCallRef = useRef<ActiveCall | null>(null);
+  activeCallRef.current = activeCall;
+
+  useEffect(() => {
+    const sub = supabase
+      .channel("chat-calls-ring")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_calls" },
+        (payload) => {
+          const call = payload.new as {
+            id: string;
+            channel_id: string;
+            jitsi_room: string;
+            status: string;
+            started_by?: string | null;
+          };
+          if (call.status !== "active" || call.started_by === currentUserId) return;
+          const channel = channelsRef.current.find((c) => c.id === call.channel_id);
+          if (!channel) return; // not a member of this channel — ignore
+          setIncomingCall({
+            id: call.id,
+            jitsiRoom: call.jitsi_room,
+            channelId: call.channel_id,
+            channelName: channel.name,
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "chat_calls" },
+        (payload) => {
+          const call = payload.new as { id: string; status: string };
+          if (call.status !== "ended") return;
+          // The call was ended (by anyone) before or while we were on it —
+          // close it out on our side too instead of leaving a dead call up.
+          if (activeCallRef.current?.id === call.id) setActiveCall(null);
+          setIncomingCall((prev) => (prev?.id === call.id ? null : prev));
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(sub);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId]);
+
+  // Simple ringtone using the Web Audio API (no audio asset needed) — plays
+  // a two-tone chime, repeating while a call is ringing unanswered.
+  useEffect(() => {
+    if (!incomingCall) return;
+    let ctx: AudioContext | null = null;
+    try {
+      ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    } catch {
+      return;
+    }
+    const playChime = () => {
+      if (!ctx) return;
+      [880, 660].forEach((freq, i) => {
+        const osc = ctx!.createOscillator();
+        const gain = ctx!.createGain();
+        osc.frequency.value = freq;
+        osc.type = "sine";
+        gain.gain.setValueAtTime(0.15, ctx!.currentTime + i * 0.25);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx!.currentTime + i * 0.25 + 0.22);
+        osc.connect(gain);
+        gain.connect(ctx!.destination);
+        osc.start(ctx!.currentTime + i * 0.25);
+        osc.stop(ctx!.currentTime + i * 0.25 + 0.25);
+      });
+    };
+    playChime();
+    const interval = setInterval(playChime, 2500);
+    return () => {
+      clearInterval(interval);
+      ctx?.close().catch(() => {});
+    };
+  }, [incomingCall?.id]);
+
+  // -------------------------------------------------------------------------
   // Online presence ping
   // -------------------------------------------------------------------------
 
@@ -1508,16 +1690,12 @@ export default function ChatPage() {
   }
 
   // -------------------------------------------------------------------------
-  // Video call
+  // Video call — rings other channel members instead of just opening a tab;
+  // the call itself is embedded in-app rather than a separate Jitsi tab.
   // -------------------------------------------------------------------------
 
   async function startVideoCall() {
     if (!activeChannel) return;
-    // Open the tab synchronously, in direct response to the click, so the
-    // browser doesn't treat it as a popup and block it — the fetch below is
-    // async, and by the time it resolves the "user gesture" window has
-    // often already closed in Safari/Chrome's popup heuristics.
-    const popup = window.open("", "_blank");
     try {
       const res = await apiFetch("/api/video/chat-calls", {
         method: "POST",
@@ -1528,18 +1706,52 @@ export default function ChatPage() {
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
       const data = await res.json();
-      const url = `https://meet.jit.si/${data.jitsi_room}`;
-      if (popup) popup.location.href = url;
-      else window.open(url, "_blank");
+      setActiveCall({
+        id: data.id,
+        jitsiRoom: data.jitsi_room,
+        channelId: activeChannel.id,
+        channelName: activeChannel.name,
+      });
     } catch (err) {
-      popup?.close();
       toast.error(err instanceof Error ? err.message : "Failed to start video call");
     }
   }
 
   function joinCall() {
     if (!activeChannel?.active_call?.jitsi_room) return;
-    window.open(`https://meet.jit.si/${activeChannel.active_call.jitsi_room}`, "_blank");
+    setActiveCall({
+      id: "",
+      jitsiRoom: activeChannel.active_call.jitsi_room,
+      channelId: activeChannel.id,
+      channelName: activeChannel.name,
+    });
+  }
+
+  async function acceptIncomingCall() {
+    if (!incomingCall) return;
+    setActiveCall({
+      id: incomingCall.id,
+      jitsiRoom: incomingCall.jitsiRoom,
+      channelId: incomingCall.channelId,
+      channelName: incomingCall.channelName,
+    });
+    setIncomingCall(null);
+  }
+
+  function declineIncomingCall() {
+    setIncomingCall(null);
+  }
+
+  async function endActiveCall() {
+    const call = activeCall;
+    setActiveCall(null);
+    if (call?.id) {
+      try {
+        await apiFetch(`/api/video/chat-calls/${call.id}/end`, { method: "PUT" });
+      } catch {
+        /* the call still ends locally either way */
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -1617,6 +1829,14 @@ export default function ChatPage() {
 
   return (
     <ParticipantColorContext.Provider value={participantColorRegistry}>
+    {incomingCall && (
+      <IncomingCallBanner
+        call={incomingCall}
+        onAccept={acceptIncomingCall}
+        onDecline={declineIncomingCall}
+      />
+    )}
+    {activeCall && <ActiveCallOverlay call={activeCall} onEnd={endActiveCall} />}
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* ------------------------------------------------------------------ */}
       {/* Dashboard icon rail (Supabase-style) — hidden on mobile once a

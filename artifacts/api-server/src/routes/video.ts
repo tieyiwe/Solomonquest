@@ -183,7 +183,7 @@ router.post("/video/chat-calls", requireAuth, async (req: AuthenticatedRequest, 
     // never actually meets the other person.
     const { data: existingCall } = await supabaseAdmin
       .from("chat_calls")
-      .select("id, jitsi_room, channel_id, status, started_at")
+      .select("id, jitsi_room, channel_id, status, started_at, started_by")
       .eq("channel_id", channel_id)
       .eq("status", "active")
       .order("started_at", { ascending: false })
@@ -205,8 +205,9 @@ router.post("/video/chat-calls", requireAuth, async (req: AuthenticatedRequest, 
         jitsi_room,
         status: "active",
         started_at: new Date().toISOString(),
+        started_by: req.userId,
       })
-      .select("id, jitsi_room, channel_id, status, started_at")
+      .select("id, jitsi_room, channel_id, status, started_at, started_by")
       .single();
 
     if (callError) {
