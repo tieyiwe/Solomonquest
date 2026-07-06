@@ -292,6 +292,19 @@ router.post(
         return;
       }
 
+      // Defense-in-depth: only let a note be shared with someone in the same
+      // school, even though nothing today lets a caller discover another
+      // school's user ids to exploit this.
+      const { data: targetProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("school_id")
+        .eq("id", shareWithUserId)
+        .maybeSingle();
+      if (!targetProfile || targetProfile.school_id !== note.school_id) {
+        res.status(400).json({ error: "Can only share notes with users in your own school" });
+        return;
+      }
+
       const { data, error } = await supabaseAdmin
         .from("note_shares")
         .upsert(

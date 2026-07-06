@@ -770,6 +770,13 @@ router.post("/schools/:id/request-deletion", requireAuth, async (req: Authentica
 router.get("/schools/:id/deletion-status", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
+  if (req.userRole !== "super_admin") {
+    if (req.userRole !== "admin" || req.schoolId !== id) {
+      res.status(403).json({ error: "Not authorized to view this school's deletion status" });
+      return;
+    }
+  }
+
   const { data: request } = await supabaseAdmin
     .from("school_deletion_requests")
     .select("id, status, created_at, reason")

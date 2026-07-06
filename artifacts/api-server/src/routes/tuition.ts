@@ -72,10 +72,26 @@ router.post("/tuition-plans", requireAuth, async (req: AuthenticatedRequest, res
   const scopeColumn = courseId ? "course_id" : "program_id";
   const scopeId = courseId ?? programId;
 
+  // Verify the course/program actually belongs to the caller's own school —
+  // otherwise a caller could target another school's course/program id
+  // (discoverable via the public GET /courses/public endpoint) and hijack
+  // or overwrite that school's tuition plan.
+  const { data: scopeRow } = await supabaseAdmin
+    .from(courseId ? "courses" : "programs")
+    .select("school_id")
+    .eq("id", scopeId as string)
+    .maybeSingle();
+
+  if (!scopeRow || scopeRow.school_id !== req.schoolId) {
+    res.status(404).json({ error: courseId ? "Course not found" : "Program not found" });
+    return;
+  }
+
   const { data: existing } = await supabaseAdmin
     .from("tuition_plans")
     .select("id")
     .eq(scopeColumn, scopeId as string)
+    .eq("school_id", req.schoolId ?? "")
     .maybeSingle();
 
   const row = {
@@ -91,7 +107,13 @@ router.post("/tuition-plans", requireAuth, async (req: AuthenticatedRequest, res
   };
 
   const { data, error } = existing
-    ? await supabaseAdmin.from("tuition_plans").update(row).eq("id", existing.id).select().single()
+    ? await supabaseAdmin
+        .from("tuition_plans")
+        .update(row)
+        .eq("id", existing.id)
+        .eq("school_id", req.schoolId ?? "")
+        .select()
+        .single()
     : await supabaseAdmin.from("tuition_plans").insert(row).select().single();
 
   if (error || !data) {
@@ -110,9 +132,17 @@ router.delete("/tuition-plans/:id", requireAuth, async (req: AuthenticatedReques
   }
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
-  const { error } = await supabaseAdmin.from("tuition_plans").delete().eq("id", id);
+  const { error, count } = await supabaseAdmin
+    .from("tuition_plans")
+    .delete({ count: "exact" })
+    .eq("id", id)
+    .eq("school_id", req.schoolId ?? "");
   if (error) {
     res.status(400).json({ error: error.message });
+    return;
+  }
+  if (!count) {
+    res.status(404).json({ error: "Tuition plan not found" });
     return;
   }
   res.sendStatus(204);
@@ -246,6 +276,13 @@ router.post(
 
     if (paymentError || !payment) {
       res.status(404).json({ error: "Payment not found" });
+      return;
+    }
+
+    const isOwnPayment = payment.student_id === req.userId;
+    const isSchoolStaff = canManageTuition(req.userRole) && payment.school_id === req.schoolId;
+    if (!isOwnPayment && !isSchoolStaff) {
+      res.status(403).json({ error: "Not authorized to modify this payment" });
       return;
     }
 
