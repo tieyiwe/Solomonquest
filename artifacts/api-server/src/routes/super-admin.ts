@@ -166,7 +166,9 @@ router.get(
 
       let query = supabaseAdmin
         .from("schools")
-        .select("id, name, slug, owner_id, is_active, created_at, deleted_at");
+        .select(
+          "id, name, slug, owner_id, is_active, created_at, deleted_at, plan, subscription_status, billing_amount_cents, trial_ends_at, enabled_features, custom_domain, custom_domain_status"
+        );
 
       if (status === "active") query = query.eq("is_active", true).is("deleted_at", null);
       else if (status === "inactive") query = query.eq("is_active", false).is("deleted_at", null);
@@ -216,20 +218,31 @@ router.get(
           }
 
           const owner = ownerRes.data as { first_name?: string; last_name?: string } | null;
+          const ownerName = owner ? `${owner.first_name ?? ""} ${owner.last_name ?? ""}`.trim() : null;
 
           return {
             id: school.id,
             name: school.name,
             slug: school.slug,
-            owner_name: owner
-              ? `${owner.first_name ?? ""} ${owner.last_name ?? ""}`.trim()
-              : null,
+            // Field names the frontend table actually reads
+            owner: ownerName || ownerEmail || "—",
+            status: school.is_active ? "active" : "inactive",
+            created: school.created_at,
+            // Kept for any other consumer relying on the older shape
+            owner_name: ownerName,
             owner_email: ownerEmail,
             students: studentsRes.count ?? 0,
             teachers: teachersRes.count ?? 0,
             courses: coursesRes.count ?? 0,
             is_active: school.is_active,
             created_at: school.created_at,
+            details: {
+              plan: school.plan ?? "free",
+              subscription_status: school.subscription_status ?? "active",
+              billing_amount: `$${(((school.billing_amount_cents as number) ?? 0) / 100).toFixed(2)}/mo`,
+              custom_domain: school.custom_domain ?? "none",
+              custom_domain_status: school.custom_domain_status ?? "unset",
+            },
           };
         })
       );
@@ -395,6 +408,154 @@ router.patch(
       res.json({ id, is_active: newActive });
     } catch (err) {
       console.error("Toggle active error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// ─── Subscriptions ──────────────────────────────────────────────────────────────
+// No payment processor is wired up — plan/status/price are managed manually
+// here until real billing is integrated. This is the sales/billing source
+// of truth in the meantime.
+router.get(
+  "/super-admin/subscriptions",
+  requireAuth,
+  requireSuperAdmin,
+  async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("schools")
+        .select("id, name, slug, plan, subscription_status, billing_amount_cents, trial_ends_at, created_at")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+
+      const schools = data ?? [];
+      const activeOrTrialing = schools.filter((s) => s.subscription_status === "active" || s.subscription_status === "trialing");
+      const mrrCents = activeOrTrialing.reduce((sum, s) => sum + ((s.billing_amount_cents as number) ?? 0), 0);
+
+      const byPlan: Record<string, number> = { free: 0, basic: 0, pro: 0, enterprise: 0 };
+      const byStatus: Record<string, number> = { trialing: 0, active: 0, past_due: 0, canceled: 0 };
+      for (const s of schools) {
+        byPlan[s.plan as string] = (byPlan[s.plan as string] ?? 0) + 1;
+        byStatus[s.subscription_status as string] = (byStatus[s.subscription_status as string] ?? 0) + 1;
+      }
+
+      res.json({
+        summary: {
+          mrr_cents: mrrCents,
+          total_schools: schools.length,
+          by_plan: byPlan,
+          by_status: byStatus,
+        },
+        schools: schools.map((s) => ({
+          id: s.id,
+          name: s.name,
+          slug: s.slug,
+          plan: s.plan,
+          subscription_status: s.subscription_status,
+          billing_amount_cents: s.billing_amount_cents,
+          trial_ends_at: s.trial_ends_at,
+          created_at: s.created_at,
+        })),
+      });
+    } catch (err) {
+      console.error("Subscriptions list error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+router.patch(
+  "/super-admin/schools/:id/subscription",
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { plan, subscription_status, billing_amount_cents, trial_ends_at } = req.body as {
+        plan?: string;
+        subscription_status?: string;
+        billing_amount_cents?: number;
+        trial_ends_at?: string | null;
+      };
+
+      const updates: Record<string, unknown> = {};
+      if (plan !== undefined) updates.plan = plan;
+      if (subscription_status !== undefined) updates.subscription_status = subscription_status;
+      if (billing_amount_cents !== undefined) updates.billing_amount_cents = billing_amount_cents;
+      if (trial_ends_at !== undefined) updates.trial_ends_at = trial_ends_at;
+
+      const { data: school, error } = await supabaseAdmin
+        .from("schools")
+        .update(updates)
+        .eq("id", id)
+        .select("id, name")
+        .single();
+
+      if (error || !school) {
+        res.status(404).json({ error: error?.message ?? "School not found" });
+        return;
+      }
+
+      await auditLog({
+        actorId: req.userId,
+        action: "subscription_updated",
+        targetType: "school",
+        targetId: id,
+        targetName: school.name,
+        details: updates,
+        ipAddress: req.ip,
+      });
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Update subscription error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// ─── Per-school feature flags ────────────────────────────────────────────────
+router.patch(
+  "/super-admin/schools/:id/features",
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { enabled_features } = req.body as { enabled_features?: Record<string, boolean> };
+
+      if (!enabled_features || typeof enabled_features !== "object") {
+        res.status(400).json({ error: "enabled_features object is required" });
+        return;
+      }
+
+      const { data: current } = await supabaseAdmin.from("schools").select("enabled_features, name").eq("id", id).single();
+      const merged = { ...((current?.enabled_features as Record<string, boolean>) ?? {}), ...enabled_features };
+
+      const { error } = await supabaseAdmin.from("schools").update({ enabled_features: merged }).eq("id", id);
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+
+      await auditLog({
+        actorId: req.userId,
+        action: "feature_flags_updated",
+        targetType: "school",
+        targetId: id,
+        targetName: current?.name,
+        details: enabled_features,
+        ipAddress: req.ip,
+      });
+
+      res.json({ success: true, enabled_features: merged });
+    } catch (err) {
+      console.error("Update feature flags error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   }

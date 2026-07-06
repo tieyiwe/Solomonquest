@@ -244,6 +244,17 @@ router.post(
         return;
       }
 
+      const { data: schoolRow } = await supabaseAdmin
+        .from("schools")
+        .select("enabled_features")
+        .eq("id", schoolId)
+        .single();
+      const enabledFeatures = (schoolRow?.enabled_features as Record<string, boolean>) ?? {};
+      if (enabledFeatures.ai_agent === false) {
+        res.status(403).json({ error: "The AI assistant is not enabled for your school. Contact your platform administrator." });
+        return;
+      }
+
       const { message } = req.body as { message?: string };
       if (!message || !message.trim()) {
         res.status(400).json({ error: "message is required" });

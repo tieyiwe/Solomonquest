@@ -560,12 +560,89 @@ export const staffHelp: HelpCategory[] = [
   ...studentHelp.slice(1),
 ];
 
+// ─── SUPER ADMIN HELP (platform-wide, on top of admin help) ──────────────────
+
+export const superAdminHelp: HelpCategory[] = [
+  {
+    id: "platform-management",
+    title: "Platform Administration",
+    icon: "🛡️",
+    articles: [
+      {
+        id: "super-admin-dashboard",
+        title: "Find your way around the platform console",
+        icon: "🧭",
+        summary: "The Super Admin console at /super_admin manages every school on the platform.",
+        steps: [
+          { text: "Go to /super_admin (or Profile menu -> Platform Admin)." },
+          { text: "Dashboard and Analytics give a cross-school overview: schools, users, courses, enrollments, growth this month." },
+          { text: "Schools lists every school with owner, plan, and status — click Features to manage what's turned on for that school, or Deactivate/Delete as needed." },
+          { text: "All Users lets you search and manage any user platform-wide, including role changes and suspensions." },
+        ],
+      },
+      {
+        id: "domain-requests",
+        title: "Approve a school's custom domain request",
+        icon: "🌐",
+        summary: "School admins submit a domain; you add it to hosting and approve it.",
+        steps: [
+          { text: "Go to Domain Requests — you'll also get a notification when a school submits one." },
+          { text: "Add the requested domain in your hosting provider's domain settings (this is a manual step outside the app)." },
+          { text: "Click Approve — this generates the DNS records and notifies the school admin to finish connecting it." },
+        ],
+      },
+      {
+        id: "subscriptions",
+        title: "Manage plans and subscriptions",
+        icon: "💳",
+        summary: "Track each school's plan, billing status, and monthly price — the sales source of truth until a payment processor is wired up.",
+        steps: [
+          { text: "Go to Subscriptions to see total MRR and a breakdown by status (active, trialing, past due, canceled)." },
+          { text: "Click Edit on any school to change its plan, status, monthly price, or trial end date." },
+        ],
+      },
+      {
+        id: "feature-flags",
+        title: "Turn a feature on or off for one school",
+        icon: "🎛️",
+        summary: "Disable a module (chat, video calls, AI assistant, etc.) for a specific school without touching code.",
+        steps: [
+          { text: "Go to Schools and click Features next to the school." },
+          { text: "Toggle any module off — the AI assistant enforces this immediately; other modules are tracked here for future enforcement." },
+          { text: "Click Save." },
+        ],
+      },
+      {
+        id: "deletion-and-archive",
+        title: "Review deletion requests and the archive",
+        icon: "🗑️",
+        summary: "School deletions go through an approval step and a 30-day recovery window.",
+        steps: [
+          { text: "Deletion Requests shows schools an admin asked to delete — Approve archives a snapshot, Reject keeps the school active." },
+          { text: "Archive lists archived schools with days remaining before permanent deletion, and a Restore button." },
+        ],
+      },
+      {
+        id: "audit-log",
+        title: "Check the audit log",
+        icon: "📜",
+        summary: "Every platform-level action (role changes, deletions, approvals) is recorded here with who did it and when.",
+        steps: [
+          { text: "Go to Audit Log." },
+          { text: "Filter by actor, action type, target type, or date range." },
+        ],
+      },
+    ],
+  },
+];
+
 // ─── Role selector ────────────────────────────────────────────────────────────
 
 export type HelpRole = "admin" | "super_admin" | "teacher" | "student" | "staff";
 
 export function getHelpData(role?: HelpRole | null): HelpCategory[] {
-  if (role === "admin" || role === "super_admin") return adminHelp;
+  if (role === "super_admin") return [...superAdminHelp, ...adminHelp];
+  if (role === "admin") return adminHelp;
   if (role === "teacher") return teacherHelp;
   if (role === "staff") return staffHelp;
   return studentHelp;

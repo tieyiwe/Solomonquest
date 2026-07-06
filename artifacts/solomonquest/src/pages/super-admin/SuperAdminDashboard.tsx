@@ -40,6 +40,8 @@ import {
   XCircle,
   Clock,
   Globe,
+  DollarSign,
+  ToggleLeft,
 } from "lucide-react";
 
 async function apiFetch(url: string, options: RequestInit = {}) {
@@ -62,6 +64,7 @@ type Section =
   | "users"
   | "deletion-requests"
   | "domain-requests"
+  | "subscriptions"
   | "archive"
   | "audit-log"
   | "platform-settings"
@@ -128,6 +131,24 @@ interface DeletionRequest {
   status: "pending" | "approved" | "rejected";
   requestedAt: string;
   reviewNotes?: string;
+}
+
+interface SubscriptionSchool {
+  id: string;
+  name: string;
+  slug: string;
+  plan: "free" | "basic" | "pro" | "enterprise";
+  subscription_status: "trialing" | "active" | "past_due" | "canceled";
+  billing_amount_cents: number;
+  trial_ends_at: string | null;
+  created_at: string;
+}
+
+interface SubscriptionsSummary {
+  mrr_cents: number;
+  total_schools: number;
+  by_plan: Record<string, number>;
+  by_status: Record<string, number>;
 }
 
 interface DomainRequest {
@@ -224,6 +245,18 @@ export default function SuperAdminDashboard() {
   const [domainRequests, setDomainRequests] = useState<DomainRequest[]>([]);
   const [domainRequestsLoading, setDomainRequestsLoading] = useState(false);
   const [approvingDomainId, setApprovingDomainId] = useState<string | null>(null);
+
+  // Subscriptions
+  const [subscriptionSchools, setSubscriptionSchools] = useState<SubscriptionSchool[]>([]);
+  const [subscriptionsSummary, setSubscriptionsSummary] = useState<SubscriptionsSummary | null>(null);
+  const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
+  const [editSubscription, setEditSubscription] = useState<SubscriptionSchool | null>(null);
+  const [subscriptionForm, setSubscriptionForm] = useState({ plan: "free", subscription_status: "active", amount: "0", trialEndsAt: "" });
+  const [savingSubscription, setSavingSubscription] = useState(false);
+
+  // Feature flags
+  const [featureFlagsDialog, setFeatureFlagsDialog] = useState<{ id: string; name: string; features: Record<string, boolean> } | null>(null);
+  const [savingFeatures, setSavingFeatures] = useState(false);
 
   // Quick delete (empty schools)
   const [quickDeleteDialog, setQuickDeleteDialog] = useState<{ id: string; name: string } | null>(null);
@@ -346,6 +379,92 @@ export default function SuperAdminDashboard() {
     }
   }, []);
 
+  const fetchSubscriptions = useCallback(async () => {
+    setSubscriptionsLoading(true);
+    try {
+      const res = await apiFetch("/api/super-admin/subscriptions");
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setSubscriptionsSummary(data.summary);
+      setSubscriptionSchools(data.schools);
+    } catch {
+      toast.error("Failed to load subscriptions");
+    } finally {
+      setSubscriptionsLoading(false);
+    }
+  }, []);
+
+  const openEditSubscription = (s: SubscriptionSchool) => {
+    setEditSubscription(s);
+    setSubscriptionForm({
+      plan: s.plan,
+      subscription_status: s.subscription_status,
+      amount: (s.billing_amount_cents / 100).toFixed(2),
+      trialEndsAt: s.trial_ends_at ? s.trial_ends_at.slice(0, 10) : "",
+    });
+  };
+
+  const handleSaveSubscription = async () => {
+    if (!editSubscription) return;
+    setSavingSubscription(true);
+    try {
+      const res = await apiFetch(`/api/super-admin/schools/${editSubscription.id}/subscription`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          plan: subscriptionForm.plan,
+          subscription_status: subscriptionForm.subscription_status,
+          billing_amount_cents: Math.round(parseFloat(subscriptionForm.amount || "0") * 100),
+          trial_ends_at: subscriptionForm.trialEndsAt || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update subscription");
+      }
+      toast.success("Subscription updated");
+      setEditSubscription(null);
+      fetchSubscriptions();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update subscription");
+    } finally {
+      setSavingSubscription(false);
+    }
+  };
+
+  const openFeatureFlags = async (schoolId: string, schoolName: string) => {
+    try {
+      const res = await apiFetch(`/api/super-admin/schools/${schoolId}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setFeatureFlagsDialog({
+        id: schoolId,
+        name: schoolName,
+        features: data.school?.enabled_features ?? {},
+      });
+    } catch {
+      toast.error("Failed to load feature flags");
+    }
+  };
+
+  const handleSaveFeatureFlags = async () => {
+    if (!featureFlagsDialog) return;
+    setSavingFeatures(true);
+    try {
+      const res = await apiFetch(`/api/super-admin/schools/${featureFlagsDialog.id}/features`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled_features: featureFlagsDialog.features }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Feature flags updated");
+      setFeatureFlagsDialog(null);
+      fetchSchools();
+    } catch {
+      toast.error("Failed to update feature flags");
+    } finally {
+      setSavingFeatures(false);
+    }
+  };
+
   const handleApproveDomain = async (schoolId: string) => {
     setApprovingDomainId(schoolId);
     try {
@@ -413,6 +532,7 @@ export default function SuperAdminDashboard() {
     if (activeSection === "users") fetchUsers();
     if (activeSection === "deletion-requests") fetchDeletionRequests();
     if (activeSection === "domain-requests") fetchDomainRequests();
+    if (activeSection === "subscriptions") fetchSubscriptions();
     if (activeSection === "archive") fetchArchive();
     if (activeSection === "audit-log") fetchAuditLogs();
     if (activeSection === "platform-settings") fetchSettings();
@@ -552,6 +672,7 @@ export default function SuperAdminDashboard() {
     { section: "users", label: "All Users", icon: <Users size={16} />, group: "MANAGEMENT" },
     { section: "deletion-requests", label: "Deletion Requests", icon: <AlertTriangle size={16} />, group: "MANAGEMENT" },
     { section: "domain-requests", label: "Domain Requests", icon: <Globe size={16} />, group: "MANAGEMENT" },
+    { section: "subscriptions", label: "Subscriptions", icon: <DollarSign size={16} />, group: "MANAGEMENT" },
     { section: "archive", label: "Archive", icon: <Archive size={16} />, group: "MANAGEMENT" },
     { section: "audit-log", label: "Audit Log", icon: <FileText size={16} />, group: "SYSTEM" },
     { section: "platform-settings", label: "Platform Settings", icon: <Settings size={16} />, group: "SYSTEM" },
@@ -887,6 +1008,15 @@ export default function SuperAdminDashboard() {
                               <Button
                                 size="sm"
                                 variant="outline"
+                                className="h-7 text-xs border-gray-600 text-blue-300 hover:bg-blue-900/30"
+                                onClick={() => openFeatureFlags(school.id, school.name)}
+                              >
+                                <ToggleLeft size={12} className="mr-1" />
+                                Features
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
                                 className={`h-7 text-xs border-gray-600 ${school.status === "active" ? "text-orange-400 hover:bg-orange-900/30" : "text-green-400 hover:bg-green-900/30"}`}
                                 onClick={() => setToggleSchoolDialog(school)}
                               >
@@ -1082,6 +1212,67 @@ export default function SuperAdminDashboard() {
                 </table>
                 {deletionRequests.length === 0 && !deletionLoading && (
                   <p className="text-gray-500 text-sm text-center py-8">No deletion requests.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* SUBSCRIPTIONS */}
+          {activeSection === "subscriptions" && (
+            <div>
+              <p className="text-gray-400 text-sm mb-4">
+                No payment processor is connected yet — plan, status, and price are managed manually here as the
+                sales/billing source of truth.
+              </p>
+              {subscriptionsSummary && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                    <p className="text-xs text-gray-400">Monthly Recurring Revenue</p>
+                    <p className="text-2xl font-bold text-white mt-0.5">
+                      ${(subscriptionsSummary.mrr_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <StatCard icon={<CheckCircle size={20} />} color="text-green-400 bg-green-900/30" label="Active" value={subscriptionsSummary.by_status.active ?? 0} />
+                  <StatCard icon={<Clock size={20} />} color="text-blue-400 bg-blue-900/30" label="Trialing" value={subscriptionsSummary.by_status.trialing ?? 0} />
+                  <StatCard icon={<AlertTriangle size={20} />} color="text-red-400 bg-red-900/30" label="Past Due / Canceled" value={(subscriptionsSummary.by_status.past_due ?? 0) + (subscriptionsSummary.by_status.canceled ?? 0)} />
+                </div>
+              )}
+              {subscriptionsLoading && <p className="text-gray-400">Loading...</p>}
+              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                      <th className="text-left px-4 py-3">School</th>
+                      <th className="text-left px-4 py-3">Plan</th>
+                      <th className="text-left px-4 py-3">Status</th>
+                      <th className="text-left px-4 py-3">Price</th>
+                      <th className="text-left px-4 py-3">Trial Ends</th>
+                      <th className="text-left px-4 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {subscriptionSchools.map((s) => (
+                      <tr key={s.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                        <td className="px-4 py-3 text-white font-medium">{s.name}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900 text-indigo-300 capitalize">{s.plan}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={s.subscription_status} />
+                        </td>
+                        <td className="px-4 py-3 text-gray-300">${(s.billing_amount_cents / 100).toFixed(2)}/mo</td>
+                        <td className="px-4 py-3 text-gray-400">{s.trial_ends_at ? new Date(s.trial_ends_at).toLocaleDateString() : "—"}</td>
+                        <td className="px-4 py-3">
+                          <Button size="sm" variant="outline" className="h-7 text-xs border-gray-600 text-gray-300 hover:bg-gray-700" onClick={() => openEditSubscription(s)}>
+                            Edit
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {subscriptionSchools.length === 0 && !subscriptionsLoading && (
+                  <p className="text-gray-500 text-sm text-center py-8">No schools yet.</p>
                 )}
               </div>
             </div>
@@ -1393,6 +1584,108 @@ export default function SuperAdminDashboard() {
             </Button>
             <Button className="bg-blue-700 hover:bg-blue-600 text-white" onClick={handleToggleSchool}>
               Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Subscription */}
+      <Dialog open={!!editSubscription} onOpenChange={() => setEditSubscription(null)}>
+        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Edit Subscription — {editSubscription?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Plan</label>
+              <select
+                value={subscriptionForm.plan}
+                onChange={(e) => setSubscriptionForm((f) => ({ ...f, plan: e.target.value }))}
+                className="w-full bg-gray-900 border border-gray-700 text-white rounded px-3 py-2 text-sm"
+              >
+                <option value="free">Free</option>
+                <option value="basic">Basic</option>
+                <option value="pro">Pro</option>
+                <option value="enterprise">Enterprise</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Status</label>
+              <select
+                value={subscriptionForm.subscription_status}
+                onChange={(e) => setSubscriptionForm((f) => ({ ...f, subscription_status: e.target.value }))}
+                className="w-full bg-gray-900 border border-gray-700 text-white rounded px-3 py-2 text-sm"
+              >
+                <option value="trialing">Trialing</option>
+                <option value="active">Active</option>
+                <option value="past_due">Past Due</option>
+                <option value="canceled">Canceled</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Monthly Price (USD)</label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={subscriptionForm.amount}
+                onChange={(e) => setSubscriptionForm((f) => ({ ...f, amount: e.target.value }))}
+                className="bg-gray-900 border-gray-700 text-white"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Trial Ends</label>
+              <Input
+                type="date"
+                value={subscriptionForm.trialEndsAt}
+                onChange={(e) => setSubscriptionForm((f) => ({ ...f, trialEndsAt: e.target.value }))}
+                className="bg-gray-900 border-gray-700 text-white"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setEditSubscription(null)}>
+              Cancel
+            </Button>
+            <Button className="bg-blue-700 hover:bg-blue-600 text-white" onClick={handleSaveSubscription} disabled={savingSubscription}>
+              {savingSubscription ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Feature Flags */}
+      <Dialog open={!!featureFlagsDialog} onOpenChange={() => setFeatureFlagsDialog(null)}>
+        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Feature Flags — {featureFlagsDialog?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {[
+              { key: "chat", label: "Chat & DMs" },
+              { key: "video_calls", label: "Video Calls" },
+              { key: "forum", label: "Forum" },
+              { key: "ai_agent", label: "AI Assistant (Solomon)" },
+              { key: "custom_domain", label: "Custom Domain" },
+              { key: "notes", label: "Notes" },
+            ].map((f) => (
+              <div key={f.key} className="flex items-center justify-between py-1">
+                <span className="text-sm text-gray-300">{f.label}</span>
+                <Switch
+                  checked={featureFlagsDialog?.features[f.key] !== false}
+                  onCheckedChange={(v) =>
+                    setFeatureFlagsDialog((prev) => (prev ? { ...prev, features: { ...prev.features, [f.key]: v } } : prev))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setFeatureFlagsDialog(null)}>
+              Cancel
+            </Button>
+            <Button className="bg-blue-700 hover:bg-blue-600 text-white" onClick={handleSaveFeatureFlags} disabled={savingFeatures}>
+              {savingFeatures ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

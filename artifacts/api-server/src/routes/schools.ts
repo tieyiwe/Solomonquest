@@ -161,6 +161,19 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
     .update({ school_id: data.id, role: "admin" })
     .eq("id", req.userId);
 
+  const { data: superAdmins } = await supabaseAdmin.from("profiles").select("id").eq("role", "super_admin");
+  const superAdminIds = (superAdmins ?? []).map((p) => p.id as string);
+  if (superAdminIds.length > 0) {
+    notifyUsers({
+      userIds: superAdminIds,
+      type: "school_created",
+      category: "platform",
+      title: "New school created",
+      body: `${name} was just created on the platform.`,
+      link: "/super_admin",
+    }).catch((err) => logger.error({ err }, "Failed to notify super admins of new school"));
+  }
+
   res.status(201).json(mapSchool(data));
 });
 

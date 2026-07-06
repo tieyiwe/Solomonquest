@@ -512,6 +512,28 @@ ALTER TABLE public.schools ADD CONSTRAINT schools_custom_domain_status_check
   CHECK (custom_domain_status IN ('unset', 'requested', 'approved', 'verified', 'failed'));
 ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_token text;
 ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_requested_at timestamptz;
+
+-- ─── Subscriptions / plans (super-admin managed) ─────────────────────────────
+-- No payment processor wired up yet — this is manually managed by the
+-- platform super-admin (Super Admin -> Subscriptions) as the sales/billing
+-- source of truth until a real payment provider is integrated.
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'free';
+ALTER TABLE public.schools DROP CONSTRAINT IF EXISTS schools_plan_check;
+ALTER TABLE public.schools ADD CONSTRAINT schools_plan_check CHECK (plan IN ('free', 'basic', 'pro', 'enterprise'));
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS subscription_status text NOT NULL DEFAULT 'active';
+ALTER TABLE public.schools DROP CONSTRAINT IF EXISTS schools_subscription_status_check;
+ALTER TABLE public.schools ADD CONSTRAINT schools_subscription_status_check
+  CHECK (subscription_status IN ('trialing', 'active', 'past_due', 'canceled'));
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS billing_amount_cents integer NOT NULL DEFAULT 0;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz;
+
+-- ─── Per-school feature flags ────────────────────────────────────────────────
+-- Lets the platform super-admin turn specific modules off for a school (e.g.
+-- while a plan doesn't include them, or during a support issue) without
+-- touching code. Enforced today by the AI agent route; other modules read
+-- this the same way as they're extended to respect it.
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS enabled_features jsonb NOT NULL DEFAULT
+  '{"chat": true, "video_calls": true, "forum": true, "ai_agent": true, "custom_domain": true, "notes": true}'::jsonb;
 CREATE UNIQUE INDEX IF NOT EXISTS schools_custom_domain_unique ON public.schools (LOWER(custom_domain))
   WHERE custom_domain IS NOT NULL;
 
