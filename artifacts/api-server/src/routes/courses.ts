@@ -295,7 +295,7 @@ router.post("/courses/:id/enroll", requireAuth, async (req, res): Promise<void> 
 // Update live class settings
 router.put("/courses/:id/live-settings", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const role = req.userRole;
-  if (role !== "admin" && role !== "teacher") {
+  if (role !== "admin" && role !== "super_admin" && role !== "teacher") {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -331,9 +331,10 @@ router.put("/courses/:id/live-settings", requireAuth, async (req: AuthenticatedR
     if (enrollments && enrollments.length > 0) {
       const notifications = (enrollments as Record<string, unknown>[]).map((e) => ({
         user_id: e.student_id,
-        course_id: id,
-        message: `Live class scheduled for ${class_date}`,
         type: "live_class",
+        title: "Live class scheduled",
+        body: `Live class scheduled for ${class_date}`,
+        link: `/dashboard/student/courses/${id}`,
       }));
 
       await supabaseAdmin.from("notifications").insert(notifications);
