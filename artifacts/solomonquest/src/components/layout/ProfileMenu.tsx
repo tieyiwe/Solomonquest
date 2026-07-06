@@ -95,7 +95,7 @@ export function ProfileMenu() {
         )}
 
         {user?.role === "super_admin" && (
-          <Link href="/platform">
+          <Link href="/super_admin">
             <DropdownMenuItem className="cursor-pointer gap-2">
               <Shield className="h-4 w-4 text-gray-500" />
               <span>Platform Admin</span>

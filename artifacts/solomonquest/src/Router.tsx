@@ -216,7 +216,7 @@ export function Router() {
         </Route>
 
         {/* Super Admin Routes */}
-        <Route path="/platform">
+        <Route path="/super_admin">
           <ProtectedRoute allowedRoles={["super_admin"]}><SuperAdminDashboard /></ProtectedRoute>
         </Route>
         <Route path="/dashboard/admin/danger-zone">
