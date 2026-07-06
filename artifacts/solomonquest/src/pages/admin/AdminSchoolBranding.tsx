@@ -355,6 +355,189 @@ function LogoUploadButton({ onUploaded, schoolId }: { onUploaded: (url: string) 
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+interface DnsRecord {
+  type: string;
+  host: string;
+  value: string;
+  note: string;
+}
+
+function DomainTab({ schoolId }: { schoolId: string }) {
+  const [domain, setDomain] = useState("");
+  const [status, setStatus] = useState<"unset" | "pending" | "verified" | "failed">("unset");
+  const [dnsRecords, setDnsRecords] = useState<DnsRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    apiFetch("/api/schools/my")
+      .then((r) => r.json())
+      .then((data) => {
+        setDomain(data.customDomain ?? "");
+        setStatus((data.customDomainStatus as typeof status) ?? "unset");
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [schoolId]);
+
+  const handleConnect = async () => {
+    if (!domain.trim()) {
+      toast.error("Enter a domain first, e.g. school.edu");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/api/schools/${schoolId}/custom-domain`, {
+        method: "PUT",
+        body: JSON.stringify({ domain: domain.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to connect domain");
+      setStatus("pending");
+      setDnsRecords(data.dnsRecords ?? []);
+      toast.success("Domain saved — add the DNS records below, then verify");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to connect domain");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    setVerifying(true);
+    try {
+      const res = await apiFetch(`/api/schools/${schoolId}/custom-domain/verify`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.verified) throw new Error(data.error || "Verification failed");
+      setStatus("verified");
+      toast.success("Domain verified! Your custom domain is now connected.");
+    } catch (err: any) {
+      setStatus("failed");
+      toast.error(err.message || "Verification failed");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/api/schools/${schoolId}/custom-domain`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to disconnect domain");
+      setDomain("");
+      setStatus("unset");
+      setDnsRecords([]);
+      toast.success("Custom domain disconnected");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to disconnect domain");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="text-sm text-gray-400">Loading…</div>;
+  }
+
+  const statusBadge = {
+    unset: null,
+    pending: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">Pending verification</span>,
+    verified: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">Connected</span>,
+    failed: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200">Verification failed</span>,
+  }[status];
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <Label className="text-sm font-medium text-gray-700 mb-1 block">Your domain</Label>
+        <p className="text-xs text-gray-500 mb-3">
+          Use your own domain (e.g. <code className="bg-gray-100 px-1 rounded font-mono">school.edu</code>) instead of the
+          shared SolomonQuest URL for your school's public page.
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="school.edu"
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            disabled={status === "verified"}
+            className="max-w-xs"
+          />
+          {statusBadge}
+        </div>
+      </div>
+
+      {status !== "verified" && (
+        <Button onClick={handleConnect} disabled={saving}>
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {status === "unset" ? "Connect Domain" : "Update Domain"}
+        </Button>
+      )}
+
+      {(status === "pending" || status === "failed") && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
+          <p className="text-sm font-medium text-gray-800">Add these DNS records at your domain registrar</p>
+          <ol className="text-sm text-gray-600 space-y-3 list-decimal list-inside">
+            <li>
+              Log in to wherever you manage DNS for <strong>{domain || "your domain"}</strong> (e.g. GoDaddy, Namecheap,
+              Cloudflare, Google Domains).
+            </li>
+            <li>Add the two records below exactly as shown.</li>
+            <li>DNS changes can take anywhere from a few minutes to a few hours to take effect.</li>
+            <li>Come back here and click "Verify" — once both records are visible, your domain goes live.</li>
+          </ol>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="text-left text-gray-500 border-b border-gray-200">
+                  <th className="py-2 pr-4 font-medium">Type</th>
+                  <th className="py-2 pr-4 font-medium">Host / Name</th>
+                  <th className="py-2 pr-4 font-medium">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(dnsRecords.length > 0
+                  ? dnsRecords
+                  : [
+                      { type: "CNAME", host: domain, value: "(shown after you click Connect)", note: "" },
+                      { type: "TXT", host: `_solomonquest-verify.${domain}`, value: "(shown after you click Connect)", note: "" },
+                    ]
+                ).map((rec, i) => (
+                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                    <td className="py-2 pr-4 font-mono">{rec.type}</td>
+                    <td className="py-2 pr-4 font-mono break-all">{rec.host}</td>
+                    <td className="py-2 pr-4 font-mono break-all">{rec.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <Button onClick={handleVerify} disabled={verifying} variant="outline">
+            {verifying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Verify DNS Records
+          </Button>
+        </div>
+      )}
+
+      {status === "verified" && (
+        <div className="rounded-lg border border-green-200 bg-green-50 p-4 space-y-3">
+          <p className="text-sm text-green-800">
+            <strong>{domain}</strong> is connected and verified. Visitors to this domain will see your school's public
+            page.
+          </p>
+          <Button onClick={handleDisconnect} disabled={saving} variant="outline" size="sm">
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Disconnect Domain
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminSchoolBranding() {
   const { user } = useAuth();
   const schoolId = (user?.schoolId ?? (user as any)?.school_id) || "";
@@ -567,6 +750,7 @@ export default function AdminSchoolBranding() {
                 <TabsTrigger value="announcement" className="text-xs">Announcement</TabsTrigger>
                 <TabsTrigger value="social" className="text-xs">Social & Links</TabsTrigger>
                 <TabsTrigger value="css" className="text-xs">Custom CSS</TabsTrigger>
+                <TabsTrigger value="domain" className="text-xs">Custom Domain</TabsTrigger>
               </TabsList>
             </div>
 
@@ -1086,6 +1270,10 @@ export default function AdminSchoolBranding() {
                     style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
                   />
                 </div>
+              </TabsContent>
+
+              <TabsContent value="domain" className="space-y-4 mt-0">
+                <DomainTab schoolId={schoolId} />
               </TabsContent>
 
             </div>

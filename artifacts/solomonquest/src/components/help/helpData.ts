@@ -60,6 +60,24 @@ export const adminHelp: HelpCategory[] = [
           { problem: "Slug field is greyed out", solution: "Only the school owner (the account that created the school) can change the slug." },
         ],
       },
+      {
+        id: "custom-domain",
+        title: "Connect your own domain",
+        icon: "🌐",
+        summary: "Use your own domain (e.g. school.edu) for your public page instead of the shared SolomonQuest URL.",
+        steps: [
+          { text: "Go to Settings → Branding, then open the Custom Domain tab." },
+          { text: "Enter your domain (e.g. school.edu) and click Connect Domain." },
+          { text: "Two DNS records appear — a CNAME and a TXT record." },
+          { text: "Log in to wherever you manage DNS for your domain (GoDaddy, Namecheap, Cloudflare, Google Domains, etc.) and add both records exactly as shown." },
+          { text: "DNS changes can take a few minutes to a few hours to take effect." },
+          { text: "Come back and click Verify DNS Records. Once both records are found, your domain goes live automatically." },
+        ],
+        troubleshoot: [
+          { problem: "Verification keeps failing", solution: "Double-check the TXT record's host and value were copied exactly — a common mistake is leaving out the leading underscore, or your registrar auto-appending your domain a second time." },
+          { problem: "It's been a day and it still won't verify", solution: "Some registrars take longer to propagate DNS changes. You can check propagation with any public 'DNS lookup' tool by searching your domain's TXT records." },
+        ],
+      },
     ],
   },
   {
@@ -138,6 +156,73 @@ export const adminHelp: HelpCategory[] = [
         ],
         troubleshoot: [
           { problem: "Approved student can't log in", solution: "The student needs to complete registration first. Check if they received the approval email and clicked the setup link." },
+        ],
+      },
+    ],
+  },
+  {
+    id: "programs",
+    title: "Programs",
+    icon: "🎓",
+    articles: [
+      {
+        id: "create-program",
+        title: "Group courses into a program",
+        icon: "🗂️",
+        summary: "Create a program and assign courses to it so enrollment and chat work across the whole program.",
+        steps: [
+          { text: "Go to Programs in the sidebar and click Create Program." },
+          { text: "Give it a name, code, and level, then save." },
+          { text: "Go to Courses and open a course's edit form." },
+          { text: "Pick the program from the Program dropdown and save." },
+          { text: "Repeat for every course that belongs to the same program." },
+        ],
+        troubleshoot: [
+          { problem: "A student is only enrolled in one course, not the whole program", solution: "Program-wide auto-enrollment triggers the next time they're enrolled in any course of that program — re-approve their application or re-run the enroll action if the course was added to the program after they already enrolled." },
+        ],
+      },
+      {
+        id: "program-chat",
+        title: "How program-wide chat works",
+        icon: "💬",
+        summary: "Every student enrolled anywhere in a program automatically shares one chat channel.",
+        steps: [
+          { text: "The first time a student is enrolled in any course of a program, a shared chat channel for that program is created automatically." },
+          { text: "Every other student enrolled in any course of that program is added to the same channel." },
+          { text: "Students can find it in Chat alongside their other channels and DMs." },
+        ],
+      },
+    ],
+  },
+  {
+    id: "ai-and-productivity",
+    title: "AI Assistant & Notes",
+    icon: "🤖",
+    articles: [
+      {
+        id: "solomon-agent",
+        title: "Chat with Solomon, your AI assistant",
+        icon: "✨",
+        summary: "Solomon can answer questions and take actions in the platform on your behalf.",
+        steps: [
+          { text: "Look for the floating chat button in the bottom corner of any admin/teacher dashboard page." },
+          { text: "Click it to open Solomon and type your question or request." },
+          { text: "Solomon can look up information and, for some requests, take an action directly (like drafting a broadcast message)." },
+        ],
+        troubleshoot: [
+          { problem: "The assistant isn't responding", solution: "The AI assistant requires an API key to be configured by your platform administrator. Contact support if it stays unavailable." },
+        ],
+      },
+      {
+        id: "notes",
+        title: "Take notes and share them",
+        icon: "🗒️",
+        summary: "Keep private notes, turn them into on-screen sticky notes, or share one with a colleague.",
+        steps: [
+          { text: "Click the notes icon (next to the AI assistant button) to open your notes list." },
+          { text: "Click New Note to create one, or click an existing note to edit it." },
+          { text: "Toggle Sticky Mode to pin a note as a small floating window on your screen." },
+          { text: "Click Share on a note to give another user view or edit access." },
         ],
       },
     ],
@@ -241,6 +326,52 @@ export const teacherHelp: HelpCategory[] = [
           { text: "Optionally add a cover image URL for the post thumbnail." },
           { text: "Tick Pin to top if it's an important announcement." },
           { text: "Click Post. All students in your school can see and reply." },
+        ],
+      },
+      {
+        id: "chat-basics",
+        title: "Message students and start video calls",
+        icon: "💬",
+        summary: "Chat one-on-one, in group channels, or start an in-app video call that rings the other person.",
+        steps: [
+          { text: "Go to Chat from the top navigation." },
+          { text: "Pick an existing DM/channel, or start a new one from the + button." },
+          { text: "Type a message and hit Enter, or click the paperclip to attach a document or image.", detail: "Attachments are automatically scanned before they're sent — unsafe or unsupported files are blocked." },
+          { text: "Click Reply under any message to reply in a thread — it opens right under that message, no separate panel." },
+          { text: "Click the video icon to start a call. It rings the other person (or the whole channel, for group chats) so they can join or decline." },
+        ],
+        troubleshoot: [
+          { problem: "My attachment was rejected", solution: "Only common document and image types are allowed, and files are scanned for malicious content before sending. Try a different file format." },
+          { problem: "The other person didn't get my message", solution: "As long as they're a member of the channel, they get an in-app notification and — unless they've turned it off in Notification Preferences — an email too, even if they weren't online." },
+        ],
+      },
+    ],
+  },
+  {
+    id: "ai-and-productivity",
+    title: "AI Assistant & Notes",
+    icon: "🤖",
+    articles: [
+      {
+        id: "solomon-agent",
+        title: "Chat with Solomon, your AI assistant",
+        icon: "✨",
+        summary: "Solomon can answer questions and help with routine tasks.",
+        steps: [
+          { text: "Look for the floating chat button in the bottom corner of your dashboard." },
+          { text: "Click it to open Solomon and type your question or request." },
+        ],
+      },
+      {
+        id: "notes",
+        title: "Take notes and share them",
+        icon: "🗒️",
+        summary: "Keep private notes, pin one as a sticky note, or share one with a colleague.",
+        steps: [
+          { text: "Click the notes icon next to the AI assistant button." },
+          { text: "Click New Note, or open an existing one to edit it." },
+          { text: "Toggle Sticky Mode to pin it as a small floating window on screen." },
+          { text: "Click Share to give another user view or edit access to a note." },
         ],
       },
     ],
@@ -366,6 +497,38 @@ export const studentHelp: HelpCategory[] = [
           { text: "Review your course grades." },
           { text: "Click Download PDF." },
           { text: "Share the PDF or the verification link with institutions that need it." },
+        ],
+      },
+    ],
+  },
+  {
+    id: "chat",
+    title: "Chat & Notifications",
+    icon: "💬",
+    articles: [
+      {
+        id: "chat-basics",
+        title: "Message classmates and teachers",
+        icon: "💬",
+        summary: "Chat one-on-one, in group channels, or join a video call.",
+        steps: [
+          { text: "Go to Chat from the top navigation." },
+          { text: "Pick a DM or channel, or start a new one." },
+          { text: "Type a message, or click the paperclip to send a document or image.", detail: "Attachments are scanned for safety before they're sent." },
+          { text: "Click Reply under a message to reply in a thread — it opens directly under that message." },
+          { text: "If you're enrolled in a program with multiple courses, you're automatically added to that program's shared chat with everyone else enrolled in it." },
+          { text: "When someone starts a video call, an incoming call banner appears — click to join or decline." },
+        ],
+      },
+      {
+        id: "notifications",
+        title: "Manage your notifications",
+        icon: "🔔",
+        summary: "Choose what you get notified about, in-app and by email.",
+        steps: [
+          { text: "Click the bell icon to see recent notifications and unread messages." },
+          { text: "Click View all notifications to see your full notification history." },
+          { text: "Go to Settings → Notification Preferences to turn specific categories (chat, grades, assignments, etc.) on or off, and choose whether you get emailed when you're offline." },
         ],
       },
     ],

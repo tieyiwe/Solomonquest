@@ -496,6 +496,18 @@ ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS metadata jsonb DEFAULT
 -- send email notifications, but had no tracked migration either.
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email text;
 
+-- ─── Custom domains ──────────────────────────────────────────────────────────
+-- A school can point their own domain (e.g. school.edu) at their public page
+-- instead of using the shared solomonquest.com/schools/:slug URL.
+-- Verification is done via a DNS TXT record proving domain ownership before
+-- the domain is trusted, same approach used by Vercel/Netlify/etc.
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain text;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_status text NOT NULL DEFAULT 'unset'
+  CHECK (custom_domain_status IN ('unset', 'pending', 'verified', 'failed'));
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_token text;
+CREATE UNIQUE INDEX IF NOT EXISTS schools_custom_domain_unique ON public.schools (LOWER(custom_domain))
+  WHERE custom_domain IS NOT NULL;
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

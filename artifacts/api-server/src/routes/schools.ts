@@ -1,4 +1,6 @@
 import { Router, type IRouter } from "express";
+import { randomBytes } from "crypto";
+import { resolveTxt } from "dns/promises";
 import { supabaseAdmin } from "../lib/supabase";
 import { logger } from "../lib/logger";
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from "../middlewares/auth";
@@ -42,6 +44,27 @@ router.get("/schools/my", requireAuth, async (req: AuthenticatedRequest, res): P
 
   if (error || !data) {
     res.status(404).json({ error: "School not found" });
+    return;
+  }
+
+  res.json(mapSchool(data));
+});
+
+// Look up a school by its verified custom domain (public) — used by the
+// frontend on boot when the hostname isn't the platform's own domain, so it
+// knows which school's public page to render.
+router.get("/schools/by-domain/:domain", async (req, res): Promise<void> => {
+  const domain = (Array.isArray(req.params.domain) ? req.params.domain[0] : req.params.domain).toLowerCase();
+
+  const { data, error } = await supabaseAdmin
+    .from("schools")
+    .select("*")
+    .eq("custom_domain", domain)
+    .eq("custom_domain_status", "verified")
+    .maybeSingle();
+
+  if (error || !data) {
+    res.status(404).json({ error: "No school found for this domain" });
     return;
   }
 
@@ -237,6 +260,151 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
     res.status(500).json({ error: err?.message ?? "Internal server error" });
   }
 });
+
+function platformHostname(): string {
+  const url = process.env.APP_URL ?? process.env.FRONTEND_URL;
+  if (!url) return "your-app-url.example.com";
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  }
+}
+
+function canManageDomain(req: AuthenticatedRequest, schoolId: string): boolean {
+  if (req.userRole === "super_admin") return true;
+  return req.userRole === "admin" && req.schoolId === schoolId;
+}
+
+// Start connecting a custom domain — stores the desired domain and returns
+// the DNS TXT record the admin needs to create to prove ownership.
+router.put("/schools/:id/custom-domain", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  if (!canManageDomain(req, id)) {
+    res.status(403).json({ error: "Not authorized to manage this school's domain" });
+    return;
+  }
+
+  const { domain } = req.body as { domain?: string };
+  if (!domain || typeof domain !== "string" || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim())) {
+    res.status(400).json({ error: "Enter a valid domain, e.g. school.edu" });
+    return;
+  }
+
+  const normalizedDomain = domain.trim().toLowerCase();
+  const token = randomBytes(16).toString("hex");
+
+  const { data: conflict } = await supabaseAdmin
+    .from("schools")
+    .select("id")
+    .eq("custom_domain", normalizedDomain)
+    .neq("id", id)
+    .maybeSingle();
+  if (conflict) {
+    res.status(409).json({ error: "That domain is already connected to another school" });
+    return;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("schools")
+    .update({
+      custom_domain: normalizedDomain,
+      custom_domain_status: "pending",
+      custom_domain_token: token,
+    })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error || !data) {
+    res.status(500).json({ error: error?.message ?? "Failed to save domain" });
+    return;
+  }
+
+  res.json({
+    domain: normalizedDomain,
+    status: "pending",
+    dnsRecords: [
+      { type: "CNAME", host: normalizedDomain, value: platformHostname(), note: "Points your domain at SolomonQuest" },
+      { type: "TXT", host: `_solomonquest-verify.${normalizedDomain}`, value: token, note: "Proves you own this domain" },
+    ],
+  });
+});
+
+// Check the TXT record and mark the domain verified once it matches.
+router.post(
+  "/schools/:id/custom-domain/verify",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!canManageDomain(req, id)) {
+      res.status(403).json({ error: "Not authorized to manage this school's domain" });
+      return;
+    }
+
+    const { data: school, error } = await supabaseAdmin
+      .from("schools")
+      .select("custom_domain, custom_domain_token")
+      .eq("id", id)
+      .single();
+
+    if (error || !school?.custom_domain || !school.custom_domain_token) {
+      res.status(400).json({ error: "No pending domain to verify" });
+      return;
+    }
+
+    try {
+      const records = await resolveTxt(`_solomonquest-verify.${school.custom_domain}`);
+      const found = records.some((chunks) => chunks.join("").trim() === school.custom_domain_token);
+
+      if (!found) {
+        await supabaseAdmin.from("schools").update({ custom_domain_status: "failed" }).eq("id", id);
+        res.status(422).json({
+          verified: false,
+          error: "TXT record not found yet. DNS changes can take up to a few hours to propagate — try again shortly.",
+        });
+        return;
+      }
+
+      await supabaseAdmin.from("schools").update({ custom_domain_status: "verified" }).eq("id", id);
+      res.json({ verified: true, status: "verified" });
+    } catch (err: any) {
+      await supabaseAdmin.from("schools").update({ custom_domain_status: "failed" }).eq("id", id);
+      res.status(422).json({
+        verified: false,
+        error: "Could not find that DNS record yet. Double-check it was added correctly, then try again.",
+      });
+    }
+  }
+);
+
+// Disconnect a custom domain.
+router.delete(
+  "/schools/:id/custom-domain",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!canManageDomain(req, id)) {
+      res.status(403).json({ error: "Not authorized to manage this school's domain" });
+      return;
+    }
+
+    const { error } = await supabaseAdmin
+      .from("schools")
+      .update({ custom_domain: null, custom_domain_status: "unset", custom_domain_token: null })
+      .eq("id", id);
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.sendStatus(204);
+  }
+);
 
 // Update school
 router.patch("/schools/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
@@ -567,6 +735,8 @@ function mapSchool(s: Record<string, unknown>) {
     custom_css: s.custom_css,
     isActive: s.is_active,
     createdAt: s.created_at,
+    customDomain: s.custom_domain ?? null,
+    customDomainStatus: s.custom_domain_status ?? "unset",
     applicationsOpen: s.applications_open ?? false,
     assignment_routing: s.assignment_routing ?? null,
     // Also expose camelCase aliases for backward compat
