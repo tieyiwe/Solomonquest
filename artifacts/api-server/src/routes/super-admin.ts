@@ -635,8 +635,9 @@ router.patch(
       const { id } = req.params;
       const { role } = req.body as { role: string };
 
-      if (!role) {
-        res.status(400).json({ error: "role is required" });
+      const VALID_ROLES = ["super_admin", "admin", "teacher", "staff", "student"];
+      if (!role || !VALID_ROLES.includes(role)) {
+        res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(", ")}` });
         return;
       }
 

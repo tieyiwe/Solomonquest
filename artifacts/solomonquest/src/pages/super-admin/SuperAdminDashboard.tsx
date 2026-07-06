@@ -771,6 +771,8 @@ export default function SuperAdminDashboard() {
               if (activeSection === "schools") fetchSchools();
               if (activeSection === "users") fetchUsers();
               if (activeSection === "deletion-requests") fetchDeletionRequests();
+              if (activeSection === "domain-requests") fetchDomainRequests();
+              if (activeSection === "subscriptions") fetchSubscriptions();
               if (activeSection === "archive") fetchArchive();
               if (activeSection === "audit-log") fetchAuditLogs();
               if (activeSection === "platform-settings") fetchSettings();
