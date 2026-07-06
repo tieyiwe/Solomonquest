@@ -362,44 +362,50 @@ interface DnsRecord {
   note: string;
 }
 
+type DomainStatus = "unset" | "requested" | "approved" | "verified" | "failed";
+
 function DomainTab({ schoolId }: { schoolId: string }) {
   const [domain, setDomain] = useState("");
-  const [status, setStatus] = useState<"unset" | "pending" | "verified" | "failed">("unset");
+  const [status, setStatus] = useState<DomainStatus>("unset");
   const [dnsRecords, setDnsRecords] = useState<DnsRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!schoolId) return;
-    apiFetch("/api/schools/my")
+    apiFetch(`/api/schools/${schoolId}/custom-domain`)
       .then((r) => r.json())
       .then((data) => {
-        setDomain(data.customDomain ?? "");
-        setStatus((data.customDomainStatus as typeof status) ?? "unset");
+        setDomain(data.domain ?? "");
+        setStatus((data.status as DomainStatus) ?? "unset");
+        setDnsRecords(data.dnsRecords ?? []);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [schoolId]);
 
-  const handleConnect = async () => {
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSubmitRequest = async () => {
     if (!domain.trim()) {
       toast.error("Enter a domain first, e.g. school.edu");
       return;
     }
     setSaving(true);
     try {
-      const res = await apiFetch(`/api/schools/${schoolId}/custom-domain`, {
-        method: "PUT",
+      const res = await apiFetch(`/api/schools/${schoolId}/custom-domain/request`, {
+        method: "POST",
         body: JSON.stringify({ domain: domain.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to connect domain");
-      setStatus("pending");
-      setDnsRecords(data.dnsRecords ?? []);
-      toast.success("Domain saved — add the DNS records below, then verify");
+      if (!res.ok) throw new Error(data.error || "Failed to submit domain request");
+      setStatus("requested");
+      toast.success("Domain request submitted — we'll notify you once it's approved");
     } catch (err: any) {
-      toast.error(err.message || "Failed to connect domain");
+      toast.error(err.message || "Failed to submit domain request");
     } finally {
       setSaving(false);
     }
@@ -443,7 +449,8 @@ function DomainTab({ schoolId }: { schoolId: string }) {
 
   const statusBadge = {
     unset: null,
-    pending: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">Pending verification</span>,
+    requested: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">Awaiting platform approval</span>,
+    approved: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">Approved — add DNS records</span>,
     verified: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">Connected</span>,
     failed: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200">Verification failed</span>,
   }[status];
@@ -461,27 +468,36 @@ function DomainTab({ schoolId }: { schoolId: string }) {
             placeholder="school.edu"
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
-            disabled={status === "verified"}
+            disabled={status === "requested" || status === "verified"}
             className="max-w-xs"
           />
           {statusBadge}
         </div>
       </div>
 
-      {status !== "verified" && (
-        <Button onClick={handleConnect} disabled={saving}>
+      {(status === "unset" || status === "failed") && (
+        <Button onClick={handleSubmitRequest} disabled={saving}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {status === "unset" ? "Connect Domain" : "Update Domain"}
+          Submit Domain for Verification
         </Button>
       )}
 
-      {(status === "pending" || status === "failed") && (
+      {status === "requested" && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <p className="text-sm text-blue-800">
+            Your request to connect <strong>{domain}</strong> has been submitted to the platform team. You'll get a
+            notification here (and by email) once it's approved and ready for you to add the DNS records.
+          </p>
+        </div>
+      )}
+
+      {(status === "approved" || status === "failed") && dnsRecords.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
           <p className="text-sm font-medium text-gray-800">Add these DNS records at your domain registrar</p>
           <ol className="text-sm text-gray-600 space-y-3 list-decimal list-inside">
             <li>
-              Log in to wherever you manage DNS for <strong>{domain || "your domain"}</strong> (e.g. GoDaddy, Namecheap,
-              Cloudflare, Google Domains).
+              Log in to wherever you manage DNS for <strong>{domain}</strong> (e.g. GoDaddy, Namecheap, Cloudflare,
+              Google Domains).
             </li>
             <li>Add the two records below exactly as shown.</li>
             <li>DNS changes can take anywhere from a few minutes to a few hours to take effect.</li>
@@ -498,13 +514,7 @@ function DomainTab({ schoolId }: { schoolId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {(dnsRecords.length > 0
-                  ? dnsRecords
-                  : [
-                      { type: "CNAME", host: domain, value: "(shown after you click Connect)", note: "" },
-                      { type: "TXT", host: `_solomonquest-verify.${domain}`, value: "(shown after you click Connect)", note: "" },
-                    ]
-                ).map((rec, i) => (
+                {dnsRecords.map((rec, i) => (
                   <tr key={i} className="border-b border-gray-100 last:border-0">
                     <td className="py-2 pr-4 font-mono">{rec.type}</td>
                     <td className="py-2 pr-4 font-mono break-all">{rec.host}</td>

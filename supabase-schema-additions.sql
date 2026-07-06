@@ -501,10 +501,17 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email text;
 -- instead of using the shared solomonquest.com/schools/:slug URL.
 -- Verification is done via a DNS TXT record proving domain ownership before
 -- the domain is trusted, same approach used by Vercel/Netlify/etc.
+-- Flow: unset -> requested (school admin submitted, waiting on platform
+-- super-admin) -> approved (super-admin added it in the hosting provider's
+-- domain settings and generated DNS records) -> verified (TXT record found)
+-- or failed (verification attempt didn't find the TXT record yet).
 ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain text;
-ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_status text NOT NULL DEFAULT 'unset'
-  CHECK (custom_domain_status IN ('unset', 'pending', 'verified', 'failed'));
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_status text NOT NULL DEFAULT 'unset';
+ALTER TABLE public.schools DROP CONSTRAINT IF EXISTS schools_custom_domain_status_check;
+ALTER TABLE public.schools ADD CONSTRAINT schools_custom_domain_status_check
+  CHECK (custom_domain_status IN ('unset', 'requested', 'approved', 'verified', 'failed'));
 ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_token text;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_requested_at timestamptz;
 CREATE UNIQUE INDEX IF NOT EXISTS schools_custom_domain_unique ON public.schools (LOWER(custom_domain))
   WHERE custom_domain IS NOT NULL;
 

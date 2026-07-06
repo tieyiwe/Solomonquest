@@ -39,6 +39,7 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  Globe,
 } from "lucide-react";
 
 async function apiFetch(url: string, options: RequestInit = {}) {
@@ -60,6 +61,7 @@ type Section =
   | "schools"
   | "users"
   | "deletion-requests"
+  | "domain-requests"
   | "archive"
   | "audit-log"
   | "platform-settings"
@@ -126,6 +128,15 @@ interface DeletionRequest {
   status: "pending" | "approved" | "rejected";
   requestedAt: string;
   reviewNotes?: string;
+}
+
+interface DomainRequest {
+  schoolId: string;
+  schoolName: string;
+  slug: string;
+  domain: string;
+  status: "requested" | "approved" | "verified" | "failed";
+  requestedAt: string | null;
 }
 
 interface ArchiveEntry {
@@ -208,6 +219,11 @@ export default function SuperAdminDashboard() {
   const [rejectNotes, setRejectNotes] = useState("");
   const [approveDialog, setApproveDialog] = useState<DeletionRequest | null>(null);
   const [executeDeletionDialog, setExecuteDeletionDialog] = useState<DeletionRequest | null>(null);
+
+  // Domain Requests
+  const [domainRequests, setDomainRequests] = useState<DomainRequest[]>([]);
+  const [domainRequestsLoading, setDomainRequestsLoading] = useState(false);
+  const [approvingDomainId, setApprovingDomainId] = useState<string | null>(null);
 
   // Quick delete (empty schools)
   const [quickDeleteDialog, setQuickDeleteDialog] = useState<{ id: string; name: string } | null>(null);
@@ -317,6 +333,36 @@ export default function SuperAdminDashboard() {
     }
   }, []);
 
+  const fetchDomainRequests = useCallback(async () => {
+    setDomainRequestsLoading(true);
+    try {
+      const res = await apiFetch("/api/super-admin/domain-requests");
+      if (!res.ok) throw new Error();
+      setDomainRequests(await res.json());
+    } catch {
+      toast.error("Failed to load domain requests");
+    } finally {
+      setDomainRequestsLoading(false);
+    }
+  }, []);
+
+  const handleApproveDomain = async (schoolId: string) => {
+    setApprovingDomainId(schoolId);
+    try {
+      const res = await apiFetch(`/api/super-admin/schools/${schoolId}/custom-domain/approve`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to approve domain");
+      }
+      toast.success("Domain approved — the school admin has been notified to complete verification");
+      fetchDomainRequests();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to approve domain");
+    } finally {
+      setApprovingDomainId(null);
+    }
+  };
+
   const fetchArchive = useCallback(async () => {
     setArchiveLoading(true);
     try {
@@ -366,6 +412,7 @@ export default function SuperAdminDashboard() {
     if (activeSection === "schools") fetchSchools();
     if (activeSection === "users") fetchUsers();
     if (activeSection === "deletion-requests") fetchDeletionRequests();
+    if (activeSection === "domain-requests") fetchDomainRequests();
     if (activeSection === "archive") fetchArchive();
     if (activeSection === "audit-log") fetchAuditLogs();
     if (activeSection === "platform-settings") fetchSettings();
@@ -504,6 +551,7 @@ export default function SuperAdminDashboard() {
     { section: "schools", label: "Schools", icon: <Building2 size={16} />, group: "MANAGEMENT" },
     { section: "users", label: "All Users", icon: <Users size={16} />, group: "MANAGEMENT" },
     { section: "deletion-requests", label: "Deletion Requests", icon: <AlertTriangle size={16} />, group: "MANAGEMENT" },
+    { section: "domain-requests", label: "Domain Requests", icon: <Globe size={16} />, group: "MANAGEMENT" },
     { section: "archive", label: "Archive", icon: <Archive size={16} />, group: "MANAGEMENT" },
     { section: "audit-log", label: "Audit Log", icon: <FileText size={16} />, group: "SYSTEM" },
     { section: "platform-settings", label: "Platform Settings", icon: <Settings size={16} />, group: "SYSTEM" },
@@ -513,6 +561,7 @@ export default function SuperAdminDashboard() {
   const groups = ["OVERVIEW", "MANAGEMENT", "SYSTEM", "ACCOUNT"];
 
   const pendingCount = deletionRequests.filter((r) => r.status === "pending").length;
+  const pendingDomainCount = domainRequests.filter((r) => r.status === "requested").length;
 
   // Filtered data
   const filteredSchools = schools.filter((s) => {
@@ -563,6 +612,11 @@ export default function SuperAdminDashboard() {
                     {item.section === "deletion-requests" && pendingCount > 0 && (
                       <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold">
                         {pendingCount}
+                      </span>
+                    )}
+                    {item.section === "domain-requests" && pendingDomainCount > 0 && (
+                      <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold">
+                        {pendingDomainCount}
                       </span>
                     )}
                   </button>
@@ -1033,6 +1087,59 @@ export default function SuperAdminDashboard() {
             </div>
           )}
 
+          {/* DOMAIN REQUESTS */}
+          {activeSection === "domain-requests" && (
+            <div>
+              <p className="text-gray-400 text-sm mb-4">
+                When a school admin submits a domain, add it in your hosting provider's domain settings first, then
+                click Approve — this generates the DNS records and notifies the school admin to finish connecting it.
+              </p>
+              {domainRequestsLoading && <p className="text-gray-400">Loading...</p>}
+              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                      <th className="text-left px-4 py-3">School</th>
+                      <th className="text-left px-4 py-3">Domain</th>
+                      <th className="text-left px-4 py-3">Status</th>
+                      <th className="text-left px-4 py-3">Requested At</th>
+                      <th className="text-left px-4 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {domainRequests.map((req) => (
+                      <tr key={req.schoolId} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                        <td className="px-4 py-3 text-white font-medium">{req.schoolName}</td>
+                        <td className="px-4 py-3 text-gray-300 font-mono">{req.domain}</td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={req.status} />
+                        </td>
+                        <td className="px-4 py-3 text-gray-400">
+                          {req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          {req.status === "requested" && (
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs bg-green-800 hover:bg-green-700 text-white"
+                              disabled={approvingDomainId === req.schoolId}
+                              onClick={() => handleApproveDomain(req.schoolId)}
+                            >
+                              {approvingDomainId === req.schoolId ? "Approving..." : "Approve"}
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {domainRequests.length === 0 && !domainRequestsLoading && (
+                  <p className="text-gray-500 text-sm text-center py-8">No domain requests.</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ARCHIVE */}
           {activeSection === "archive" && (
             <div>
@@ -1460,6 +1567,9 @@ function StatusBadge({ status }: { status: string }) {
     pending: "bg-yellow-900 text-yellow-300",
     approved: "bg-green-900 text-green-300",
     rejected: "bg-red-900 text-red-300",
+    requested: "bg-blue-900 text-blue-300",
+    verified: "bg-green-900 text-green-300",
+    failed: "bg-red-900 text-red-300",
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full ${colors[status] ?? "bg-gray-700 text-gray-300"}`}>{status}</span>

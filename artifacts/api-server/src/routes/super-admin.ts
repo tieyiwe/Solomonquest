@@ -1,6 +1,8 @@
 import { Router, type IRouter, type Response, type NextFunction } from "express";
+import { randomBytes } from "crypto";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { notifyUsers } from "../lib/notifications";
 
 const router: IRouter = Router();
 
@@ -1011,6 +1013,116 @@ router.post(
       res.json({ success: true, deleted_at: deletedAt, restore_deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() });
     } catch (err) {
       console.error("Execute deletion error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// ─── Custom Domain Requests ─────────────────────────────────────────────────────
+router.get(
+  "/super-admin/domain-requests",
+  requireAuth,
+  requireSuperAdmin,
+  async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("schools")
+        .select("id, name, slug, custom_domain, custom_domain_status, custom_domain_requested_at")
+        .not("custom_domain", "is", null)
+        .order("custom_domain_requested_at", { ascending: false });
+
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+
+      const statusOrder: Record<string, number> = { requested: 0, failed: 1, approved: 2, verified: 3 };
+      const sorted = (data ?? []).slice().sort((a, b) => {
+        const aOrder = statusOrder[a.custom_domain_status as string] ?? 99;
+        const bOrder = statusOrder[b.custom_domain_status as string] ?? 99;
+        return aOrder - bOrder;
+      });
+
+      res.json(
+        sorted.map((s) => ({
+          schoolId: s.id,
+          schoolName: s.name,
+          slug: s.slug,
+          domain: s.custom_domain,
+          status: s.custom_domain_status,
+          requestedAt: s.custom_domain_requested_at,
+        }))
+      );
+    } catch (err) {
+      console.error("Domain requests list error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// One-click approve: called after the super-admin has manually added the
+// domain in the hosting provider's domain settings. Generates the DNS
+// records and notifies the school admin(s) to complete verification.
+router.post(
+  "/super-admin/schools/:id/custom-domain/approve",
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+
+      const { data: school, error: fetchErr } = await supabaseAdmin
+        .from("schools")
+        .select("id, name, custom_domain, custom_domain_status")
+        .eq("id", id)
+        .single();
+
+      if (fetchErr || !school?.custom_domain) {
+        res.status(404).json({ error: "No domain request found for this school" });
+        return;
+      }
+
+      const token = randomBytes(16).toString("hex");
+      const { error: updateErr } = await supabaseAdmin
+        .from("schools")
+        .update({ custom_domain_status: "approved", custom_domain_token: token })
+        .eq("id", id);
+
+      if (updateErr) {
+        res.status(500).json({ error: updateErr.message });
+        return;
+      }
+
+      const { data: admins } = await supabaseAdmin
+        .from("profiles")
+        .select("id")
+        .eq("school_id", id)
+        .in("role", ["admin", "super_admin"]);
+      const adminIds = (admins ?? []).map((p) => p.id as string);
+      if (adminIds.length > 0) {
+        await notifyUsers({
+          userIds: adminIds,
+          type: "domain_approved",
+          category: "platform",
+          title: "Your custom domain is ready to verify",
+          body: `${school.custom_domain} has been approved. Go to Settings -> Branding -> Custom Domain to add the DNS records and finish connecting it.`,
+          link: "/dashboard/admin/branding",
+        });
+      }
+
+      await auditLog({
+        actorId: req.userId,
+        action: "custom_domain_approved",
+        targetType: "school",
+        targetId: id,
+        targetName: school.name,
+        details: { domain: school.custom_domain },
+        ipAddress: req.ip,
+      });
+
+      res.json({ success: true, status: "approved" });
+    } catch (err) {
+      console.error("Approve custom domain error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   }

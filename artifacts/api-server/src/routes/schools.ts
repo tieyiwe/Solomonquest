@@ -4,6 +4,7 @@ import { resolveTxt } from "dns/promises";
 import { supabaseAdmin } from "../lib/supabase";
 import { logger } from "../lib/logger";
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { notifyUsers } from "../lib/notifications";
 
 const router: IRouter = Router();
 
@@ -276,63 +277,84 @@ function canManageDomain(req: AuthenticatedRequest, schoolId: string): boolean {
   return req.userRole === "admin" && req.schoolId === schoolId;
 }
 
-// Start connecting a custom domain — stores the desired domain and returns
-// the DNS TXT record the admin needs to create to prove ownership.
-router.put("/schools/:id/custom-domain", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+function dnsRecordsFor(domain: string, token: string) {
+  return [
+    { type: "CNAME", host: domain, value: platformHostname(), note: "Points your domain at SolomonQuest" },
+    { type: "TXT", host: `_solomonquest-verify.${domain}`, value: token, note: "Proves you own this domain" },
+  ];
+}
 
-  if (!canManageDomain(req, id)) {
-    res.status(403).json({ error: "Not authorized to manage this school's domain" });
-    return;
+// School admin submits a domain for the platform team to review. This does
+// NOT connect anything yet — it just records the request and notifies every
+// super_admin so they can add it in the hosting provider's domain settings
+// (a manual step outside the app) before approving it.
+router.post(
+  "/schools/:id/custom-domain/request",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!canManageDomain(req, id)) {
+      res.status(403).json({ error: "Not authorized to manage this school's domain" });
+      return;
+    }
+
+    const { domain } = req.body as { domain?: string };
+    if (!domain || typeof domain !== "string" || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim())) {
+      res.status(400).json({ error: "Enter a valid domain, e.g. school.edu" });
+      return;
+    }
+
+    const normalizedDomain = domain.trim().toLowerCase();
+
+    const { data: conflict } = await supabaseAdmin
+      .from("schools")
+      .select("id")
+      .eq("custom_domain", normalizedDomain)
+      .neq("id", id)
+      .maybeSingle();
+    if (conflict) {
+      res.status(409).json({ error: "That domain is already connected to another school" });
+      return;
+    }
+
+    const { data: school, error } = await supabaseAdmin
+      .from("schools")
+      .update({
+        custom_domain: normalizedDomain,
+        custom_domain_status: "requested",
+        custom_domain_token: null,
+        custom_domain_requested_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select("name")
+      .single();
+
+    if (error || !school) {
+      res.status(500).json({ error: error?.message ?? "Failed to submit domain request" });
+      return;
+    }
+
+    const { data: superAdmins } = await supabaseAdmin.from("profiles").select("id").eq("role", "super_admin");
+    const superAdminIds = (superAdmins ?? []).map((p) => p.id as string);
+    if (superAdminIds.length > 0) {
+      await notifyUsers({
+        userIds: superAdminIds,
+        type: "domain_request",
+        category: "platform",
+        title: "New custom domain request",
+        body: `${school.name} requested to connect ${normalizedDomain}`,
+        link: "/super-admin/domain-requests",
+      });
+    }
+
+    res.json({ status: "requested", domain: normalizedDomain });
   }
+);
 
-  const { domain } = req.body as { domain?: string };
-  if (!domain || typeof domain !== "string" || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim())) {
-    res.status(400).json({ error: "Enter a valid domain, e.g. school.edu" });
-    return;
-  }
-
-  const normalizedDomain = domain.trim().toLowerCase();
-  const token = randomBytes(16).toString("hex");
-
-  const { data: conflict } = await supabaseAdmin
-    .from("schools")
-    .select("id")
-    .eq("custom_domain", normalizedDomain)
-    .neq("id", id)
-    .maybeSingle();
-  if (conflict) {
-    res.status(409).json({ error: "That domain is already connected to another school" });
-    return;
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("schools")
-    .update({
-      custom_domain: normalizedDomain,
-      custom_domain_status: "pending",
-      custom_domain_token: token,
-    })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error || !data) {
-    res.status(500).json({ error: error?.message ?? "Failed to save domain" });
-    return;
-  }
-
-  res.json({
-    domain: normalizedDomain,
-    status: "pending",
-    dnsRecords: [
-      { type: "CNAME", host: normalizedDomain, value: platformHostname(), note: "Points your domain at SolomonQuest" },
-      { type: "TXT", host: `_solomonquest-verify.${normalizedDomain}`, value: token, note: "Proves you own this domain" },
-    ],
-  });
-});
-
-// Check the TXT record and mark the domain verified once it matches.
+// Check the TXT record and mark the domain verified once it matches. Only
+// meaningful once a super-admin has approved the request and generated the
+// DNS records (status "approved" or a previously "failed" verify attempt).
 router.post(
   "/schools/:id/custom-domain/verify",
   requireAuth,
@@ -346,12 +368,17 @@ router.post(
 
     const { data: school, error } = await supabaseAdmin
       .from("schools")
-      .select("custom_domain, custom_domain_token")
+      .select("custom_domain, custom_domain_token, custom_domain_status")
       .eq("id", id)
       .single();
 
-    if (error || !school?.custom_domain || !school.custom_domain_token) {
-      res.status(400).json({ error: "No pending domain to verify" });
+    if (
+      error ||
+      !school?.custom_domain ||
+      !school.custom_domain_token ||
+      (school.custom_domain_status !== "approved" && school.custom_domain_status !== "failed")
+    ) {
+      res.status(400).json({ error: "This domain hasn't been approved yet" });
       return;
     }
 
@@ -377,6 +404,42 @@ router.post(
         error: "Could not find that DNS record yet. Double-check it was added correctly, then try again.",
       });
     }
+  }
+);
+
+// Current domain status + (once approved) the DNS records to add.
+router.get(
+  "/schools/:id/custom-domain",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!canManageDomain(req, id)) {
+      res.status(403).json({ error: "Not authorized to view this school's domain" });
+      return;
+    }
+
+    const { data: school, error } = await supabaseAdmin
+      .from("schools")
+      .select("custom_domain, custom_domain_status, custom_domain_token")
+      .eq("id", id)
+      .single();
+
+    if (error || !school) {
+      res.status(404).json({ error: "School not found" });
+      return;
+    }
+
+    const dnsRecords =
+      school.custom_domain && school.custom_domain_token
+        ? dnsRecordsFor(school.custom_domain, school.custom_domain_token)
+        : [];
+
+    res.json({
+      domain: school.custom_domain,
+      status: school.custom_domain_status,
+      dnsRecords,
+    });
   }
 );
 
