@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useGetSchoolBySlug, useListCourses } from "@workspace/api-client-react";
 import { PublicLayout } from "@/components/layout/PublicLayout";
@@ -91,6 +91,158 @@ function StepIndicator({ current }: { current: number }) {
         </div>
       ))}
     </div>
+  );
+}
+
+interface TuitionPlanInfo {
+  id: string;
+  courseId: string | null;
+  amountCents: number;
+  allowFullPayment: boolean;
+  allowInstallments: boolean;
+  installmentCount: number;
+}
+
+interface TuitionPaymentResult {
+  status: "pending" | "partial" | "paid" | "failed";
+  installments: { installmentNumber: number; status: string }[];
+}
+
+/**
+ * Shows tuition for the courses the applicant selected and lets them try the
+ * (currently simulated) payment flow. Purely informational for now -- not a
+ * condition for submitting the application. That gate gets turned on later
+ * once real payment processing is wired up.
+ */
+function TuitionSummary({ courseIds, accessToken }: { courseIds: string[]; accessToken: string }) {
+  const [plans, setPlans] = useState<TuitionPlanInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [methodByPlan, setMethodByPlan] = useState<Record<string, "full" | "installments">>({});
+  const [paymentByPlan, setPaymentByPlan] = useState<Record<string, { id: string; result: TuitionPaymentResult }>>({});
+  const [payingPlanId, setPayingPlanId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      courseIds.map((courseId) =>
+        fetch(`/api/tuition-plans?courseId=${courseId}`, { headers: { Authorization: `Bearer ${accessToken}` } })
+          .then((r) => (r.ok ? r.json() : []))
+          .catch(() => [])
+      )
+    ).then((results) => {
+      if (cancelled) return;
+      const found = results.flat().filter((p: TuitionPlanInfo) => p.amountCents > 0);
+      setPlans(found);
+      setMethodByPlan(
+        Object.fromEntries(found.map((p: TuitionPlanInfo) => [p.id, p.allowFullPayment ? "full" : "installments"]))
+      );
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [courseIds.join(","), accessToken]);
+
+  const handlePay = async (plan: TuitionPlanInfo) => {
+    setPayingPlanId(plan.id);
+    try {
+      const existing = paymentByPlan[plan.id];
+      let paymentId = existing?.id;
+
+      if (!paymentId) {
+        const res = await fetch("/api/tuition-payments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ tuitionPlanId: plan.id, paymentMethod: methodByPlan[plan.id] ?? "full" }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to start payment");
+        const data = await res.json();
+        paymentId = data.id;
+      }
+
+      const payRes = await fetch(`/api/tuition-payments/${paymentId}/simulate-pay`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!payRes.ok) throw new Error((await payRes.json().catch(() => ({}))).error || "Payment failed");
+      const payData = await payRes.json();
+
+      setPaymentByPlan((prev) => ({ ...prev, [plan.id]: { id: paymentId as string, result: payData } }));
+      toast.success(payData.status === "paid" ? "Payment complete (test mode)" : "Installment paid (test mode)");
+    } catch (err: any) {
+      toast.error(err.message || "Payment failed");
+    } finally {
+      setPayingPlanId(null);
+    }
+  };
+
+  if (loading || plans.length === 0) return null;
+
+  const totalCents = plans.reduce((sum, p) => sum + p.amountCents, 0);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Tuition & Payment</CardTitle>
+        <CardDescription>
+          This isn't required to submit your application yet — you can also pay later.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-4">
+        <div className="flex justify-between text-sm font-medium">
+          <span>Total tuition</span>
+          <span>${(totalCents / 100).toFixed(2)}</span>
+        </div>
+        {plans.map((plan) => {
+          const payment = paymentByPlan[plan.id];
+          const isPaidInFull = payment?.result.status === "paid";
+          return (
+            <div key={plan.id} className="rounded-lg border p-3 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">${(plan.amountCents / 100).toFixed(2)}</span>
+                {payment && (
+                  <Badge variant={isPaidInFull ? "default" : "outline"} className="text-xs">
+                    {isPaidInFull
+                      ? "Paid"
+                      : `Installment ${payment.result.installments.filter((i) => i.status === "paid").length}/${payment.result.installments.length} paid`}
+                  </Badge>
+                )}
+              </div>
+              {!isPaidInFull && (
+                <>
+                  {plan.allowFullPayment && plan.allowInstallments && (
+                    <div className="flex gap-3 text-xs">
+                      <label className="flex items-center gap-1.5">
+                        <input
+                          type="radio"
+                          checked={(methodByPlan[plan.id] ?? "full") === "full"}
+                          onChange={() => setMethodByPlan((m) => ({ ...m, [plan.id]: "full" }))}
+                        />
+                        Pay in full
+                      </label>
+                      <label className="flex items-center gap-1.5">
+                        <input
+                          type="radio"
+                          checked={methodByPlan[plan.id] === "installments"}
+                          onChange={() => setMethodByPlan((m) => ({ ...m, [plan.id]: "installments" }))}
+                        />
+                        {plan.installmentCount} installments
+                      </label>
+                    </div>
+                  )}
+                  <Button size="sm" variant="outline" disabled={payingPlanId === plan.id} onClick={() => handlePay(plan)}>
+                    {payingPlanId === plan.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                    ) : null}
+                    {payment ? "Pay Next Installment (test)" : "Simulate Payment (test)"}
+                  </Button>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -605,6 +757,10 @@ export default function SchoolApply() {
                 )}
               </CardContent>
             </Card>
+
+            {session && selectedCourseIds.length > 0 && (
+              <TuitionSummary courseIds={selectedCourseIds} accessToken={session.access_token} />
+            )}
 
             {formConfig?.fields && formConfig.fields.length > 0 && (
               <Card>

@@ -30,6 +30,7 @@ import activityLogRouter from "./activityLog";
 import fileConverterRouter from "./fileConverter";
 import agentRouter from "./agent";
 import notesRouter from "./notes";
+import tuitionRouter from "./tuition";
 
 const router: IRouter = Router();
 
@@ -64,5 +65,6 @@ router.use(activityLogRouter);
 router.use(fileConverterRouter);
 router.use(agentRouter);
 router.use(notesRouter);
+router.use(tuitionRouter);
 
 export default router;

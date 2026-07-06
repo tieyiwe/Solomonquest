@@ -537,6 +537,75 @@ ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS enabled_features jsonb NOT N
 CREATE UNIQUE INDEX IF NOT EXISTS schools_custom_domain_unique ON public.schools (LOWER(custom_domain))
   WHERE custom_domain IS NOT NULL;
 
+-- ─── Tuition & student payments ──────────────────────────────────────────────
+-- Schools set a tuition amount per course or per program, choosing whether
+-- students can pay in full, in installments, or both. No payment processor
+-- is wired up yet (details/provider choice pending) -- payments are recorded
+-- and can be marked paid manually / via the "simulate payment" test endpoint
+-- so the whole flow can be built and tested end-to-end first. Deliberately
+-- NOT enforced anywhere yet (e.g. doesn't block enrollment or applications) --
+-- that gate gets turned on later once real payment processing is wired up.
+CREATE TABLE IF NOT EXISTS public.tuition_plans (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id           uuid NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  course_id           uuid REFERENCES public.courses(id) ON DELETE CASCADE,
+  program_id          uuid REFERENCES public.programs(id) ON DELETE CASCADE,
+  amount_cents        integer NOT NULL CHECK (amount_cents >= 0),
+  currency            text NOT NULL DEFAULT 'usd',
+  allow_full_payment  boolean NOT NULL DEFAULT true,
+  allow_installments  boolean NOT NULL DEFAULT false,
+  installment_count   integer NOT NULL DEFAULT 1 CHECK (installment_count >= 1),
+  created_by          uuid REFERENCES public.profiles(id),
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    (course_id IS NOT NULL AND program_id IS NULL) OR
+    (course_id IS NULL AND program_id IS NOT NULL)
+  )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS tuition_plans_one_per_course ON public.tuition_plans (course_id) WHERE course_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS tuition_plans_one_per_program ON public.tuition_plans (program_id) WHERE program_id IS NOT NULL;
+ALTER TABLE public.tuition_plans ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tuition_plans_all" ON public.tuition_plans;
+CREATE POLICY "tuition_plans_all" ON public.tuition_plans FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS public.tuition_payments (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id          uuid NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  student_id         uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  tuition_plan_id    uuid NOT NULL REFERENCES public.tuition_plans(id) ON DELETE CASCADE,
+  course_id          uuid REFERENCES public.courses(id) ON DELETE SET NULL,
+  program_id         uuid REFERENCES public.programs(id) ON DELETE SET NULL,
+  amount_cents       integer NOT NULL,
+  currency           text NOT NULL DEFAULT 'usd',
+  payment_method     text NOT NULL CHECK (payment_method IN ('full', 'installments')),
+  installment_count  integer NOT NULL DEFAULT 1,
+  status             text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'partial', 'paid', 'failed')),
+  provider           text NOT NULL DEFAULT 'manual',
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.tuition_payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tuition_payments_all" ON public.tuition_payments;
+CREATE POLICY "tuition_payments_all" ON public.tuition_payments FOR ALL USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS tuition_payments_student_idx ON public.tuition_payments (student_id);
+CREATE INDEX IF NOT EXISTS tuition_payments_school_idx ON public.tuition_payments (school_id);
+
+CREATE TABLE IF NOT EXISTS public.tuition_installments (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  payment_id          uuid NOT NULL REFERENCES public.tuition_payments(id) ON DELETE CASCADE,
+  installment_number  integer NOT NULL,
+  amount_cents        integer NOT NULL,
+  due_date            date NOT NULL,
+  status              text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'failed')),
+  paid_at             timestamptz,
+  UNIQUE (payment_id, installment_number)
+);
+ALTER TABLE public.tuition_installments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tuition_installments_all" ON public.tuition_installments;
+CREATE POLICY "tuition_installments_all" ON public.tuition_installments FOR ALL USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS tuition_installments_payment_idx ON public.tuition_installments (payment_id);
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

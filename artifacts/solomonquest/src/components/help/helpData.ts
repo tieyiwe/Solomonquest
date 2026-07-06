@@ -158,6 +158,23 @@ export const adminHelp: HelpCategory[] = [
           { problem: "Approved student can't log in", solution: "The student needs to complete registration first. Check if they received the approval email and clicked the setup link." },
         ],
       },
+      {
+        id: "set-tuition",
+        title: "Set tuition for a course or program",
+        icon: "💵",
+        summary: "Set a tuition amount per course or per program, and choose which payment options students can use.",
+        steps: [
+          { text: "Open the course (Courses -> edit) or program (Programs -> edit) you want to set tuition for." },
+          { text: "Scroll to the Tuition section at the bottom of the edit form." },
+          { text: "Enter the tuition amount." },
+          { text: "Turn on Allow Full Payment, Allow Installments, or both — students choose between whichever you enable." },
+          { text: "If installments are on, set how many installments to split the total into." },
+          { text: "Click Save Tuition." },
+        ],
+        troubleshoot: [
+          { problem: "Students aren't being asked to pay", solution: "Tuition + payment is currently informational only while it's being tested — it's not yet a requirement to submit an application or complete enrollment. That gate will be turned on later." },
+        ],
+      },
     ],
   },
   {
@@ -399,6 +416,17 @@ export const studentHelp: HelpCategory[] = [
         ],
         troubleshoot: [
           { problem: "A course I'm supposed to be in doesn't appear", solution: "Contact your school administrator — you may not have been added to that course's enrollment list yet." },
+        ],
+      },
+      {
+        id: "tuition-payment",
+        title: "Pay tuition during enrollment",
+        icon: "💵",
+        summary: "If a school has set tuition for a course, you'll see it at the review step of your application.",
+        steps: [
+          { text: "When applying to a school, the last step (Review & Submit) shows a Tuition & Payment section if the school has set a price for any course you selected." },
+          { text: "Choose Pay in Full or, if offered, split it into installments." },
+          { text: "This is optional for now — you can still submit your application and pay later." },
         ],
       },
       {

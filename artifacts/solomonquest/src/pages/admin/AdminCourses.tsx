@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import {
@@ -100,6 +100,135 @@ const defaultForm: CourseFormData = {
   classDate: "",
   classEndTime: "",
 };
+
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session?.access_token}`,
+      ...(options.headers ?? {}),
+    },
+  });
+}
+
+interface TuitionPlan {
+  id: string;
+  amountCents: number;
+  allowFullPayment: boolean;
+  allowInstallments: boolean;
+  installmentCount: number;
+}
+
+function TuitionTab({ courseId }: { courseId: string }) {
+  const [amount, setAmount] = useState("");
+  const [allowFull, setAllowFull] = useState(true);
+  const [allowInstallments, setAllowInstallments] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState("2");
+  const [existingPlanId, setExistingPlanId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiFetch(`/api/tuition-plans?courseId=${courseId}`)
+      .then((r) => r.json())
+      .then((plans: TuitionPlan[]) => {
+        const plan = plans?.[0];
+        if (plan) {
+          setExistingPlanId(plan.id);
+          setAmount((plan.amountCents / 100).toFixed(2));
+          setAllowFull(plan.allowFullPayment);
+          setAllowInstallments(plan.allowInstallments);
+          setInstallmentCount(String(plan.installmentCount));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  const handleSave = async () => {
+    if (!amount.trim() || parseFloat(amount) < 0) {
+      toast.error("Enter a valid tuition amount");
+      return;
+    }
+    if (!allowFull && !allowInstallments) {
+      toast.error("Enable at least one payment option");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiFetch("/api/tuition-plans", {
+        method: "POST",
+        body: JSON.stringify({
+          courseId,
+          amountCents: Math.round(parseFloat(amount) * 100),
+          allowFullPayment: allowFull,
+          allowInstallments,
+          installmentCount: parseInt(installmentCount, 10) || 2,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save tuition");
+      }
+      const data = await res.json();
+      setExistingPlanId(data.id);
+      toast.success("Tuition saved");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save tuition");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div className="text-sm text-gray-400">Loading…</div>;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Set the tuition for this course. Students see this at the end of enrollment — this isn't a required condition
+        yet, so applications aren't blocked on payment while this is being tested.
+      </p>
+      <div className="space-y-1.5">
+        <Label>Tuition Amount (USD)</Label>
+        <Input type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      </div>
+      <div className="flex items-center justify-between rounded-lg border p-3">
+        <div>
+          <p className="text-sm font-medium">Allow Full Payment</p>
+          <p className="text-xs text-muted-foreground">Pay the full tuition in one payment</p>
+        </div>
+        <Switch checked={allowFull} onCheckedChange={setAllowFull} />
+      </div>
+      <div className="flex items-center justify-between rounded-lg border p-3">
+        <div>
+          <p className="text-sm font-medium">Allow Installments</p>
+          <p className="text-xs text-muted-foreground">Split tuition into multiple partial payments</p>
+        </div>
+        <Switch checked={allowInstallments} onCheckedChange={setAllowInstallments} />
+      </div>
+      {allowInstallments && (
+        <div className="space-y-1.5 pl-3 border-l-2">
+          <Label>Number of Installments</Label>
+          <Input
+            type="number"
+            min="2"
+            value={installmentCount}
+            onChange={(e) => setInstallmentCount(e.target.value)}
+            className="max-w-[120px]"
+          />
+        </div>
+      )}
+      <Button onClick={handleSave} disabled={saving} size="sm">
+        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {existingPlanId ? "Update Tuition" : "Save Tuition"}
+      </Button>
+    </div>
+  );
+}
 
 async function updateLiveSettings(
   courseId: string,
@@ -417,6 +546,13 @@ function CourseFormDialog({
               onCheckedChange={(v) => set("isPublished", v)}
             />
           </div>
+
+          {mode === "edit" && course && (
+            <div className="space-y-2 pt-2 border-t">
+              <Label className="text-sm font-semibold">Tuition</Label>
+              <TuitionTab courseId={course.id} />
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
