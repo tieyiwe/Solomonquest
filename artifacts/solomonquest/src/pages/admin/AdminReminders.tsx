@@ -146,6 +146,7 @@ export default function AdminReminders() {
       return () => clearTimeout(timeout);
     } else {
       setTeachers([]);
+      return undefined;
     }
   }, [teacherSearch, targetType]);
 
