@@ -486,6 +486,16 @@ DROP POLICY IF EXISTS "note_shares_all" ON public.note_shares;
 CREATE POLICY "note_shares_all" ON public.note_shares FOR ALL USING (true);
 CREATE INDEX IF NOT EXISTS note_shares_user_idx ON public.note_shares (user_id);
 
+-- ─── Notification delivery (email fallback for offline users) ──────────────────
+-- notifications.type/metadata are already written by several routes
+-- (messages.ts, chat notifications below) but had no tracked migration.
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS type text;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS metadata jsonb DEFAULT '{}'::jsonb;
+
+-- profiles.email is read by several routes (applications.ts, messages.ts) to
+-- send email notifications, but had no tracked migration either.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email text;
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

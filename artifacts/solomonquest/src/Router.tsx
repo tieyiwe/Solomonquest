@@ -45,6 +45,7 @@ const ChatPage = lazy(() => import("@/pages/chat/ChatPage"));
 const ForumPage = lazy(() => import("@/pages/forum/ForumPage"));
 const ForumTopicPage = lazy(() => import("@/pages/forum/ForumTopicPage"));
 const NotificationPreferences = lazy(() => import("@/pages/settings/NotificationPreferences"));
+const NotificationsPage = lazy(() => import("@/pages/notifications/NotificationsPage"));
 const MessagesPage = lazy(() => import("@/pages/messages/MessagesPage"));
 const SuperAdminDashboard = lazy(() => import("@/pages/super-admin/SuperAdminDashboard"));
 const AdminDangerZone = lazy(() => import("@/pages/admin/AdminDangerZone"));
@@ -225,6 +226,9 @@ export function Router() {
         {/* Settings Routes */}
         <Route path="/settings/notifications">
           <ProtectedRoute><NotificationPreferences /></ProtectedRoute>
+        </Route>
+        <Route path="/notifications">
+          <ProtectedRoute><NotificationsPage /></ProtectedRoute>
         </Route>
 
         {/* Student Profile Route */}

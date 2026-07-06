@@ -4,6 +4,7 @@ import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { scanFile } from "../lib/fileScan";
 import { logger } from "../lib/logger";
+import { notifyUsers } from "../lib/notifications";
 
 const router: IRouter = Router();
 
@@ -506,6 +507,8 @@ router.post(
     }
 
     const profile = message.profiles as Record<string, unknown> | null;
+    const senderName =
+      [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Someone";
 
     res.status(201).json({
       id: message.id,
@@ -515,15 +518,49 @@ router.post(
       createdAt: message.created_at,
       sender: {
         id: message.sender_id,
-        name:
-          [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Unknown",
+        name: senderName,
         firstName: profile?.first_name ?? null,
         lastName: profile?.last_name ?? null,
         avatarUrl: profile?.avatar_url ?? null,
       },
     });
+
+    // Notify every other channel member — in-app row now, email if they're
+    // not around to see it. Fire-and-forget: don't block the send on this.
+    notifyOtherChannelMembers(channelId, req.userId!, senderName, content.trim()).catch((err) =>
+      logger.error({ err }, "Failed to notify channel members of new chat message")
+    );
   }
 );
+
+async function notifyOtherChannelMembers(
+  channelId: string,
+  senderId: string,
+  senderName: string,
+  content: string
+): Promise<void> {
+  const { data: members } = await supabaseAdmin
+    .from("chat_channel_members")
+    .select("user_id")
+    .eq("channel_id", channelId);
+
+  const recipientIds = (members ?? [])
+    .map((m: Record<string, unknown>) => m.user_id as string)
+    .filter((id) => id !== senderId);
+
+  if (recipientIds.length === 0) return;
+
+  const preview = content.length > 140 ? `${content.slice(0, 140)}…` : content;
+
+  await notifyUsers({
+    userIds: recipientIds,
+    type: "chat_message",
+    category: "chat",
+    title: `New message from ${senderName}`,
+    body: preview,
+    link: `/chat`,
+  });
+}
 
 // ─── POST /chat/channels/:channelId/attachments ──────────────────────────────
 // Uploads pass through this server (not client-direct-to-storage, unlike the
@@ -630,6 +667,12 @@ router.post(
         avatarUrl: profile?.avatar_url ?? null,
       },
     });
+
+    const senderName =
+      [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Someone";
+    notifyOtherChannelMembers(channelId, req.userId!, senderName, `Sent an attachment: ${req.file.originalname}`).catch(
+      (err) => logger.error({ err }, "Failed to notify channel members of new chat attachment")
+    );
   }
 );
 

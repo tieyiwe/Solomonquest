@@ -7,7 +7,7 @@ const router: IRouter = Router();
 router.get("/notifications", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const { data, error } = await supabaseAdmin
     .from("notifications")
-    .select("id, type, message, metadata, is_read, created_at")
+    .select("id, type, title, body, message, link, metadata, is_read, created_at")
     .eq("user_id", req.userId ?? "")
     .order("created_at", { ascending: false })
     .limit(50);
@@ -17,7 +17,16 @@ router.get("/notifications", requireAuth, async (req: AuthenticatedRequest, res)
     return;
   }
 
-  res.json(data ?? []);
+  const notifications = (data ?? []).map((n: Record<string, unknown>) => ({
+    id: n.id,
+    type: n.type ?? "info",
+    message: n.title ? `${n.title}${n.body ? ` — ${n.body}` : ""}` : (n.message as string | null) ?? "",
+    link: n.link ?? (n.metadata as Record<string, unknown> | null)?.link ?? null,
+    read: n.is_read ?? false,
+    created_at: n.created_at,
+  }));
+
+  res.json(notifications);
 });
 
 router.get("/notifications/unread-count", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {

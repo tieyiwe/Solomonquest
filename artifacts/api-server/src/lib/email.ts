@@ -489,3 +489,36 @@ export async function sendBroadcastEmail({
 
   await send(to, subject, baseLayout(subject, body));
 }
+
+// ─── 10. Generic Notification (fallback for any notifications row) ───────────
+// Used by lib/notifications.ts so any notification type (new chat message,
+// grade posted, etc.) can reach a user even when they're offline / the app
+// tab isn't open, without needing a bespoke template per event type.
+
+export interface GenericNotificationEmailParams {
+  to: string;
+  recipientName: string;
+  title: string;
+  body: string;
+  link?: string | null;
+  appUrl: string;
+}
+
+export async function sendGenericNotificationEmail({
+  to,
+  recipientName,
+  title,
+  body: message,
+  link,
+  appUrl,
+}: GenericNotificationEmailParams): Promise<void> {
+  const url = link ? `${appUrl}${link}` : appUrl;
+  const body = `
+    ${heading(title)}
+    ${paragraph(`Hi <strong>${recipientName}</strong>,`)}
+    ${paragraph(message)}
+    ${button(url, "View in SolomonQuest")}
+  `;
+
+  await send(to, title, baseLayout(title, body));
+}

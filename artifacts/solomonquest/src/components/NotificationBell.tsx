@@ -11,10 +11,7 @@ interface NotificationItem {
   message: string;
   created_at: string;
   read: boolean;
-  metadata?: {
-    link?: string;
-    [key: string]: unknown;
-  };
+  link?: string | null;
 }
 
 interface MessageItem {
@@ -116,9 +113,13 @@ export function NotificationBell() {
           table: "notifications",
           filter: `user_id=eq.${user.id}`,
         },
-        () => {
+        (payload) => {
           setNotifCount((c) => c + 1);
           triggerFlash();
+          const row = payload.new as { title?: string; body?: string; message?: string };
+          toast(row.title || row.message || "New notification", {
+            description: row.title ? row.body : undefined,
+          });
         }
       )
       .subscribe();
@@ -131,11 +132,13 @@ export function NotificationBell() {
           event: "INSERT",
           schema: "public",
           table: "internal_messages",
-          filter: `recipient_id=eq.${user.id}`,
+          filter: `to_user_id=eq.${user.id}`,
         },
-        () => {
+        (payload) => {
           setMsgCount((c) => c + 1);
           triggerFlash();
+          const row = payload.new as { subject?: string };
+          toast(`New message: ${row.subject ?? ""}`.trim());
         }
       )
       .subscribe();
@@ -218,9 +221,8 @@ export function NotificationBell() {
 
   const handleNotifClick = useCallback(
     (notif: NotificationItem) => {
-      const link = notif.metadata?.link;
-      if (link) {
-        navigate(link);
+      if (notif.link) {
+        navigate(notif.link);
       }
       setOpen(false);
     },
