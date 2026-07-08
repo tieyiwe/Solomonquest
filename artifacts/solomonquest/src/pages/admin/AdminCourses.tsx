@@ -593,7 +593,7 @@ function InviteTeacherDialog() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to send invitation");
+        throw new Error(err.error || err.message || "Failed to send invitation");
       }
       toast.success(`Invitation sent to ${email.trim()}`);
       setEmail("");

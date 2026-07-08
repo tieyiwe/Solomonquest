@@ -87,19 +87,20 @@ export const adminHelp: HelpCategory[] = [
     articles: [
       {
         id: "invite-teacher",
-        title: "Invite a teacher or staff member",
+        title: "Invite a teacher, staff member, or transferring student",
         icon: "✉️",
-        summary: "Send an email invitation so teachers and staff can create their account.",
+        summary: "Send an email invitation so teachers, staff, or already-enrolled-elsewhere students can create their account directly.",
         steps: [
           { text: "Go to Users in the left sidebar." },
-          { text: "Click the Invite button (top right)." },
-          { text: "Enter the person's email address and select their role (Teacher or Staff)." },
-          { text: "Click Send Invitation. They receive an email with an Accept button.", detail: "The link expires after 7 days. You can resend from the Invitations tab." },
-          { text: "Once they accept, their account appears in the Users list." },
+          { text: "Pick the Teachers, Students, or Staff tab, then click the Invite button." },
+          { text: "Enter the person's email address." },
+          { text: "Click Send Invitation. They receive an email with an Accept button.", detail: "The link expires after 7 days. Check the Invitations tab for status." },
+          { text: "Once they accept, their account appears in the Users list under the matching role." },
         ],
         troubleshoot: [
           { problem: "Invitation email not received", solution: "Ask the recipient to check their spam folder. You can also resend the invitation from Users → Invitations tab." },
           { problem: "Teacher can't see their courses after accepting", solution: "Go to Courses and verify the teacher is assigned to the course." },
+          { problem: "New invitation isn't showing up in the Invitations tab yet", solution: "The list refreshes when you open the Invitations tab — switch to another tab and back, or reload the page." },
         ],
       },
       {

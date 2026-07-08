@@ -249,14 +249,14 @@ function InviteButton({
   role,
   onSent,
 }: {
-  role: "teacher" | "staff";
+  role: "teacher" | "staff" | "student";
   onSent: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const roleLabel = role === "teacher" ? "Teacher" : "Staff Member";
-  const placeholder = role === "teacher" ? "teacher@school.edu" : "staff@school.edu";
+  const roleLabel = role === "teacher" ? "Teacher" : role === "staff" ? "Staff Member" : "Student";
+  const placeholder = role === "teacher" ? "teacher@school.edu" : role === "staff" ? "staff@school.edu" : "student@school.edu";
 
   const handleSend = async () => {
     if (!email.trim()) return;
@@ -522,6 +522,13 @@ export default function AdminUsers() {
 
           <TabsContent value="students" className="mt-0">
             <Card className="border-0 shadow-sm">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <p className="text-sm text-muted-foreground">
+                  Students enrolled in your school. New applicants should still go through Admissions —
+                  use Invite Student for students transferring in from another school who don't need to apply.
+                </p>
+                <InviteButton role="student" onSent={() => { addInvite(); setActiveTab("invitations"); }} />
+              </div>
               <CardContent className="p-0">
                 <UserTable role="student" search={search} />
               </CardContent>

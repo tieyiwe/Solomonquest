@@ -90,8 +90,9 @@ export default function AcceptInvitePage() {
       setTimeout(() => {
         const role = invite.role;
         if (role === "teacher") setLocation("/dashboard/teacher");
-        else if (role === "staff") setLocation("/dashboard/student");
-        else setLocation("/dashboard");
+        else if (role === "staff" || role === "student") setLocation("/dashboard/student");
+        else if (role === "admin" || role === "super_admin") setLocation("/dashboard/admin");
+        else setLocation("/dashboard/student");
       }, 1500);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
