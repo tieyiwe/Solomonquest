@@ -606,6 +606,12 @@ DROP POLICY IF EXISTS "tuition_installments_all" ON public.tuition_installments;
 CREATE POLICY "tuition_installments_all" ON public.tuition_installments FOR ALL USING (true) WITH CHECK (true);
 CREATE INDEX IF NOT EXISTS tuition_installments_payment_idx ON public.tuition_installments (payment_id);
 
+-- ─── Invite a transferring student straight into a program ─────────────────────
+-- When inviting an existing (non-applicant) student, an admin can pick a
+-- program up front so accepting the invite auto-enrolls them in every
+-- course in that program, same as the normal program cascade-enroll.
+ALTER TABLE public.invitations ADD COLUMN IF NOT EXISTS program_id uuid REFERENCES public.programs(id) ON DELETE SET NULL;
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

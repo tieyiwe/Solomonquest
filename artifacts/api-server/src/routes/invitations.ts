@@ -3,6 +3,7 @@ import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { sendEnhancedInvite, sendWelcomeEmail } from "../lib/email";
 import { enrollUserInSchoolChannels } from "./chat";
+import { enrollStudentInCourse } from "../lib/enrollment";
 
 const router: IRouter = Router();
 
@@ -20,7 +21,7 @@ router.post(
         return;
       }
 
-      const { email, role = "teacher" } = req.body as { email?: string; role?: string };
+      const { email, role = "teacher", programId } = req.body as { email?: string; role?: string; programId?: string };
 
       if (!email) {
         res.status(400).json({ error: "email is required" });
@@ -30,6 +31,24 @@ router.post(
       if (!schoolId) {
         res.status(400).json({ error: "No school associated with this account" });
         return;
+      }
+
+      if (programId && role !== "student") {
+        res.status(400).json({ error: "programId only applies to student invitations" });
+        return;
+      }
+
+      if (programId) {
+        const { data: program } = await supabaseAdmin
+          .from("programs")
+          .select("id")
+          .eq("id", programId)
+          .eq("school_id", schoolId)
+          .maybeSingle();
+        if (!program) {
+          res.status(404).json({ error: "Program not found" });
+          return;
+        }
       }
 
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -43,6 +62,7 @@ router.post(
           invited_by: userId,
           status: "pending",
           expires_at: expiresAt,
+          program_id: programId ?? null,
         })
         .select()
         .single();
@@ -102,7 +122,7 @@ router.get(
 
       const { data: invitations, error } = await supabaseAdmin
         .from("invitations")
-        .select("id, email, role, status, created_at, expires_at, accepted_at")
+        .select("id, email, role, status, created_at, expires_at, accepted_at, program_id, programs(name)")
         .eq("school_id", schoolId)
         .order("created_at", { ascending: false });
 
@@ -112,7 +132,13 @@ router.get(
         return;
       }
 
-      res.json({ invitations });
+      res.json({
+        invitations: (invitations ?? []).map((inv: Record<string, unknown>) => ({
+          ...inv,
+          programName: (inv.programs as Record<string, unknown> | null)?.name ?? null,
+          programs: undefined,
+        })),
+      });
     } catch (err: any) {
       console.error("[invitations] Unhandled error in GET /invitations:", err);
       res.status(500).json({ error: err?.message ?? "Internal server error" });
@@ -224,7 +250,7 @@ router.post(
 
       const { data: invitation, error } = await supabaseAdmin
         .from("invitations")
-        .select("id, email, role, status, expires_at, school_id, invited_by")
+        .select("id, email, role, status, expires_at, school_id, invited_by, program_id")
         .eq("token", token)
         .single();
 
@@ -262,6 +288,23 @@ router.post(
       enrollUserInSchoolChannels(userId!, invitation.school_id, invitation.invited_by).catch((e) =>
         console.warn("[invitations] chat enroll error:", e)
       );
+
+      // A transferring student invited straight into a program gets enrolled
+      // in every course of that program, same as the normal cascade-enroll
+      // path (non-blocking; the account is still created either way).
+      if (invitation.role === "student" && invitation.program_id) {
+        supabaseAdmin
+          .from("courses")
+          .select("id")
+          .eq("program_id", invitation.program_id)
+          .then(async ({ data: programCourses }) => {
+            for (const course of programCourses ?? []) {
+              await enrollStudentInCourse(course.id as string, userId!).catch((e) =>
+                console.warn("[invitations] program enroll error:", e)
+              );
+            }
+          });
+      }
 
       // Mark invitation as accepted
       const { error: inviteUpdateError } = await supabaseAdmin

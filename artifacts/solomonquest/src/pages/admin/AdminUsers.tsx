@@ -4,6 +4,7 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import {
   useListUsers,
   useUpdateUserRole,
+  useListPrograms,
   getListUsersQueryKey,
 } from "@workspace/api-client-react";
 import { supabase } from "@/lib/supabase";
@@ -254,9 +255,11 @@ function InviteButton({
 }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
+  const [programId, setProgramId] = useState("");
   const [loading, setLoading] = useState(false);
   const roleLabel = role === "teacher" ? "Teacher" : role === "staff" ? "Staff Member" : "Student";
   const placeholder = role === "teacher" ? "teacher@school.edu" : role === "staff" ? "staff@school.edu" : "student@school.edu";
+  const { data: programs } = useListPrograms({ query: { enabled: role === "student" && open } });
 
   const handleSend = async () => {
     if (!email.trim()) return;
@@ -274,7 +277,7 @@ function InviteButton({
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ email: email.trim(), role }),
+        body: JSON.stringify({ email: email.trim(), role, programId: role === "student" && programId ? programId : undefined }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -283,6 +286,7 @@ function InviteButton({
       onSent();
       toast.success(`Invitation sent to ${email.trim()}`);
       setEmail("");
+      setProgramId("");
       setOpen(false);
     } catch (err: any) {
       toast.error(err.message || "Failed to send invitation");
@@ -315,6 +319,26 @@ function InviteButton({
               autoFocus
             />
           </div>
+          {role === "student" && (
+            <div className="space-y-1.5">
+              <Label>Program (optional)</Label>
+              <Select value={programId} onValueChange={setProgramId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="No program — enroll in courses manually later" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(programs ?? []).map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                If picked, they're automatically enrolled in every course in this program as soon as they accept.
+              </p>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
             They'll receive an email to create their account and join your school as a{" "}
             {roleLabel.toLowerCase()}.
@@ -341,6 +365,7 @@ interface Invitation {
   created_at: string;
   expires_at: string;
   accepted_at?: string | null;
+  programName?: string | null;
 }
 
 function statusBadge(status: string) {
@@ -421,13 +446,20 @@ function InvitationsTab({ refreshKey }: { refreshKey: number }) {
           <TableRow key={inv.id}>
             <TableCell className="font-medium text-sm">{inv.email}</TableCell>
             <TableCell>
-              {inv.role === "teacher" ? (
-                <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Teacher</Badge>
-              ) : inv.role === "staff" ? (
-                <Badge className="bg-orange-100 text-orange-700 border-orange-200 border">Staff</Badge>
-              ) : (
-                <Badge variant="outline" className="capitalize">{inv.role}</Badge>
-              )}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {inv.role === "teacher" ? (
+                  <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Teacher</Badge>
+                ) : inv.role === "staff" ? (
+                  <Badge className="bg-orange-100 text-orange-700 border-orange-200 border">Staff</Badge>
+                ) : (
+                  <Badge variant="outline" className="capitalize">{inv.role}</Badge>
+                )}
+                {inv.programName && (
+                  <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 border text-xs">
+                    {inv.programName}
+                  </Badge>
+                )}
+              </div>
             </TableCell>
             <TableCell>{statusBadge(inv.status)}</TableCell>
             <TableCell className="text-sm text-muted-foreground">
