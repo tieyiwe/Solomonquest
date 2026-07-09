@@ -679,6 +679,18 @@ BEGIN
   END IF;
 END $$;
 
+-- ─── Activity log columns (teacher activity ranking + login history) ──────────
+-- POST /activity-log (lib/activityLogger.ts, called on every login/logout from
+-- the client, and by the teacher-activity ranking below) has always written
+-- `performed_by` and `metadata`, but platform_audit_log was only ever defined
+-- with `actor_id` and `details` — every one of those inserts, including every
+-- login/logout event, has been silently failing with a schema-cache error the
+-- client's fire-and-forget logActivity() swallows. Add the columns the code
+-- actually uses instead of rewriting every call site.
+ALTER TABLE public.platform_audit_log ADD COLUMN IF NOT EXISTS performed_by uuid REFERENCES public.profiles(id);
+ALTER TABLE public.platform_audit_log ADD COLUMN IF NOT EXISTS metadata jsonb;
+CREATE INDEX IF NOT EXISTS platform_audit_log_performed_by_idx ON public.platform_audit_log (performed_by, action, created_at);
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

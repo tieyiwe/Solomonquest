@@ -23,6 +23,13 @@ import {
   TrendingUp,
   Activity,
   Download,
+  Trophy,
+  MessagesSquare,
+  Reply,
+  ClipboardCheck,
+  Upload,
+  LogIn,
+  ArrowUpDown,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -74,6 +81,21 @@ interface AdminAnalyticsData {
   top_courses: TopCourse[];
   student_activity: StudentActivity;
   teacher_performance: TeacherPerformance[];
+}
+interface TeacherActivity {
+  teacherId: string;
+  name: string;
+  avatarUrl: string | null;
+  lastOnlineAt: string | null;
+  lastLoginAt: string | null;
+  forumPosts: number;
+  forumReplies: number;
+  quizzesCreated: number;
+  resourcesUploaded: number;
+  chatMessages: number;
+  loginCount: number;
+  activityScore: number;
+  rank: number;
 }
 interface DashboardStats {
   totalStudents?: number;
@@ -649,6 +671,9 @@ export default function AdminAnalytics() {
               </Card>
             </div>
 
+            {/* Teacher Activity Ranking */}
+            <TeacherActivityRanking />
+
             {/* Activity Log */}
             <ActivityLog />
 
@@ -656,6 +681,189 @@ export default function AdminAnalytics() {
         </main>
       </div>
     </div>
+  );
+}
+
+// ─── Teacher Activity Ranking ──────────────────────────────────────────────────
+
+type ActivitySortKey = "activityScore" | "forumPosts" | "forumReplies" | "quizzesCreated" | "resourcesUploaded" | "chatMessages" | "loginCount";
+
+const ACTIVITY_COLUMNS: { key: ActivitySortKey; label: string; icon: React.ElementType }[] = [
+  { key: "forumPosts", label: "Forum Posts", icon: MessagesSquare },
+  { key: "forumReplies", label: "Forum Replies", icon: Reply },
+  { key: "quizzesCreated", label: "Quizzes Created", icon: ClipboardCheck },
+  { key: "resourcesUploaded", label: "Resources", icon: Upload },
+  { key: "chatMessages", label: "Chat Messages", icon: MessageCircle },
+  { key: "loginCount", label: "Logins", icon: LogIn },
+];
+
+function getInitialsFromName(name: string) {
+  const parts = name.trim().split(/\s+/);
+  return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase() || "T";
+}
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "Never";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function TeacherActivityRanking() {
+  const [teachers, setTeachers] = useState<TeacherActivity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sortKey, setSortKey] = useState<ActivitySortKey>("activityScore");
+
+  useEffect(() => {
+    apiFetch<{ teachers: TeacherActivity[] }>("/api/analytics/admin/teacher-activity")
+      .then((d) => setTeachers(d.teachers ?? []))
+      .catch(() => toast.error("Failed to load teacher activity"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const sorted = [...teachers].sort((a, b) => b[sortKey] - a[sortKey]);
+
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-primary" />
+              Teacher Activity Ranking
+            </CardTitle>
+            <CardDescription>
+              Who's actively using the platform — forum posts, replies, quizzes created, resources
+              uploaded, chat messages, and logins.
+            </CardDescription>
+          </div>
+          {!loading && teachers.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => {
+                const rows = sorted.map((t) => ({
+                  rank: t.rank,
+                  name: t.name,
+                  activity_score: t.activityScore,
+                  forum_posts: t.forumPosts,
+                  forum_replies: t.forumReplies,
+                  quizzes_created: t.quizzesCreated,
+                  resources_uploaded: t.resourcesUploaded,
+                  chat_messages: t.chatMessages,
+                  logins: t.loginCount,
+                  last_login: t.lastLoginAt ?? "",
+                  last_active: t.lastOnlineAt ?? "",
+                }));
+                exportCSV(rows, "teacher-activity-ranking.csv");
+              }}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-gray-50/60">
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap">
+                  Rank
+                </th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap">
+                  Teacher
+                </th>
+                {ACTIVITY_COLUMNS.map(({ key, label, icon: Icon }) => (
+                  <th
+                    key={key}
+                    className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap cursor-pointer hover:text-foreground select-none"
+                    onClick={() => setSortKey(key)}
+                    title={`Sort by ${label}`}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      <Icon className="h-3 w-3" />
+                      {label}
+                      {sortKey === key && <ArrowUpDown className="h-3 w-3" />}
+                    </span>
+                  </th>
+                ))}
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap">
+                  Last Active
+                </th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap">
+                  Last Login
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b">
+                    {Array.from({ length: 9 }).map((_, j) => (
+                      <td key={j} className="px-4 py-3"><Skeleton className="h-4 w-full max-w-[90px]" /></td>
+                    ))}
+                  </tr>
+                ))
+              ) : sorted.length > 0 ? (
+                sorted.map((t, idx) => (
+                  <tr key={t.teacherId} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold ${
+                          idx === 0 ? "bg-yellow-100 text-yellow-700" :
+                          idx === 1 ? "bg-gray-200 text-gray-700" :
+                          idx === 2 ? "bg-orange-100 text-orange-700" :
+                          "bg-gray-50 text-muted-foreground"
+                        }`}
+                      >
+                        {idx + 1}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <Avatar className="h-7 w-7 border shrink-0">
+                          <AvatarImage src={t.avatarUrl || ""} />
+                          <AvatarFallback className="text-[10px] bg-primary/10 text-primary font-semibold">
+                            {getInitialsFromName(t.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium text-gray-900 whitespace-nowrap">{t.name}</p>
+                          <p className="text-[11px] text-muted-foreground">Score: {t.activityScore}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{t.forumPosts}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{t.forumReplies}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{t.quizzesCreated}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{t.resourcesUploaded}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{t.chatMessages}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{t.loginCount}</td>
+                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{timeAgo(t.lastOnlineAt)}</td>
+                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{timeAgo(t.lastLoginAt)}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={9} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                    No teacher activity data available.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

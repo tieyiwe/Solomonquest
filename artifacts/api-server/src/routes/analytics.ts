@@ -506,4 +506,164 @@ router.get("/analytics/teacher", requireAuth, async (req: AuthenticatedRequest, 
   }
 });
 
+// ─── GET /analytics/admin/teacher-activity ───────────────────────────────────
+// A ranking of every teacher's platform activity — forum posts/replies, quizzes
+// created, chat messages sent, resources uploaded, and login history — so an
+// admin can see who's actually using the platform vs. who's dormant.
+
+router.get(
+  "/analytics/admin/teacher-activity",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const role = req.userRole;
+    if (role !== "admin" && role !== "super_admin") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const schoolId = req.schoolId ?? "";
+
+    try {
+      const { data: teacherRows } = await supabaseAdmin
+        .from("profiles")
+        .select("id, first_name, last_name, avatar_url, online_at")
+        .eq("school_id", schoolId)
+        .eq("role", "teacher");
+
+      const teachers = teacherRows ?? [];
+      if (teachers.length === 0) {
+        res.json({ teachers: [] });
+        return;
+      }
+      const teacherIds = teachers.map((t) => t.id as string);
+
+      const { data: courseRows } = await supabaseAdmin
+        .from("courses")
+        .select("id, teacher_id")
+        .eq("school_id", schoolId)
+        .in("teacher_id", teacherIds);
+
+      const courseIds = (courseRows ?? []).map((c) => c.id as string);
+      const teacherByCourse: Record<string, string> = {};
+      for (const c of courseRows ?? []) {
+        teacherByCourse[c.id as string] = c.teacher_id as string;
+      }
+
+      const countByTeacher = () => new Map(teacherIds.map((id) => [id, 0]));
+
+      // Forum posts (topics) — attributable directly to the author, school-wide.
+      const forumPosts = countByTeacher();
+      const { data: topicRows } = await supabaseAdmin
+        .from("forum_topics")
+        .select("author_id")
+        .eq("school_id", schoolId)
+        .in("author_id", teacherIds);
+      for (const t of topicRows ?? []) {
+        const id = t.author_id as string;
+        forumPosts.set(id, (forumPosts.get(id) ?? 0) + 1);
+      }
+
+      // Forum replies (comments) — comments don't carry school_id directly,
+      // so scope by author being one of this school's teachers.
+      const forumReplies = countByTeacher();
+      const { data: commentRows } = await supabaseAdmin
+        .from("forum_comments")
+        .select("author_id")
+        .in("author_id", teacherIds);
+      for (const c of commentRows ?? []) {
+        const id = c.author_id as string;
+        forumReplies.set(id, (forumReplies.get(id) ?? 0) + 1);
+      }
+
+      // Quizzes created — scoped to their own courses.
+      const quizzesCreated = countByTeacher();
+      if (courseIds.length > 0) {
+        const { data: quizRows } = await supabaseAdmin
+          .from("quizzes")
+          .select("created_by, course_id")
+          .in("course_id", courseIds);
+        for (const q of quizRows ?? []) {
+          const id = (q.created_by as string) ?? teacherByCourse[q.course_id as string];
+          if (id && quizzesCreated.has(id)) quizzesCreated.set(id, (quizzesCreated.get(id) ?? 0) + 1);
+        }
+      }
+
+      // Resources uploaded — course resources they own.
+      const resourcesUploaded = countByTeacher();
+      const { data: resourceRows } = await supabaseAdmin
+        .from("course_resources")
+        .select("uploaded_by")
+        .in("uploaded_by", teacherIds);
+      for (const r of resourceRows ?? []) {
+        const id = r.uploaded_by as string;
+        resourcesUploaded.set(id, (resourcesUploaded.get(id) ?? 0) + 1);
+      }
+
+      // Chat messages sent — how much they're actually talking to students.
+      const chatMessages = countByTeacher();
+      const { data: messageRows } = await supabaseAdmin
+        .from("chat_messages")
+        .select("sender_id")
+        .in("sender_id", teacherIds);
+      for (const m of messageRows ?? []) {
+        const id = m.sender_id as string;
+        chatMessages.set(id, (chatMessages.get(id) ?? 0) + 1);
+      }
+
+      // Login history — count + most recent, from the activity log (see
+      // POST /activity-log, called on every client-side sign-in).
+      const loginCount = countByTeacher();
+      const lastLogin = new Map<string, string | null>(teacherIds.map((id) => [id, null]));
+      const { data: loginRows } = await supabaseAdmin
+        .from("platform_audit_log")
+        .select("performed_by, created_at")
+        .eq("action", "login")
+        .in("performed_by", teacherIds)
+        .order("created_at", { ascending: false });
+      for (const l of loginRows ?? []) {
+        const id = l.performed_by as string;
+        loginCount.set(id, (loginCount.get(id) ?? 0) + 1);
+        if (!lastLogin.get(id)) lastLogin.set(id, l.created_at as string);
+      }
+
+      const result = teachers
+        .map((t) => {
+          const id = t.id as string;
+          const name = `${t.first_name ?? ""} ${t.last_name ?? ""}`.trim() || "Unknown";
+          const activity = {
+            forumPosts: forumPosts.get(id) ?? 0,
+            forumReplies: forumReplies.get(id) ?? 0,
+            quizzesCreated: quizzesCreated.get(id) ?? 0,
+            resourcesUploaded: resourcesUploaded.get(id) ?? 0,
+            chatMessages: chatMessages.get(id) ?? 0,
+            loginCount: loginCount.get(id) ?? 0,
+          };
+          const activityScore =
+            activity.forumPosts * 3 +
+            activity.forumReplies * 2 +
+            activity.quizzesCreated * 5 +
+            activity.resourcesUploaded * 4 +
+            activity.chatMessages * 1 +
+            activity.loginCount * 1;
+          return {
+            teacherId: id,
+            name,
+            avatarUrl: t.avatar_url as string | null,
+            lastOnlineAt: (t.online_at as string) ?? null,
+            lastLoginAt: lastLogin.get(id) ?? null,
+            ...activity,
+            activityScore,
+          };
+        })
+        .sort((a, b) => b.activityScore - a.activityScore)
+        .map((t, i) => ({ ...t, rank: i + 1 }));
+
+      res.json({ teachers: result });
+    } catch (err: any) {
+      console.error("[analytics/admin/teacher-activity]", err);
+      res.status(500).json({ error: err?.message ?? "Internal server error" });
+    }
+  }
+);
+
 export default router;
