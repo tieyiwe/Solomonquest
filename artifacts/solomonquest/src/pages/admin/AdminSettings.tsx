@@ -69,15 +69,18 @@ const ROLES = [
 ] as const;
 
 const FEATURES = [
-  { key: "chat", label: "Chat" },
-  { key: "forum", label: "Forum" },
-  { key: "quizzes", label: "Quizzes" },
-  { key: "resources", label: "Resources" },
-  { key: "video", label: "Video Lessons" },
-  { key: "assignments", label: "Assignments" },
-  { key: "announcements", label: "Announcements" },
-  { key: "grades", label: "Grades" },
-  { key: "applications", label: "Applications" },
+  { key: "chat", label: "Chat", roles: ["teacher", "student", "staff"] },
+  { key: "forum", label: "Forum", roles: ["teacher", "student", "staff"] },
+  { key: "quizzes", label: "Quizzes", roles: ["teacher", "student", "staff"] },
+  { key: "resources", label: "Resources", roles: ["teacher", "student", "staff"] },
+  { key: "video", label: "Video Lessons", roles: ["teacher", "student", "staff"] },
+  { key: "assignments", label: "Assignments", roles: ["teacher", "student", "staff"] },
+  { key: "announcements", label: "Announcements", roles: ["teacher", "student", "staff"] },
+  { key: "grades", label: "Grades", roles: ["teacher", "student", "staff"] },
+  { key: "applications", label: "Applications", roles: ["teacher", "student", "staff"] },
+  { key: "student_contact_info", label: "View Student Contact Info (email, phone)", roles: ["teacher"] },
+  { key: "student_program_info", label: "View Student Program & Courses", roles: ["teacher"] },
+  { key: "student_attendance", label: "View Student Attendance", roles: ["teacher"] },
 ] as const;
 
 type RoleKey = (typeof ROLES)[number]["key"];
@@ -85,9 +88,9 @@ type FeatureKey = (typeof FEATURES)[number]["key"];
 type PermissionMatrix = Record<RoleKey, Record<FeatureKey, boolean>>;
 
 const DEFAULT_PERMS: PermissionMatrix = {
-  teacher: { chat: true, forum: true, quizzes: true, resources: true, video: true, assignments: true, announcements: true, grades: true, applications: true },
-  student: { chat: true, forum: true, quizzes: true, resources: true, video: true, assignments: true, announcements: false, grades: true, applications: false },
-  staff: { chat: false, forum: true, quizzes: false, resources: true, video: false, assignments: false, announcements: true, grades: false, applications: true },
+  teacher: { chat: true, forum: true, quizzes: true, resources: true, video: true, assignments: true, announcements: true, grades: true, applications: true, student_contact_info: false, student_program_info: false, student_attendance: false },
+  student: { chat: true, forum: true, quizzes: true, resources: true, video: true, assignments: true, announcements: false, grades: true, applications: false, student_contact_info: false, student_program_info: false, student_attendance: false },
+  staff: { chat: false, forum: true, quizzes: false, resources: true, video: false, assignments: false, announcements: true, grades: false, applications: true, student_contact_info: false, student_program_info: false, student_attendance: false },
 };
 
 function PermissionsTab({ schoolId }: { schoolId: string | undefined }) {
@@ -164,7 +167,7 @@ function PermissionsTab({ schoolId }: { schoolId: string | undefined }) {
             <CardContent>
               {loading ? (
                 <div className="space-y-4">
-                  {FEATURES.map((f) => (
+                  {FEATURES.filter((f) => (f.roles as readonly string[]).includes(role.key)).map((f) => (
                     <div key={f.key} className="flex items-center justify-between">
                       <Skeleton className="h-4 w-32" />
                       <Skeleton className="h-6 w-10 rounded-full" />
@@ -173,7 +176,7 @@ function PermissionsTab({ schoolId }: { schoolId: string | undefined }) {
                 </div>
               ) : (
                 <div className="divide-y">
-                  {FEATURES.map((feature) => {
+                  {FEATURES.filter((feature) => (feature.roles as readonly string[]).includes(role.key)).map((feature) => {
                     const key = `${role.key}:${feature.key}`;
                     const isToggling = toggling === key;
                     return (

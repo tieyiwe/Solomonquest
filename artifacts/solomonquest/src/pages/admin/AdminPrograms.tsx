@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { supabase } from "@/lib/supabase";
+import { StudentDetailDialog } from "@/components/StudentDetailDialog";
 import {
   useListPrograms,
   useCreateProgram,
@@ -64,6 +65,66 @@ const defaultForm: ProgramFormData = {
   description: "",
   isActive: true,
 };
+
+interface ProgramRosterStudent {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+  courses: { id: string; title: string; code: string | null }[];
+}
+
+function ProgramRosterTab({ programId }: { programId: string }) {
+  const [students, setStudents] = useState<ProgramRosterStudent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [viewStudentId, setViewStudentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch(`/api/programs/${programId}/students`)
+      .then((r) => r.json())
+      .then((data) => setStudents(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [programId]);
+
+  if (loading) return <div className="text-sm text-gray-400">Loading…</div>;
+
+  return (
+    <div>
+      {students.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No students enrolled in this program's courses yet.</p>
+      ) : (
+        <ul className="divide-y rounded-lg border">
+          {students.map((s) => (
+            <li key={s.id}>
+              <button
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50"
+                onClick={() => setViewStudentId(s.id)}
+              >
+                <div className="h-7 w-7 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center shrink-0">
+                  {`${s.firstName?.[0] ?? ""}${s.lastName?.[0] ?? ""}`.toUpperCase() || "S"}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    {s.firstName} {s.lastName}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {s.courses.map((c) => c.title).join(", ")}
+                  </p>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <StudentDetailDialog
+        studentId={viewStudentId}
+        open={!!viewStudentId}
+        onOpenChange={(v) => { if (!v) setViewStudentId(null); }}
+      />
+    </div>
+  );
+}
 
 async function apiFetch(path: string, options: RequestInit = {}) {
   const {
@@ -319,10 +380,16 @@ function ProgramFormDialog({
           </div>
 
           {mode === "edit" && program && (
-            <div className="space-y-2 pt-2 border-t">
-              <Label className="text-sm font-semibold">Tuition</Label>
-              <ProgramTuitionTab programId={program.id} />
-            </div>
+            <>
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-sm font-semibold">Enrolled Students</Label>
+                <ProgramRosterTab programId={program.id} />
+              </div>
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-sm font-semibold">Tuition</Label>
+                <ProgramTuitionTab programId={program.id} />
+              </div>
+            </>
           )}
         </div>
         <DialogFooter>

@@ -6,6 +6,7 @@ import {
   useGetCourse,
   useListAssignments,
   useSubmitAssignment,
+  useGetCourseStudents,
   getListAssignmentsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -152,6 +153,49 @@ function ResourcesTab({ courseId }: { courseId: string }) {
             )}
           </CardContent>
         </Card>
+      ))}
+    </div>
+  );
+}
+
+function ClassmatesTab({ courseId }: { courseId: string }) {
+  const { user } = useAuth();
+  const { data: students, isLoading } = useGetCourseStudents(courseId, {
+    query: { enabled: !!courseId },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-14 w-full rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  const classmates = (students ?? []).filter((s) => s.id !== user?.id);
+
+  if (classmates.length === 0) {
+    return (
+      <div className="text-center py-12 border border-dashed rounded-lg">
+        <Users className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+        <p className="text-muted-foreground">No other students enrolled yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {classmates.map((s) => (
+        <div key={s.id} className="flex items-center gap-3 rounded-lg border p-3">
+          <div className="h-9 w-9 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center shrink-0">
+            {`${s.firstName?.[0] ?? ""}${s.lastName?.[0] ?? ""}`.toUpperCase() || "S"}
+          </div>
+          <span className="text-sm font-medium">
+            {s.firstName} {s.lastName}
+          </span>
+        </div>
       ))}
     </div>
   );
@@ -620,11 +664,12 @@ export default function StudentCourseDetail() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="w-full grid grid-cols-5 h-auto p-1">
+          <TabsList className="w-full grid grid-cols-6 h-auto p-1">
             <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
             <TabsTrigger value="resources" className="text-xs sm:text-sm">Resources</TabsTrigger>
             <TabsTrigger value="assignments" className="text-xs sm:text-sm">Assignments</TabsTrigger>
             <TabsTrigger value="quizzes" className="text-xs sm:text-sm">Quizzes</TabsTrigger>
+            <TabsTrigger value="classmates" className="text-xs sm:text-sm">Classmates</TabsTrigger>
             <TabsTrigger value="video" className="text-xs sm:text-sm">Live</TabsTrigger>
           </TabsList>
 
@@ -699,6 +744,10 @@ export default function StudentCourseDetail() {
 
           <TabsContent value="quizzes" className="mt-6">
             <QuizzesTab courseId={courseId} />
+          </TabsContent>
+
+          <TabsContent value="classmates" className="mt-6">
+            <ClassmatesTab courseId={courseId} />
           </TabsContent>
 
           <TabsContent value="video" className="mt-6">

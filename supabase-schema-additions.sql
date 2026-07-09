@@ -612,6 +612,13 @@ CREATE INDEX IF NOT EXISTS tuition_installments_payment_idx ON public.tuition_in
 -- course in that program, same as the normal program cascade-enroll.
 ALTER TABLE public.invitations ADD COLUMN IF NOT EXISTS program_id uuid REFERENCES public.programs(id) ON DELETE SET NULL;
 
+-- ─── Student detail view (admin/teacher) ─────────────────────────────────────
+-- profiles had no created_at, needed to show "enrolled since" on the new
+-- expandable student detail card. Existing rows backfill to now() since the
+-- real join date wasn't tracked before -- not perfectly accurate historically,
+-- but every row going forward is correct.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

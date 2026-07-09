@@ -14,6 +14,9 @@ const DEFAULT_FEATURES = [
   "announcements",
   "grades",
   "applications",
+  "student_contact_info",
+  "student_program_info",
+  "student_attendance",
 ];
 
 // GET /permissions/my - get current user's permissions based on their role and school

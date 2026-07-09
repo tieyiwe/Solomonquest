@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { StudentDetailDialog } from "@/components/StudentDetailDialog";
 import {
   useListCourses,
   useCreateCourse,
@@ -226,6 +227,60 @@ function TuitionTab({ courseId }: { courseId: string }) {
         {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         {existingPlanId ? "Update Tuition" : "Save Tuition"}
       </Button>
+    </div>
+  );
+}
+
+interface RosterStudent {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+}
+
+function CourseRosterTab({ courseId }: { courseId: string }) {
+  const [students, setStudents] = useState<RosterStudent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [viewStudentId, setViewStudentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch(`/api/courses/${courseId}/students`)
+      .then((r) => r.json())
+      .then((data) => setStudents(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  if (loading) return <div className="text-sm text-gray-400">Loading…</div>;
+
+  return (
+    <div>
+      {students.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No students enrolled in this course yet.</p>
+      ) : (
+        <ul className="divide-y rounded-lg border">
+          {students.map((s) => (
+            <li key={s.id}>
+              <button
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50"
+                onClick={() => setViewStudentId(s.id)}
+              >
+                <div className="h-7 w-7 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center shrink-0">
+                  {`${s.firstName?.[0] ?? ""}${s.lastName?.[0] ?? ""}`.toUpperCase() || "S"}
+                </div>
+                <span className="text-sm font-medium text-gray-900">
+                  {s.firstName} {s.lastName}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <StudentDetailDialog
+        studentId={viewStudentId}
+        open={!!viewStudentId}
+        onOpenChange={(v) => { if (!v) setViewStudentId(null); }}
+      />
     </div>
   );
 }
@@ -548,10 +603,16 @@ function CourseFormDialog({
           </div>
 
           {mode === "edit" && course && (
-            <div className="space-y-2 pt-2 border-t">
-              <Label className="text-sm font-semibold">Tuition</Label>
-              <TuitionTab courseId={course.id} />
-            </div>
+            <>
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-sm font-semibold">Enrolled Students</Label>
+                <CourseRosterTab courseId={course.id} />
+              </div>
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-sm font-semibold">Tuition</Label>
+                <TuitionTab courseId={course.id} />
+              </div>
+            </>
           )}
         </div>
         <DialogFooter>

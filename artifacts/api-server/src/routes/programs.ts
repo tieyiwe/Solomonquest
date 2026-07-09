@@ -74,6 +74,71 @@ router.get("/programs/:id", requireAuth, async (req: AuthenticatedRequest, res):
   res.json(mapProgram(data));
 });
 
+// ─── GET /programs/:id/students — every student enrolled in any of the
+// program's courses, deduplicated, with a per-course breakdown ──────────────
+router.get("/programs/:id/students", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  let programQuery = supabaseAdmin.from("programs").select("id").eq("id", id);
+  if (req.userRole !== "super_admin") {
+    programQuery = programQuery.eq("school_id", req.schoolId ?? "");
+  }
+  const { data: program } = await programQuery.maybeSingle();
+  if (!program) {
+    res.status(404).json({ error: "Program not found" });
+    return;
+  }
+
+  const { data: courses } = await supabaseAdmin
+    .from("courses")
+    .select("id, title, code")
+    .eq("program_id", id);
+
+  const courseIds = (courses ?? []).map((c) => c.id as string);
+  if (courseIds.length === 0) {
+    res.json([]);
+    return;
+  }
+
+  const { data: enrollments, error } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("student_id, course_id")
+    .in("course_id", courseIds)
+    .eq("status", "active");
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  const courseById = new Map((courses ?? []).map((c) => [c.id, c]));
+  const studentMap = new Map<string, { studentId: string; courses: { id: string; title: string; code: string | null }[] }>();
+  for (const e of enrollments ?? []) {
+    const entry = studentMap.get(e.student_id as string) ?? { studentId: e.student_id as string, courses: [] };
+    const c = courseById.get(e.course_id as string);
+    if (c) entry.courses.push({ id: c.id as string, title: c.title as string, code: (c.code as string) ?? null });
+    studentMap.set(e.student_id as string, entry);
+  }
+
+  const studentIds = Array.from(studentMap.keys());
+  if (studentIds.length === 0) {
+    res.json([]);
+    return;
+  }
+
+  const { data: profiles } = await supabaseAdmin.from("profiles").select("*").in("id", studentIds);
+
+  res.json(
+    (profiles ?? []).map((p) => ({
+      id: p.id,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      avatarUrl: p.avatar_url,
+      courses: studentMap.get(p.id as string)?.courses ?? [],
+    }))
+  );
+});
+
 router.patch("/programs/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (req.userRole !== "admin" && req.userRole !== "super_admin") {
     res.status(403).json({ error: "Forbidden" });

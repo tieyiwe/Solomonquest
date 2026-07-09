@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useParams, Link, useSearch } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
+import { StudentDetailDialog } from "@/components/StudentDetailDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useGetCourse,
@@ -86,6 +87,7 @@ export default function TeacherCourseDetail() {
   const { session } = useAuth();
   const queryClient = useQueryClient();
 
+  const [viewStudentId, setViewStudentId] = useState<string | null>(null);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editedDescription, setEditedDescription] = useState("");
   const [isEditingBio, setIsEditingBio] = useState(false);
@@ -621,9 +623,10 @@ export default function TeacherCourseDetail() {
                     {students.map((student) => {
                       const att = getAttendanceSummary(student.id);
                       return (
-                        <div
+                        <button
                           key={student.id}
-                          className="py-3 flex items-center justify-between gap-4"
+                          onClick={() => setViewStudentId(student.id)}
+                          className="w-full py-3 flex items-center justify-between gap-4 text-left hover:bg-gray-50 rounded-lg px-2 -mx-2 transition-colors"
                         >
                           <div className="flex items-center gap-3">
                             <Avatar className="h-9 w-9">
@@ -655,7 +658,7 @@ export default function TeacherCourseDetail() {
                               Enrolled
                             </Badge>
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -1330,6 +1333,11 @@ export default function TeacherCourseDetail() {
           </TabsContent>
         </Tabs>
       </div>
+      <StudentDetailDialog
+        studentId={viewStudentId}
+        open={!!viewStudentId}
+        onOpenChange={(v) => { if (!v) setViewStudentId(null); }}
+      />
     </TeacherLayout>
   );
 }

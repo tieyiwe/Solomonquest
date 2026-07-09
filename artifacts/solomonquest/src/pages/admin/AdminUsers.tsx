@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { StudentDetailDialog } from "@/components/StudentDetailDialog";
 import {
   useListUsers,
   useUpdateUserRole,
@@ -218,6 +219,7 @@ function UserTable({
   const queryClient = useQueryClient();
   const { data: users, isLoading } = useListUsers(role ? { role } : undefined);
   const updateUserRole = useUpdateUserRole();
+  const [viewStudentId, setViewStudentId] = useState<string | null>(null);
 
   const filtered = (users ?? []).filter((u) => {
     const name = `${u.firstName ?? ""} ${u.lastName ?? ""} ${u.email ?? ""}`.toLowerCase();
@@ -265,6 +267,7 @@ function UserTable({
   }
 
   return (
+    <>
     <Table>
       <TableHeader>
         <TableRow className="bg-gray-50/50">
@@ -279,17 +282,34 @@ function UserTable({
         {filtered.map((user) => (
           <TableRow key={user.id} className="hover:bg-gray-50/50">
             <TableCell>
-              <div className="flex items-center gap-3">
-                <Avatar className="h-8 w-8 border">
-                  <AvatarImage src={user.avatarUrl || ""} />
-                  <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
-                    {getInitials(user.firstName, user.lastName)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="font-medium text-gray-900 text-sm">
-                  {user.firstName} {user.lastName}
-                </span>
-              </div>
+              {user.role === "student" ? (
+                <button
+                  className="flex items-center gap-3 text-left hover:underline decoration-dotted underline-offset-2"
+                  onClick={() => setViewStudentId(user.id)}
+                >
+                  <Avatar className="h-8 w-8 border">
+                    <AvatarImage src={user.avatarUrl || ""} />
+                    <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
+                      {getInitials(user.firstName, user.lastName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="font-medium text-gray-900 text-sm">
+                    {user.firstName} {user.lastName}
+                  </span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8 border">
+                    <AvatarImage src={user.avatarUrl || ""} />
+                    <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
+                      {getInitials(user.firstName, user.lastName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="font-medium text-gray-900 text-sm">
+                    {user.firstName} {user.lastName}
+                  </span>
+                </div>
+              )}
             </TableCell>
             <TableCell className="text-muted-foreground text-sm">{user.email}</TableCell>
             <TableCell>{roleBadge(user.role)}</TableCell>
@@ -328,6 +348,12 @@ function UserTable({
         ))}
       </TableBody>
     </Table>
+    <StudentDetailDialog
+      studentId={viewStudentId}
+      open={!!viewStudentId}
+      onOpenChange={(v) => { if (!v) setViewStudentId(null); }}
+    />
+    </>
   );
 }
 

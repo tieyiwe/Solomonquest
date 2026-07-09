@@ -229,8 +229,34 @@ router.delete("/courses/:id", requireAuth, async (req: AuthenticatedRequest, res
 });
 
 // Get course students
-router.get("/courses/:id/students", requireAuth, async (req, res): Promise<void> => {
+router.get("/courses/:id/students", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const { data: course } = await supabaseAdmin.from("courses").select("school_id, teacher_id").eq("id", id).maybeSingle();
+  if (!course) {
+    res.status(404).json({ error: "Course not found" });
+    return;
+  }
+
+  const isSchoolStaff =
+    (req.userRole === "admin" || req.userRole === "super_admin") && course.school_id === req.schoolId;
+  const isCourseTeacher = req.userRole === "teacher" && course.teacher_id === req.userId;
+  let isEnrolledStudent = false;
+  if (!isSchoolStaff && !isCourseTeacher && req.userRole === "student") {
+    const { data: ownEnrollment } = await supabaseAdmin
+      .from("course_enrollments")
+      .select("course_id")
+      .eq("course_id", id)
+      .eq("student_id", req.userId ?? "")
+      .eq("status", "active")
+      .maybeSingle();
+    isEnrolledStudent = !!ownEnrollment;
+  }
+
+  if (!isSchoolStaff && !isCourseTeacher && !isEnrolledStudent) {
+    res.status(403).json({ error: "Not authorized to view this course's roster" });
+    return;
+  }
 
   const { data, error } = await supabaseAdmin
     .from("course_enrollments")
@@ -260,16 +286,23 @@ router.get("/courses/:id/students", requireAuth, async (req, res): Promise<void>
     return;
   }
 
-  res.json((profiles ?? []).map((p: Record<string, unknown>) => ({
-    id: p.id,
-    schoolId: p.school_id,
-    role: p.role,
-    firstName: p.first_name,
-    lastName: p.last_name,
-    avatarUrl: p.avatar_url,
-    bio: p.bio,
-    email: null,
-  })));
+  const withEmails = await Promise.all(
+    (profiles ?? []).map(async (p: Record<string, unknown>) => {
+      const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(p.id as string);
+      return {
+        id: p.id,
+        schoolId: p.school_id,
+        role: p.role,
+        firstName: p.first_name,
+        lastName: p.last_name,
+        avatarUrl: p.avatar_url,
+        bio: p.bio,
+        email: authUser?.user?.email ?? null,
+      };
+    })
+  );
+
+  res.json(withEmails);
 });
 
 // Enroll student

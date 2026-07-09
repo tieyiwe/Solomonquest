@@ -291,6 +291,130 @@ router.get("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Pr
   res.json(mapProfile(data, userData?.user?.email));
 });
 
+// Get a student's full profile (contact info, program/courses, attendance) for
+// the admin/teacher "expandable student card" view. Admins always see
+// everything; teachers only see students in a course they teach, and only
+// the fields the school has enabled for teachers via role_permissions
+// (features: student_contact_info, student_program_info, student_attendance).
+router.get("/users/:id/detail", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const { data: student, error } = await supabaseAdmin
+    .from("profiles")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error || !student || student.role !== "student") {
+    res.status(404).json({ error: "Student not found" });
+    return;
+  }
+
+  const isAdmin = req.userRole === "admin" || req.userRole === "super_admin";
+  const isTeacher = req.userRole === "teacher";
+
+  if (!isAdmin && !isTeacher) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  if (student.school_id !== req.schoolId && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  // Enrollments (course + program), needed both for the response and to
+  // verify a teacher actually teaches this student before granting access.
+  const { data: enrollments } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("course_id, courses(id, title, code, program_id, teacher_id, programs(id, name))")
+    .eq("student_id", id)
+    .eq("status", "active");
+
+  const courseRows = (enrollments ?? [])
+    .map((e: Record<string, unknown>) => e.courses as Record<string, unknown> | null)
+    .filter((c): c is Record<string, unknown> => !!c);
+
+  if (isTeacher) {
+    const teachesStudent = courseRows.some((c) => c.teacher_id === req.userId);
+    if (!teachesStudent) {
+      res.status(403).json({ error: "You do not teach this student" });
+      return;
+    }
+  }
+
+  let allowedFields = { contact: true, program: true, attendance: true };
+  if (isTeacher) {
+    const { data: perms } = await supabaseAdmin
+      .from("role_permissions")
+      .select("feature, enabled")
+      .eq("school_id", req.schoolId ?? "")
+      .eq("role", "teacher")
+      .in("feature", ["student_contact_info", "student_program_info", "student_attendance"]);
+
+    const map = new Map((perms ?? []).map((p) => [p.feature, p.enabled]));
+    allowedFields = {
+      contact: map.get("student_contact_info") === true,
+      program: map.get("student_program_info") === true,
+      attendance: map.get("student_attendance") === true,
+    };
+  }
+
+  const result: Record<string, unknown> = {
+    id: student.id,
+    firstName: student.first_name,
+    lastName: student.last_name,
+    avatarUrl: student.avatar_url,
+    bio: student.bio,
+    uniqueStudentId: student.unique_student_id,
+    enrolledSince: student.created_at ?? null,
+  };
+
+  if (allowedFields.contact) {
+    const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(id);
+    result.email = authUser?.user?.email ?? null;
+    result.phone = student.phone ?? null;
+  }
+
+  if (allowedFields.program) {
+    const seenPrograms = new Map<string, { id: string; name: string }>();
+    for (const c of courseRows) {
+      const program = c.programs as Record<string, unknown> | null;
+      if (program?.id) seenPrograms.set(program.id as string, { id: program.id as string, name: program.name as string });
+    }
+    result.programs = Array.from(seenPrograms.values());
+    result.courses = courseRows.map((c) => ({ id: c.id, title: c.title, code: c.code }));
+  }
+
+  if (allowedFields.attendance) {
+    const courseIds = courseRows.map((c) => c.id as string);
+    let present = 0;
+    let absent = 0;
+    let late = 0;
+    if (courseIds.length > 0) {
+      const { data: attendanceRows } = await supabaseAdmin
+        .from("attendance")
+        .select("status")
+        .eq("student_id", id)
+        .in("course_id", courseIds);
+      for (const row of attendanceRows ?? []) {
+        if (row.status === "present") present += 1;
+        else if (row.status === "absent") absent += 1;
+        else if (row.status === "late") late += 1;
+      }
+    }
+    const total = present + absent + late;
+    result.attendance = {
+      present,
+      absent,
+      late,
+      total,
+      attendanceRate: total > 0 ? Math.round((present / total) * 100) : null,
+    };
+  }
+
+  res.json(result);
+});
+
 // Update user profile — self or admin of same school; role changes are never allowed here
 router.patch("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
