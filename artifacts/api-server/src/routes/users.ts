@@ -420,6 +420,65 @@ router.get("/users/:id/detail", requireAuth, async (req: AuthenticatedRequest, r
   res.json(result);
 });
 
+router.get("/users/:id/teacher-detail", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const { data: teacher, error } = await supabaseAdmin
+    .from("profiles")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error || !teacher || teacher.role !== "teacher") {
+    res.status(404).json({ error: "Teacher not found" });
+    return;
+  }
+
+  if (teacher.school_id !== req.schoolId && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const { data: courses } = await supabaseAdmin
+    .from("courses")
+    .select("id, title, code")
+    .eq("teacher_id", id);
+
+  const courseIds = (courses ?? []).map((c) => c.id as string);
+
+  let totalStudents = 0;
+  if (courseIds.length > 0) {
+    const { data: enrollments } = await supabaseAdmin
+      .from("course_enrollments")
+      .select("student_id")
+      .in("course_id", courseIds)
+      .eq("status", "active");
+
+    totalStudents = new Set((enrollments ?? []).map((e) => e.student_id as string)).size;
+  }
+
+  const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(id);
+
+  res.json({
+    id: teacher.id,
+    firstName: teacher.first_name,
+    lastName: teacher.last_name,
+    avatarUrl: teacher.avatar_url,
+    bio: teacher.bio,
+    uniqueStudentId: teacher.unique_student_id,
+    joinedSince: teacher.created_at ?? null,
+    email: authUser?.user?.email ?? null,
+    phone: teacher.phone ?? null,
+    courses: (courses ?? []).map((c) => ({ id: c.id, title: c.title, code: c.code })),
+    totalStudents,
+  });
+});
+
 // Update user profile — self or admin of same school; role changes are never allowed here
 router.patch("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

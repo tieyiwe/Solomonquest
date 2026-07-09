@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { StudentDetailDialog } from "@/components/StudentDetailDialog";
+import { TeacherDetailDialog } from "@/components/TeacherDetailDialog";
 import {
   useListUsers,
   useUpdateUserRole,
@@ -220,6 +221,7 @@ function UserTable({
   const { data: users, isLoading } = useListUsers(role ? { role } : undefined);
   const updateUserRole = useUpdateUserRole();
   const [viewStudentId, setViewStudentId] = useState<string | null>(null);
+  const [viewTeacherId, setViewTeacherId] = useState<string | null>(null);
 
   const filtered = (users ?? []).filter((u) => {
     const name = `${u.firstName ?? ""} ${u.lastName ?? ""} ${u.email ?? ""}`.toLowerCase();
@@ -282,10 +284,12 @@ function UserTable({
         {filtered.map((user) => (
           <TableRow key={user.id} className="hover:bg-gray-50/50">
             <TableCell>
-              {user.role === "student" ? (
+              {user.role === "student" || user.role === "teacher" ? (
                 <button
                   className="flex items-center gap-3 text-left hover:underline decoration-dotted underline-offset-2"
-                  onClick={() => setViewStudentId(user.id)}
+                  onClick={() =>
+                    user.role === "student" ? setViewStudentId(user.id) : setViewTeacherId(user.id)
+                  }
                 >
                   <Avatar className="h-8 w-8 border">
                     <AvatarImage src={user.avatarUrl || ""} />
@@ -352,6 +356,11 @@ function UserTable({
       studentId={viewStudentId}
       open={!!viewStudentId}
       onOpenChange={(v) => { if (!v) setViewStudentId(null); }}
+    />
+    <TeacherDetailDialog
+      teacherId={viewTeacherId}
+      open={!!viewTeacherId}
+      onOpenChange={(v) => { if (!v) setViewTeacherId(null); }}
     />
     </>
   );
