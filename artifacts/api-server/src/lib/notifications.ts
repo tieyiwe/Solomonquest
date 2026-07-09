@@ -2,7 +2,7 @@ import { supabaseAdmin } from "./supabase";
 import { sendGenericNotificationEmail } from "./email";
 import { logger } from "./logger";
 
-type NotificationCategory = "chat" | "assignments" | "grades" | "resources" | "forum" | "applications" | "platform";
+type NotificationCategory = "chat" | "assignments" | "grades" | "resources" | "forum" | "applications" | "platform" | "enrollment";
 
 interface NotifyOptions {
   userIds: string[];

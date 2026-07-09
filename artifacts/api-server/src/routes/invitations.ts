@@ -4,6 +4,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { sendEnhancedInvite, sendWelcomeEmail } from "../lib/email";
 import { enrollUserInSchoolChannels } from "./chat";
 import { enrollStudentInCourse } from "../lib/enrollment";
+import { notifyUsers } from "../lib/notifications";
 
 const router: IRouter = Router();
 
@@ -308,6 +309,21 @@ router.post(
                 console.warn("[invitations] program enroll error:", e)
               );
             }
+
+            const { data: program } = await supabaseAdmin
+              .from("programs")
+              .select("name")
+              .eq("id", invitation.program_id)
+              .maybeSingle();
+
+            notifyUsers({
+              userIds: [userId!],
+              type: "program_enrolled",
+              category: "enrollment",
+              title: "You've been added to a program",
+              body: `You've been added to the ${program?.name ?? "your"} program and enrolled in its courses.`,
+              link: "/dashboard/student",
+            }).catch((e) => console.warn("[invitations] program notify error:", e));
           });
       }
 

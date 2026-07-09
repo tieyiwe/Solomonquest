@@ -2,6 +2,8 @@ import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { enrollStudentInCourse } from "../lib/enrollment";
+import { notifyUsers } from "../lib/notifications";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -149,7 +151,7 @@ router.post(
 
     const { data: program } = await supabaseAdmin
       .from("programs")
-      .select("id")
+      .select("id, name")
       .eq("id", id)
       .eq("school_id", req.schoolId ?? "")
       .maybeSingle();
@@ -181,6 +183,15 @@ router.post(
     for (const course of courses ?? []) {
       await enrollStudentInCourse(course.id as string, studentId);
     }
+
+    notifyUsers({
+      userIds: [studentId],
+      type: "program_enrolled",
+      category: "enrollment",
+      title: "You've been added to a program",
+      body: `You've been added to the ${program.name} program and enrolled in its courses.`,
+      link: "/dashboard/student",
+    }).catch((err) => logger.error({ err }, "Failed to notify student of program enrollment"));
 
     res.json({ success: true, enrolledCourses: (courses ?? []).length });
   }
