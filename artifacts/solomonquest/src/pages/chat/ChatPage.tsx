@@ -129,7 +129,7 @@ interface ChatMessage {
 }
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
-const EDIT_WINDOW_MS = 15 * 60 * 1000;
+const EDIT_WINDOW_MS = 3 * 60 * 1000;
 
 function formatLastSeen(onlineAt?: string | null): string {
   if (!onlineAt) return "Offline";
@@ -248,6 +248,32 @@ function initials(name: string): string {
     .join("")
     .slice(0, 2)
     .toUpperCase();
+}
+
+/**
+ * The REST chat API returns camelCase fields (createdAt, threadParentId,
+ * channelId, replyCount, isEdited, editedAt), but every ChatMessage
+ * consumer in this file reads the snake_case shape realtime INSERT
+ * payloads use instead (created_at, thread_parent_id, channel_id,
+ * thread_count) — straight from Postgres, so already snake_case. Any
+ * message coming from a REST response (initial fetch, send, thread
+ * fetch/reply) needs to go through this first, or created_at reads as
+ * undefined and every timestamp renders as "Invalid Date".
+ */
+function normalizeMessage(raw: any): ChatMessage {
+  return {
+    ...raw,
+    channel_id: raw.channel_id ?? raw.channelId,
+    thread_parent_id: raw.thread_parent_id ?? raw.threadParentId ?? null,
+    thread_count: raw.thread_count ?? raw.replyCount ?? 0,
+    created_at: raw.created_at ?? raw.createdAt,
+    attachmentUrl: raw.attachmentUrl ?? raw.attachment_url ?? null,
+    attachmentName: raw.attachmentName ?? raw.attachment_name ?? null,
+    attachmentType: raw.attachmentType ?? raw.attachment_type ?? null,
+    attachmentSize: raw.attachmentSize ?? raw.attachment_size ?? null,
+    isEdited: raw.isEdited ?? raw.is_edited ?? false,
+    editedAt: raw.editedAt ?? raw.edited_at ?? null,
+  };
 }
 
 function formatTs(iso: string): string {
@@ -796,7 +822,10 @@ function ThreadComposer({
     setLoading(true);
     try {
       const res = await apiFetch(`/api/chat/channels/${channelId}/messages/${parentId}/thread`);
-      if (res.ok) setReplies(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setReplies((data as any[]).map(normalizeMessage));
+      }
     } catch {
       /* ignore */
     } finally {
@@ -854,7 +883,7 @@ function ThreadComposer({
         body: JSON.stringify({ content, threadParentId: parentId }),
       });
       if (!res.ok) throw new Error();
-      const saved: ChatMessage = await res.json();
+      const saved = normalizeMessage(await res.json());
       setReplies((prev) => prev.map((r) => (r.id === optimisticId ? saved : r)));
     } catch {
       setReplies((prev) => prev.filter((r) => r.id !== optimisticId));
@@ -1833,7 +1862,8 @@ export default function ChatPage() {
     try {
       const res = await apiFetch(`/api/chat/channels/${activeChannel.id}/messages`);
       if (res.ok) {
-        const data: ChatMessage[] = await res.json();
+        const raw = await res.json();
+        const data: ChatMessage[] = (raw as any[]).map(normalizeMessage);
         cacheSenders(data);
         setMessages(data);
       }
@@ -2156,7 +2186,7 @@ export default function ChatPage() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
-      const saved: ChatMessage = await res.json();
+      const saved = normalizeMessage(await res.json());
       setMessages((prev) => prev.map((m) => (m.id === optimisticId ? saved : m)));
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));

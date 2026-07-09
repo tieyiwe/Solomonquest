@@ -933,7 +933,7 @@ router.post(
 // Messages can be edited after sending, but only within a short window — and
 // every prior version is kept, not overwritten.
 
-const EDIT_WINDOW_MS = 15 * 60 * 1000;
+const EDIT_WINDOW_MS = 3 * 60 * 1000;
 
 // ─── PATCH /chat/messages/:messageId ───────────────────────────────────────────
 
