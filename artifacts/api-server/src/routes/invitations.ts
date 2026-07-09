@@ -38,6 +38,11 @@ router.post(
         return;
       }
 
+      if (role === "student" && !programId) {
+        res.status(400).json({ error: "A program is required to invite a student" });
+        return;
+      }
+
       if (programId) {
         const { data: program } = await supabaseAdmin
           .from("programs")

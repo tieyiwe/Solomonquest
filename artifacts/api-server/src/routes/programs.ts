@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { enrollStudentInCourse } from "../lib/enrollment";
 
 const router: IRouter = Router();
 
@@ -124,6 +125,66 @@ router.delete("/programs/:id", requireAuth, async (req: AuthenticatedRequest, re
 
   res.sendStatus(204);
 });
+
+// ─── POST /programs/:id/enroll-student ────────────────────────────────────────
+// Retroactively places a student into a program -- e.g. a transferring
+// student invited without a program picked at invite time. Enrolls them in
+// every course currently in the program via the normal cascade helper.
+router.post(
+  "/programs/:id/enroll-student",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { studentId } = req.body as { studentId?: string };
+
+    if (!studentId) {
+      res.status(400).json({ error: "studentId is required" });
+      return;
+    }
+
+    const { data: program } = await supabaseAdmin
+      .from("programs")
+      .select("id")
+      .eq("id", id)
+      .eq("school_id", req.schoolId ?? "")
+      .maybeSingle();
+    if (!program) {
+      res.status(404).json({ error: "Program not found" });
+      return;
+    }
+
+    const { data: student } = await supabaseAdmin
+      .from("profiles")
+      .select("id, role, school_id")
+      .eq("id", studentId)
+      .maybeSingle();
+    if (!student || student.school_id !== req.schoolId || student.role !== "student") {
+      res.status(404).json({ error: "Student not found in your school" });
+      return;
+    }
+
+    const { data: courses, error: coursesError } = await supabaseAdmin
+      .from("courses")
+      .select("id")
+      .eq("program_id", id);
+
+    if (coursesError) {
+      res.status(500).json({ error: coursesError.message });
+      return;
+    }
+
+    for (const course of courses ?? []) {
+      await enrollStudentInCourse(course.id as string, studentId);
+    }
+
+    res.json({ success: true, enrolledCourses: (courses ?? []).length });
+  }
+);
 
 function mapProgram(p: Record<string, unknown>) {
   return {

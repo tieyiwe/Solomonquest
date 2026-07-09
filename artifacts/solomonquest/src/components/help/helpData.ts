@@ -93,14 +93,15 @@ export const adminHelp: HelpCategory[] = [
         steps: [
           { text: "Go to Users in the left sidebar." },
           { text: "Pick the Teachers, Students, or Staff tab, then click the Invite button." },
-          { text: "Enter the person's email address." },
-          { text: "Click Send Invitation. They receive an email with an Accept button.", detail: "The link expires after 7 days. Check the Invitations tab for status." },
+          { text: "Enter the person's email address.", detail: "For a student, you must also pick a Program — this is required so accepting the invite immediately enrolls them in that program's courses." },
+          { text: "Click Send Invitation. They receive an email with an Accept button.", detail: "The link expires after 7 days." },
           { text: "Once they accept, their account appears in the Users list under the matching role." },
         ],
         troubleshoot: [
           { problem: "Invitation email not received", solution: "Ask the recipient to check their spam folder. You can also resend the invitation from Users → Invitations tab." },
           { problem: "Teacher can't see their courses after accepting", solution: "Go to Courses and verify the teacher is assigned to the course." },
           { problem: "New invitation isn't showing up in the Invitations tab yet", solution: "The list refreshes when you open the Invitations tab — switch to another tab and back, or reload the page." },
+          { problem: "A student was invited before Program became required and has no courses", solution: "Go to Users → Students, find them, and click Add to Program on their row — this enrolls them in every course in the program you pick, same as if they'd been invited with one." },
         ],
       },
       {

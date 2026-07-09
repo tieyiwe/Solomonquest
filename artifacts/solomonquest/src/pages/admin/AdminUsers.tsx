@@ -29,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -128,6 +129,82 @@ function PasswordResetButton({ userId, userName }: { userId: string; userName: s
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+function AddToProgramButton({ studentId, studentName }: { studentId: string; studentName: string }) {
+  const [open, setOpen] = useState(false);
+  const [programId, setProgramId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const { data: programs } = useListPrograms({ query: { enabled: open } });
+
+  const handleAdd = async () => {
+    if (!programId) return;
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/programs/${programId}/enroll-student`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ studentId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to add student to program");
+      }
+      toast.success(`${studentName} enrolled in the program's courses`);
+      setProgramId("");
+      setOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add student to program");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-gray-900">
+          <GraduationCap className="h-3.5 w-3.5 mr-1.5" />
+          Add to Program
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Add {studentName} to a Program</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <p className="text-sm text-muted-foreground">
+            Enrolls them in every course currently in the chosen program.
+          </p>
+          <Select value={programId} onValueChange={setProgramId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a program..." />
+            </SelectTrigger>
+            <SelectContent>
+              {(programs ?? []).map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+            Cancel
+          </Button>
+          <Button onClick={handleAdd} disabled={loading || !programId}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Add
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -234,10 +311,18 @@ function UserTable({
               </Select>
             </TableCell>
             <TableCell>
-              <PasswordResetButton
-                userId={user.id}
-                userName={`${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || "User"}
-              />
+              <div className="flex items-center gap-1">
+                <PasswordResetButton
+                  userId={user.id}
+                  userName={`${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || "User"}
+                />
+                {user.role === "student" && (
+                  <AddToProgramButton
+                    studentId={user.id}
+                    studentName={`${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || "Student"}
+                  />
+                )}
+              </div>
             </TableCell>
           </TableRow>
         ))}
@@ -266,6 +351,10 @@ function InviteButton({
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
       toast.error("Please enter a valid email address");
+      return;
+    }
+    if (role === "student" && !programId) {
+      toast.error("Select a program before sending a student invitation");
       return;
     }
     setLoading(true);
@@ -321,10 +410,10 @@ function InviteButton({
           </div>
           {role === "student" && (
             <div className="space-y-1.5">
-              <Label>Program (optional)</Label>
+              <Label>Program *</Label>
               <Select value={programId} onValueChange={setProgramId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="No program — enroll in courses manually later" />
+                  <SelectValue placeholder="Select a program..." />
                 </SelectTrigger>
                 <SelectContent>
                   {(programs ?? []).map((p) => (
@@ -335,7 +424,7 @@ function InviteButton({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                If picked, they're automatically enrolled in every course in this program as soon as they accept.
+                They're automatically enrolled in every course in this program as soon as they accept.
               </p>
             </div>
           )}
@@ -343,7 +432,7 @@ function InviteButton({
             They'll receive an email to create their account and join your school as a{" "}
             {roleLabel.toLowerCase()}.
           </p>
-          <Button className="w-full" onClick={handleSend} disabled={loading || !email.trim()}>
+          <Button className="w-full" onClick={handleSend} disabled={loading || !email.trim() || (role === "student" && !programId)}>
             {loading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -379,7 +468,15 @@ function statusBadge(status: string) {
   }
 }
 
-function InvitationsTab({ refreshKey }: { refreshKey: number }) {
+function InvitationsTab({
+  refreshKey,
+  roleFilter,
+  hideAccepted,
+}: {
+  refreshKey: number;
+  roleFilter?: string;
+  hideAccepted?: boolean;
+}) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
@@ -405,6 +502,10 @@ function InvitationsTab({ refreshKey }: { refreshKey: number }) {
     return () => { cancelled = true; };
   }, [refreshKey]);
 
+  const visible = invitations
+    .filter((inv) => !roleFilter || inv.role === roleFilter)
+    .filter((inv) => !hideAccepted || inv.status !== "accepted");
+
   if (loading) {
     return (
       <div className="p-6 space-y-3">
@@ -421,11 +522,12 @@ function InvitationsTab({ refreshKey }: { refreshKey: number }) {
     );
   }
 
-  if (invitations.length === 0) {
+  if (visible.length === 0) {
+    if (roleFilter) return null;
     return (
       <div className="text-center py-16 text-muted-foreground">
         <Mail className="h-10 w-10 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">No invitations sent yet. Use the Invite buttons in the Teachers or Staff tabs.</p>
+        <p className="text-sm">No invitations sent yet. Use the Invite buttons in the Teachers, Students, or Staff tabs.</p>
       </div>
     );
   }
@@ -442,7 +544,7 @@ function InvitationsTab({ refreshKey }: { refreshKey: number }) {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {invitations.map((inv) => (
+        {visible.map((inv) => (
           <TableRow key={inv.id}>
             <TableCell className="font-medium text-sm">{inv.email}</TableCell>
             <TableCell>
@@ -540,42 +642,60 @@ export default function AdminUsers() {
             })}
           </TabsList>
 
-          <TabsContent value="teachers" className="mt-0">
+          <TabsContent value="teachers" className="mt-0 space-y-4">
             <Card className="border-0 shadow-sm">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">Teachers enrolled in your school.</p>
-                <InviteButton role="teacher" onSent={() => { addInvite(); setActiveTab("invitations"); }} />
+                <InviteButton role="teacher" onSent={addInvite} />
               </div>
               <CardContent className="p-0">
                 <UserTable role="teacher" search={search} />
               </CardContent>
             </Card>
+            <Card className="border-0 shadow-sm overflow-hidden">
+              <div className="px-4 py-2.5 border-b bg-gray-50/50">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pending Invitations</p>
+              </div>
+              <InvitationsTab refreshKey={inviteRefreshKey} roleFilter="teacher" hideAccepted />
+            </Card>
           </TabsContent>
 
-          <TabsContent value="students" className="mt-0">
+          <TabsContent value="students" className="mt-0 space-y-4">
             <Card className="border-0 shadow-sm">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">
                   Students enrolled in your school. New applicants should still go through Admissions —
                   use Invite Student for students transferring in from another school who don't need to apply.
                 </p>
-                <InviteButton role="student" onSent={() => { addInvite(); setActiveTab("invitations"); }} />
+                <InviteButton role="student" onSent={addInvite} />
               </div>
               <CardContent className="p-0">
                 <UserTable role="student" search={search} />
               </CardContent>
             </Card>
+            <Card className="border-0 shadow-sm overflow-hidden">
+              <div className="px-4 py-2.5 border-b bg-gray-50/50">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pending Invitations</p>
+              </div>
+              <InvitationsTab refreshKey={inviteRefreshKey} roleFilter="student" hideAccepted />
+            </Card>
           </TabsContent>
 
-          <TabsContent value="staff" className="mt-0">
+          <TabsContent value="staff" className="mt-0 space-y-4">
             <Card className="border-0 shadow-sm">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">Staff members associated with your school.</p>
-                <InviteButton role="staff" onSent={() => { addInvite(); setActiveTab("invitations"); }} />
+                <InviteButton role="staff" onSent={addInvite} />
               </div>
               <CardContent className="p-0">
                 <UserTable role="staff" search={search} />
               </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm overflow-hidden">
+              <div className="px-4 py-2.5 border-b bg-gray-50/50">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pending Invitations</p>
+              </div>
+              <InvitationsTab refreshKey={inviteRefreshKey} roleFilter="staff" hideAccepted />
             </Card>
           </TabsContent>
 
