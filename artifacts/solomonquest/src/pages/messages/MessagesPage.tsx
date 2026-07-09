@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Send, Inbox, ArrowLeft, Search, Edit, Reply } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 async function apiFetch(url: string, options: RequestInit = {}) {
   const { data } = await supabase.auth.getSession();
@@ -95,6 +96,7 @@ function AvatarCircle({ name, size = 36 }: { name: string; size?: number }) {
 export default function MessagesPage() {
   const { user } = useAuth();
   const userId = user?.id ?? "";
+  const isMobile = useIsMobile();
 
   const [folder, setFolder] = useState<Folder>("inbox");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -332,17 +334,23 @@ export default function MessagesPage() {
     <div
       style={{
         display: "flex",
+        flexDirection: isMobile ? "column" : "row",
         height: "calc(100vh - 64px)",
         fontFamily: "inherit",
         background: "#f8fafc",
+        overflow: isMobile ? "auto" : "hidden",
       }}
     >
-      {/* LEFT SIDEBAR */}
+      {/* LEFT SIDEBAR — hidden on mobile once a message/compose panel is open,
+          so that panel gets the full screen instead of being squeezed into
+          whatever space is left after two fixed-width desktop columns. */}
+      {(!isMobile || panelState === "empty") && (
       <div
         style={{
-          width: 200,
+          width: isMobile ? "100%" : 200,
           background: "#fff",
-          borderRight: "1px solid #e2e8f0",
+          borderRight: isMobile ? "none" : "1px solid #e2e8f0",
+          borderBottom: isMobile ? "1px solid #e2e8f0" : "none",
           display: "flex",
           flexDirection: "column",
           padding: "16px 8px",
@@ -521,13 +529,15 @@ export default function MessagesPage() {
           </div>
         )}
       </div>
+      )}
 
-      {/* CENTER MESSAGE LIST */}
+      {/* CENTER MESSAGE LIST — same mobile rule as the sidebar above. */}
+      {(!isMobile || panelState === "empty") && (
       <div
         style={{
-          width: 360,
+          width: isMobile ? "100%" : 360,
           background: "#fff",
-          borderRight: "1px solid #e2e8f0",
+          borderRight: isMobile ? "none" : "1px solid #e2e8f0",
           display: "flex",
           flexDirection: "column",
           flexShrink: 0,
@@ -714,9 +724,14 @@ export default function MessagesPage() {
           )}
         </div>
       </div>
+      )}
 
-      {/* RIGHT PANEL */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* RIGHT PANEL — on mobile only rendered once a message is open or
+          compose is active, so it gets the full screen; the "select a
+          message" placeholder below is desktop-only (the mobile empty
+          state is just the list itself, above). */}
+      {(!isMobile || panelState !== "empty") && (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", width: isMobile ? "100%" : undefined }}>
         {panelState === "empty" && (
           <div
             style={{
@@ -1102,6 +1117,7 @@ export default function MessagesPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
