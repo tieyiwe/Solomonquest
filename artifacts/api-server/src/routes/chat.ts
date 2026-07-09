@@ -977,11 +977,20 @@ router.patch(
       return;
     }
 
-    await supabaseAdmin.from("chat_message_edits").insert({
+    const { error: historyError } = await supabaseAdmin.from("chat_message_edits").insert({
       message_id: messageId,
       previous_content: message.content,
       edited_by: req.userId!,
     });
+
+    if (historyError) {
+      // Don't silently drop the previous version — if the history row can't
+      // be saved, refuse the edit rather than let "(edited)" show up with a
+      // gap in the history.
+      logger.error({ err: historyError, messageId }, "Failed to record chat message edit history");
+      res.status(500).json({ error: "Failed to save edit history" });
+      return;
+    }
 
     const editedAt = new Date().toISOString();
     const { error } = await supabaseAdmin
