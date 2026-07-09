@@ -63,6 +63,7 @@ import {
   GraduationCap,
   Briefcase,
   Send,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -127,6 +128,48 @@ function PasswordResetButton({ userId, userName }: { userId: string; userName: s
           <AlertDialogAction onClick={handleReset} disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Send Reset Email
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function ViewAsButton({ userId, userName, role }: { userId: string; userName: string; role: string }) {
+  const [loading, setLoading] = useState(false);
+
+  const handleViewAs = async () => {
+    setLoading(true);
+    try {
+      const { startImpersonation } = await import("@/lib/impersonation");
+      await startImpersonation(userId);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to start view-as session");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-gray-900">
+          <Eye className="h-3.5 w-3.5 mr-1.5" />
+          View As
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>View the app as {userName}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            You'll be signed in as this {role} until you click "Return to Admin" in the banner at the
+            top of the page. This lets you check exactly what they see.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={handleViewAs} disabled={loading}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            View As {userName}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -340,6 +383,13 @@ function UserTable({
                   userId={user.id}
                   userName={`${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || "User"}
                 />
+                {(user.role === "student" || user.role === "teacher" || user.role === "staff") && (
+                  <ViewAsButton
+                    userId={user.id}
+                    userName={`${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || "User"}
+                    role={user.role}
+                  />
+                )}
                 {user.role === "student" && (
                   <AddToProgramButton
                     studentId={user.id}

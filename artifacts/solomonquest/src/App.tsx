@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { Router } from "@/Router";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NotesProvider } from "@/components/notes/NotesContext";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 
 export const queryClient = new QueryClient();
 
@@ -60,6 +61,7 @@ function App() {
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <AuthProvider>
               <NotesProvider>
+                <ImpersonationBanner />
                 <Router />
                 <Toaster />
               </NotesProvider>

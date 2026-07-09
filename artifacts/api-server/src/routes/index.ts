@@ -31,6 +31,7 @@ import fileConverterRouter from "./fileConverter";
 import agentRouter from "./agent";
 import notesRouter from "./notes";
 import tuitionRouter from "./tuition";
+import impersonationRouter from "./impersonation";
 
 const router: IRouter = Router();
 
@@ -66,5 +67,6 @@ router.use(fileConverterRouter);
 router.use(agentRouter);
 router.use(notesRouter);
 router.use(tuitionRouter);
+router.use(impersonationRouter);
 
 export default router;
