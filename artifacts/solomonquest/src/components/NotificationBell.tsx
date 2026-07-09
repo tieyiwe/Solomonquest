@@ -25,6 +25,18 @@ interface MessageItem {
 
 type TabType = "notifications" | "messages";
 
+async function apiFetch(path: string, options?: RequestInit) {
+  const { data: { session } } = await supabase.auth.getSession();
+  return fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...(options?.headers ?? {}),
+    },
+  });
+}
+
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();
@@ -80,7 +92,7 @@ export function NotificationBell() {
   const fetchUnreadCount = useCallback(async () => {
     if (!user) return;
     try {
-      const res = await fetch("/api/notifications/unread-count");
+      const res = await apiFetch("/api/notifications/unread-count");
       if (!res.ok) return;
       const data = await res.json();
       setNotifCount(data.notifications ?? 0);
@@ -169,7 +181,7 @@ export function NotificationBell() {
   const fetchNotifications = useCallback(async () => {
     setLoadingNotifs(true);
     try {
-      const res = await fetch("/api/notifications?limit=20");
+      const res = await apiFetch("/api/notifications?limit=20");
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setNotifications(data.notifications ?? data ?? []);
@@ -183,10 +195,20 @@ export function NotificationBell() {
   const fetchMessages = useCallback(async () => {
     setLoadingMsgs(true);
     try {
-      const res = await fetch("/api/messages/inbox?filter=unread");
+      const res = await apiFetch("/api/messages/inbox?folder=unread");
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
-      setMessages(data.messages ?? data ?? []);
+      const raw: any[] = data.messages ?? data ?? [];
+      setMessages(
+        raw.map((m) => ({
+          id: m.id,
+          sender_name: m.from_user?.name ?? m.sender_name ?? "Unknown",
+          sender_avatar: m.from_user?.avatar_url ?? m.sender_avatar ?? undefined,
+          subject: m.subject ?? m.body_preview ?? "",
+          created_at: m.created_at,
+          read: m.is_read ?? m.read ?? false,
+        }))
+      );
     } catch {
       toast.error("Failed to load messages");
     } finally {
@@ -196,7 +218,7 @@ export function NotificationBell() {
 
   const markAllRead = useCallback(async () => {
     try {
-      await fetch("/api/notifications/read-all", { method: "PUT" });
+      await apiFetch("/api/notifications/read-all", { method: "PUT" });
       setNotifCount(0);
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     } catch {
