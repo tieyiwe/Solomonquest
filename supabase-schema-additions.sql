@@ -628,6 +628,44 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS created_at timestamptz NOT 
 -- every enrollment going forward is accurate.
 ALTER TABLE public.course_enrollments ADD COLUMN IF NOT EXISTS enrolled_at timestamptz NOT NULL DEFAULT now();
 
+-- ─── Chat read receipts ───────────────────────────────────────────────────────
+-- Per-member "I've read up to here" marker so a DM can show a double-check
+-- (seen) indicator once the other person has read a message, and so the
+-- unread badge introduced earlier can eventually persist across reloads.
+ALTER TABLE public.chat_channel_members ADD COLUMN IF NOT EXISTS last_read_at timestamptz;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'chat_channel_members'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_channel_members;
+  END IF;
+END $$;
+
+-- ─── Chat message reactions ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.chat_message_reactions (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id  uuid NOT NULL REFERENCES public.chat_messages(id) ON DELETE CASCADE,
+  user_id     uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  emoji       text NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (message_id, user_id, emoji)
+);
+ALTER TABLE public.chat_message_reactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "chat_message_reactions_all" ON public.chat_message_reactions;
+CREATE POLICY "chat_message_reactions_all" ON public.chat_message_reactions FOR ALL USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS chat_message_reactions_message_idx ON public.chat_message_reactions (message_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'chat_message_reactions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_message_reactions;
+  END IF;
+END $$;
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';

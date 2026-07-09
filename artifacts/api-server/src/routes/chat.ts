@@ -98,7 +98,70 @@ router.get(
       .filter((c): c is NonNullable<typeof c> => c !== null)
       .filter((c) => includeArchived || !c.isArchived);
 
-    res.json(channels);
+    // For direct (1:1) channels, surface the other participant's presence
+    // and read-receipt state so the DM header can show "Online"/"Last seen"
+    // and messages can show a seen/double-check indicator.
+    const directChannelIds = channels.filter((c) => c.type === "direct").map((c) => c.id as string);
+    const otherUserByChannel = new Map<string, { id: string; name: string; onlineAt: string | null; lastReadAt: string | null }>();
+    if (directChannelIds.length > 0) {
+      const { data: allMembers } = await supabaseAdmin
+        .from("chat_channel_members")
+        .select("channel_id, user_id, last_read_at")
+        .in("channel_id", directChannelIds);
+
+      const otherMemberRows = (allMembers ?? []).filter((m) => m.user_id !== req.userId);
+      const otherUserIds = Array.from(new Set(otherMemberRows.map((m) => m.user_id as string)));
+      const { data: profiles } = otherUserIds.length
+        ? await supabaseAdmin.from("profiles").select("id, first_name, last_name, online_at").in("id", otherUserIds)
+        : { data: [] as Record<string, unknown>[] };
+      const profileById = new Map((profiles ?? []).map((p) => [p.id, p]));
+
+      for (const m of otherMemberRows) {
+        const profile = profileById.get(m.user_id as string) as Record<string, unknown> | undefined;
+        otherUserByChannel.set(m.channel_id as string, {
+          id: m.user_id as string,
+          name: profile ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || "Unknown" : "Unknown",
+          onlineAt: (profile?.online_at as string) ?? null,
+          lastReadAt: (m.last_read_at as string) ?? null,
+        });
+      }
+    }
+
+    res.json(
+      channels.map((c) => ({
+        ...c,
+        otherUser: otherUserByChannel.get(c.id as string) ?? null,
+      }))
+    );
+  }
+);
+
+// ─── POST /chat/channels/:channelId/read — mark read up to now ──────────────
+
+router.post(
+  "/chat/channels/:channelId/read",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
+
+    const isMember = await assertChannelMember(channelId, req.userId!);
+    if (!isMember) {
+      res.status(403).json({ error: "Not a member of this channel" });
+      return;
+    }
+
+    const { error } = await supabaseAdmin
+      .from("chat_channel_members")
+      .update({ last_read_at: new Date().toISOString() })
+      .eq("channel_id", channelId)
+      .eq("user_id", req.userId!);
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.sendStatus(204);
   }
 );
 
@@ -424,6 +487,8 @@ router.get(
       }
     }
 
+    const reactionsByMessage = await fetchReactions(messageIds);
+
     const result = (messages ?? []).map((m: Record<string, unknown>) => {
       const profile = m.profiles as Record<string, unknown> | null;
       return {
@@ -437,6 +502,7 @@ router.get(
         attachmentName: m.attachment_name ?? null,
         attachmentType: m.attachment_type ?? null,
         attachmentSize: m.attachment_size ?? null,
+        reactions: reactionsByMessage[m.id as string] ?? [],
         sender: {
           id: m.sender_id,
           name:
@@ -451,6 +517,35 @@ router.get(
     res.json(result);
   }
 );
+
+// ─── Reactions helpers ────────────────────────────────────────────────────────
+
+type ReactionSummary = { emoji: string; count: number; userIds: string[] };
+
+async function fetchReactions(
+  messageIds: string[]
+): Promise<Record<string, ReactionSummary[]>> {
+  if (messageIds.length === 0) return {};
+
+  const { data: rows } = await supabaseAdmin
+    .from("chat_message_reactions")
+    .select("message_id, user_id, emoji")
+    .in("message_id", messageIds);
+
+  const byMessage: Record<string, Record<string, ReactionSummary>> = {};
+  for (const row of (rows ?? []) as Array<{ message_id: string; user_id: string; emoji: string }>) {
+    const forMessage = (byMessage[row.message_id] ??= {});
+    const summary = (forMessage[row.emoji] ??= { emoji: row.emoji, count: 0, userIds: [] });
+    summary.count += 1;
+    summary.userIds.push(row.user_id);
+  }
+
+  const result: Record<string, ReactionSummary[]> = {};
+  for (const [messageId, byEmoji] of Object.entries(byMessage)) {
+    result[messageId] = Object.values(byEmoji);
+  }
+  return result;
+}
 
 // ─── POST /chat/channels/:channelId/messages ─────────────────────────────────
 
@@ -516,6 +611,7 @@ router.post(
       content: message.content,
       threadParentId: message.thread_parent_id,
       createdAt: message.created_at,
+      reactions: [],
       sender: {
         id: message.sender_id,
         name: senderName,
@@ -658,6 +754,7 @@ router.post(
       attachmentName: message.attachment_name,
       attachmentType: message.attachment_type,
       attachmentSize: message.attachment_size,
+      reactions: [],
       sender: {
         id: message.sender_id,
         name:
@@ -719,6 +816,9 @@ router.get(
       return;
     }
 
+    const replyIds = (replies ?? []).map((m: Record<string, unknown>) => m.id as string);
+    const reactionsByMessage = await fetchReactions(replyIds);
+
     const result = (replies ?? []).map((m: Record<string, unknown>) => {
       const profile = m.profiles as Record<string, unknown> | null;
       return {
@@ -731,6 +831,7 @@ router.get(
         attachmentName: m.attachment_name ?? null,
         attachmentType: m.attachment_type ?? null,
         attachmentSize: m.attachment_size ?? null,
+        reactions: reactionsByMessage[m.id as string] ?? [],
         sender: {
           id: m.sender_id,
           name:
@@ -743,6 +844,71 @@ router.get(
     });
 
     res.json(result);
+  }
+);
+
+// ─── GET /chat/messages/:messageId/reactions ─────────────────────────────────
+
+router.get(
+  "/chat/messages/:messageId/reactions",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const { messageId } = req.params;
+    const reactionsByMessage = await fetchReactions([messageId as string]);
+    res.json({ reactions: reactionsByMessage[messageId as string] ?? [] });
+  }
+);
+
+// ─── POST /chat/messages/:messageId/reactions ────────────────────────────────
+// Toggle: if the caller already reacted with this emoji, remove it; otherwise add it.
+
+router.post(
+  "/chat/messages/:messageId/reactions",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const { messageId } = req.params;
+    const { emoji } = req.body as { emoji?: string };
+
+    if (!emoji || emoji.trim() === "") {
+      res.status(400).json({ error: "emoji is required" });
+      return;
+    }
+
+    const { data: message } = await supabaseAdmin
+      .from("chat_messages")
+      .select("channel_id")
+      .eq("id", messageId)
+      .maybeSingle();
+
+    if (!message) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    const isMember = await assertChannelMember(message.channel_id as string, req.userId!);
+    if (!isMember) {
+      res.status(403).json({ error: "Not a member of this channel" });
+      return;
+    }
+
+    const { data: existing } = await supabaseAdmin
+      .from("chat_message_reactions")
+      .select("id")
+      .eq("message_id", messageId)
+      .eq("user_id", req.userId!)
+      .eq("emoji", emoji)
+      .maybeSingle();
+
+    if (existing) {
+      await supabaseAdmin.from("chat_message_reactions").delete().eq("id", existing.id);
+    } else {
+      await supabaseAdmin
+        .from("chat_message_reactions")
+        .insert({ message_id: messageId, user_id: req.userId!, emoji });
+    }
+
+    const reactionsByMessage = await fetchReactions([messageId as string]);
+    res.json({ reactions: reactionsByMessage[messageId as string] ?? [] });
   }
 );
 

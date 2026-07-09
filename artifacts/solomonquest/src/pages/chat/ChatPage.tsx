@@ -43,7 +43,10 @@ import {
   Download,
   Loader2,
   Smile,
+  SmilePlus,
   Mail,
+  Check,
+  CheckCheck,
 } from "lucide-react";
 import {
   Dialog,
@@ -84,6 +87,7 @@ interface Channel {
   active_call?: { jitsi_room: string } | null;
   createdAt?: string | null;
   isArchived?: boolean;
+  otherUser?: { id: string; name: string; onlineAt: string | null; lastReadAt: string | null } | null;
 }
 
 interface IncomingCall {
@@ -111,6 +115,7 @@ interface ChatMessage {
   attachmentName?: string | null;
   attachmentType?: string | null;
   attachmentSize?: number | null;
+  reactions?: { emoji: string; count: number; userIds: string[] }[];
   sender: {
     id: string;
     name: string;
@@ -119,6 +124,21 @@ interface ChatMessage {
   };
   _optimistic?: boolean;
   _uploading?: boolean;
+}
+
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+function formatLastSeen(onlineAt?: string | null): string {
+  if (!onlineAt) return "Offline";
+  const diffMs = Date.now() - new Date(onlineAt).getTime();
+  if (diffMs < 2 * 60 * 1000) return "Online";
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 60) return `Active ${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Active ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `Active ${days}d ago`;
+  return `Last seen ${new Date(onlineAt).toLocaleDateString()}`;
 }
 
 interface UserResult {
@@ -807,7 +827,7 @@ function ThreadComposer({
     try {
       const res = await apiFetch(`/api/chat/channels/${channelId}/messages`, {
         method: "POST",
-        body: JSON.stringify({ content, thread_parent_id: parentId }),
+        body: JSON.stringify({ content, threadParentId: parentId }),
       });
       if (!res.ok) throw new Error();
       const saved: ChatMessage = await res.json();
@@ -876,12 +896,93 @@ function ThreadComposer({
 // Message item
 // ---------------------------------------------------------------------------
 
+async function toggleReaction(
+  messageId: string,
+  emoji: string,
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+) {
+  try {
+    const res = await apiFetch(`/api/chat/messages/${messageId}/reactions`, {
+      method: "POST",
+      body: JSON.stringify({ emoji }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions: data.reactions } : m)));
+  } catch {
+    /* ignore */
+  }
+}
+
+function ReactionBar({
+  msg,
+  currentUserId,
+  onReact,
+}: {
+  msg: ChatMessage;
+  currentUserId: string;
+  onReact: (emoji: string) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const reactions = msg.reactions ?? [];
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap mt-1 relative">
+      {reactions.map((r) => (
+        <button
+          key={r.emoji}
+          onClick={() => onReact(r.emoji)}
+          className={`text-xs rounded-full px-1.5 py-0.5 border flex items-center gap-1 transition-colors ${
+            r.userIds.includes(currentUserId)
+              ? "bg-primary/15 border-primary/40"
+              : "bg-muted/60 border-transparent hover:bg-muted"
+          }`}
+        >
+          <span>{r.emoji}</span>
+          <span className="text-[10px] text-muted-foreground">{r.count}</span>
+        </button>
+      ))}
+      <div className="relative">
+        <button
+          onClick={() => setPickerOpen((o) => !o)}
+          className="hidden group-hover:inline-flex text-muted-foreground hover:text-foreground rounded-full p-1 hover:bg-muted"
+          title="Add reaction"
+        >
+          <SmilePlus className="w-3.5 h-3.5" />
+        </button>
+        {pickerOpen && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setPickerOpen(false)} />
+            <div className="absolute bottom-full left-0 mb-1 z-20 bg-popover border rounded-lg shadow-md px-1.5 py-1 flex gap-0.5">
+              {QUICK_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => {
+                    onReact(emoji);
+                    setPickerOpen(false);
+                  }}
+                  className="text-lg hover:scale-125 transition-transform p-0.5"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MessageItem({
   msg,
   grouped = false,
   compact = false,
   currentUserId,
   currentUserName,
+  isDirectChannel = false,
+  otherUserLastReadAt = null,
+  onReact,
 }: {
   msg: ChatMessage;
   grouped?: boolean;
@@ -890,11 +991,18 @@ function MessageItem({
   compact?: boolean;
   currentUserId: string;
   currentUserName: string;
+  /** Whether the active channel is a 1:1 DM — double-check marks only make
+   * sense there (group "seen by N" semantics are out of scope for now). */
+  isDirectChannel?: boolean;
+  otherUserLastReadAt?: string | null;
+  onReact?: (emoji: string) => void;
 }) {
   const online = isOnline(msg.sender?.online_at);
   const threadCount = msg.thread_count ?? 0;
   const time = new Date(msg.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const gutterWidth = compact ? "w-7" : "w-9";
+  const isOwn = msg.sender?.id === currentUserId;
+  const seen = !!(otherUserLastReadAt && new Date(otherUserLastReadAt) >= new Date(msg.created_at));
 
   return (
     <div
@@ -930,17 +1038,30 @@ function MessageItem({
             <span className="text-xs text-muted-foreground">{formatTs(msg.created_at)}</span>
           </div>
         )}
-        {msg.attachmentUrl ? (
-          <AttachmentBubble msg={msg} />
-        ) : (
-          <p
-            className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${
-              msg._optimistic ? "opacity-50" : ""
-            }`}
-          >
-            {msg.content}
-          </p>
-        )}
+        <div className="flex items-end gap-1.5">
+          {msg.attachmentUrl ? (
+            <AttachmentBubble msg={msg} />
+          ) : (
+            <p
+              className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${
+                msg._optimistic ? "opacity-50" : ""
+              }`}
+            >
+              {msg.content}
+            </p>
+          )}
+          {isDirectChannel && isOwn && !msg._optimistic && (
+            <span title={seen ? "Seen" : "Sent"} className="shrink-0 mb-0.5">
+              {seen ? (
+                <CheckCheck className="w-3.5 h-3.5 text-blue-500" />
+              ) : (
+                <Check className="w-3.5 h-3.5 text-muted-foreground" />
+              )}
+            </span>
+          )}
+        </div>
+
+        {!msg._optimistic && onReact && <ReactionBar msg={msg} currentUserId={currentUserId} onReact={onReact} />}
 
         {/* Reply / thread composer — always available (shows just "Reply" on
             hover when there are no replies yet), expands in place under this
@@ -1528,15 +1649,38 @@ export default function ChatPage() {
   // Fetch messages when channel changes
   // -------------------------------------------------------------------------
 
+  // Realtime INSERT payloads only carry raw chat_messages columns
+  // (sender_id, no joined profile), unlike the REST responses which include
+  // a full sender object. Without this cache, a message that arrives live
+  // from someone else renders with no name/id -- an unstyled "?" avatar
+  // that hashes to a fixed color (green), looking like a broken/inconsistent
+  // badge. Populated from every REST response; used to backfill realtime
+  // inserts, falling back to a one-time profile fetch for anyone not seen yet.
+  const senderCacheRef = useRef<Map<string, ChatMessage["sender"]>>(new Map());
+
+  const cacheSenders = useCallback((msgs: ChatMessage[]) => {
+    for (const m of msgs) {
+      if (m.sender?.id) senderCacheRef.current.set(m.sender.id, m.sender);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUserId) senderCacheRef.current.set(currentUserId, { id: currentUserId, name: currentUserName });
+  }, [currentUserId, currentUserName]);
+
   const fetchMessages = useCallback(async () => {
     if (!activeChannel) return;
     try {
       const res = await apiFetch(`/api/chat/channels/${activeChannel.id}/messages`);
-      if (res.ok) setMessages(await res.json());
+      if (res.ok) {
+        const data: ChatMessage[] = await res.json();
+        cacheSenders(data);
+        setMessages(data);
+      }
     } catch {
       /* ignore */
     }
-  }, [activeChannel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeChannel?.id, cacheSenders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setMessages([]);
@@ -1571,12 +1715,37 @@ export default function ChatPage() {
           filter: `channel_id=eq.${channelId}`,
         },
         (payload) => {
-          const msg = payload.new as ChatMessage;
+          const raw = payload.new as ChatMessage & { sender_id?: string };
+          const cachedSender = raw.sender_id ? senderCacheRef.current.get(raw.sender_id) : undefined;
+          const msg: ChatMessage = { ...raw, sender: raw.sender ?? cachedSender ?? { id: raw.sender_id ?? "", name: "" } };
+
+          if (!cachedSender && raw.sender_id) {
+            // Not seen this sender before in this session — resolve their
+            // profile once, cache it, and patch the message(s) in place
+            // instead of leaving the fallback avatar up indefinitely.
+            apiFetch(`/api/users/${raw.sender_id}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((profile) => {
+                if (!profile) return;
+                const resolved = {
+                  id: profile.id,
+                  name: [profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Unknown",
+                  avatar_url: profile.avatarUrl ?? null,
+                };
+                senderCacheRef.current.set(resolved.id, resolved);
+                setMessages((prev) => prev.map((m) => (m.sender?.id === resolved.id ? { ...m, sender: resolved } : m)));
+              })
+              .catch(() => {});
+          }
+
           if (!msg.thread_parent_id) {
             setMessages((prev) => {
               if (prev.find((m) => m.id === msg.id)) return prev;
               return [...prev, msg];
             });
+            if (msg.sender?.id !== currentUserId) {
+              apiFetch(`/api/chat/channels/${channelId}/read`, { method: "POST" }).catch(() => {});
+            }
           } else {
             // Update thread_count on parent
             setMessages((prev) =>
@@ -1587,6 +1756,69 @@ export default function ChatPage() {
               )
             );
           }
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(sub);
+    };
+  }, [activeChannel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live read-receipt updates: when the other member of a DM updates their
+  // last_read_at, refresh activeChannel.otherUser so the double-check marks
+  // flip without needing a manual refetch.
+  useEffect(() => {
+    if (!activeChannel || activeChannel.type !== "direct" || !activeChannel.otherUser) return;
+    const otherUserId = activeChannel.otherUser.id;
+    const channelId = activeChannel.id;
+    const sub = supabase
+      .channel(`chat-read-receipt:${channelId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chat_channel_members",
+          filter: `channel_id=eq.${channelId}`,
+        },
+        (payload) => {
+          const row = payload.new as { user_id?: string; last_read_at?: string | null };
+          if (row.user_id !== otherUserId) return;
+          setActiveChannel((prev) =>
+            prev && prev.otherUser
+              ? { ...prev, otherUser: { ...prev.otherUser, lastReadAt: row.last_read_at ?? null } }
+              : prev
+          );
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(sub);
+    };
+  }, [activeChannel?.id, activeChannel?.type, activeChannel?.otherUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live reaction updates for the active channel's messages.
+  useEffect(() => {
+    if (!activeChannel) return;
+    const channelId = activeChannel.id;
+    const sub = supabase
+      .channel(`chat-reactions:${channelId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "chat_message_reactions" },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as { message_id?: string } | null;
+          const messageId = row?.message_id;
+          if (!messageId) return;
+          apiFetch(`/api/chat/messages/${messageId}/reactions`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (!data) return;
+              setMessages((prev) =>
+                prev.map((m) => (m.id === messageId ? { ...m, reactions: data.reactions } : m))
+              );
+            })
+            .catch(() => {});
         }
       )
       .subscribe();
@@ -1913,6 +2145,7 @@ export default function ChatPage() {
     setActiveChannel(ch);
     setMessages([]);
     setChannels((prev) => prev.map((c) => (c.id === ch.id ? { ...c, unread_count: 0 } : c)));
+    apiFetch(`/api/chat/channels/${ch.id}/read`, { method: "POST" }).catch(() => {});
     try {
       const res = await apiFetch(`/api/chat/channels/${ch.id}`);
       if (res.ok) {
@@ -2052,7 +2285,18 @@ export default function ChatPage() {
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <ChannelIcon type={activeChannel.type} className="w-5 h-5 text-muted-foreground flex-shrink-0" />
-                <h2 className="font-bold text-base truncate">{activeChannel.name}</h2>
+                <div className="flex flex-col min-w-0">
+                  <h2 className="font-bold text-base truncate leading-tight">{activeChannel.name}</h2>
+                  {activeChannel.type === "direct" && activeChannel.otherUser && (
+                    <span
+                      className={`text-xs leading-tight truncate ${
+                        isOnline(activeChannel.otherUser.onlineAt) ? "text-green-600 font-medium" : "text-muted-foreground"
+                      }`}
+                    >
+                      {formatLastSeen(activeChannel.otherUser.onlineAt)}
+                    </span>
+                  )}
+                </div>
                 {activeChannel.member_count != null && (
                   <span className="text-xs text-muted-foreground flex-shrink-0">
                     {activeChannel.member_count}{" "}
@@ -2112,6 +2356,9 @@ export default function ChatPage() {
                       grouped={grouped}
                       currentUserId={currentUserId}
                       currentUserName={currentUserName}
+                      isDirectChannel={activeChannel.type === "direct"}
+                      otherUserLastReadAt={activeChannel.otherUser?.lastReadAt ?? null}
+                      onReact={(emoji) => toggleReaction(m.id, emoji, setMessages)}
                     />
                   );
                 })}
