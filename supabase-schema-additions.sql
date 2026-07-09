@@ -345,13 +345,19 @@ BEGIN
     ) THEN
       ALTER TABLE public.chat_channels ADD COLUMN type text;
     END IF;
-    UPDATE public.chat_channels SET type = channel_type WHERE type IS NULL;
+    -- The legacy channel_type column used 'dm' where the new `type` column
+    -- (and the rest of the app) uses 'direct' — translate it, don't copy it
+    -- verbatim, or these rows will fail the type check constraint below.
+    UPDATE public.chat_channels SET type = (CASE WHEN channel_type = 'dm' THEN 'direct' ELSE channel_type END) WHERE type IS NULL;
     ALTER TABLE public.chat_channels ALTER COLUMN channel_type DROP NOT NULL;
   END IF;
 END $$;
 
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS course_id uuid REFERENCES public.courses(id) ON DELETE SET NULL;
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS type text;
+-- Catch any other stray/legacy value (including a still-unmigrated 'dm')
+-- that isn't one of the types the rest of this script allows.
+UPDATE public.chat_channels SET type = 'direct' WHERE type = 'dm';
 UPDATE public.chat_channels SET type = 'private' WHERE type IS NULL;
 ALTER TABLE public.chat_channels ALTER COLUMN type SET NOT NULL;
 -- (type check constraint is (re)created further down, once, with the full
@@ -416,6 +422,11 @@ ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_size bigint
 -- share one 'program'-typed chat channel. Widen the type check constraint
 -- (previously school/course/direct/private) to allow it.
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS program_id uuid REFERENCES public.programs(id) ON DELETE CASCADE;
+-- Defensive catch-all: coerce any row whose type isn't one of the values
+-- this constraint is about to allow (e.g. a legacy value this script
+-- doesn't otherwise know to translate) so the ADD CONSTRAINT below never
+-- fails on unexpected pre-existing data.
+UPDATE public.chat_channels SET type = 'private' WHERE type NOT IN ('school','course','direct','private','program','public');
 ALTER TABLE public.chat_channels DROP CONSTRAINT IF EXISTS chat_channels_type_check;
 ALTER TABLE public.chat_channels ADD CONSTRAINT chat_channels_type_check CHECK (type IN ('school','course','direct','private','program','public'));
 
