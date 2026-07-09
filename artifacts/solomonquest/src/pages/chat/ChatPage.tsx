@@ -87,7 +87,7 @@ interface Channel {
   active_call?: { jitsi_room: string } | null;
   createdAt?: string | null;
   isArchived?: boolean;
-  otherUser?: { id: string; name: string; onlineAt: string | null; lastReadAt: string | null } | null;
+  otherUser?: { id: string; name: string; role: string | null; onlineAt: string | null; lastReadAt: string | null } | null;
 }
 
 interface IncomingCall {
@@ -313,6 +313,19 @@ function ChannelIcon({ type, className = "w-3.5 h-3.5" }: { type: Channel["type"
 // Sidebar channel button
 // ---------------------------------------------------------------------------
 
+const ROLE_LABELS: Record<string, string> = {
+  super_admin: "Super Admin",
+  admin: "Admin",
+  teacher: "Teacher",
+  staff: "Staff",
+  student: "Student",
+};
+
+function roleLabel(role?: string | null): string | null {
+  if (!role) return null;
+  return ROLE_LABELS[role] ?? null;
+}
+
 function SidebarChannel({
   ch,
   active,
@@ -328,6 +341,7 @@ function SidebarChannel({
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const hasUnread = (ch.unread_count ?? 0) > 0;
+  const role = ch.type === "direct" ? roleLabel(ch.otherUser?.role) : null;
 
   return (
     <div
@@ -348,7 +362,14 @@ function SidebarChannel({
         ) : (
           <ChannelIcon type={ch.type} className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
         )}
-        <span className={`flex-1 truncate text-left ${hasUnread ? "font-bold" : ""}`}>{ch.name}</span>
+        <span className="flex-1 min-w-0 text-left">
+          <span className={`block truncate ${hasUnread ? "font-bold" : ""}`}>{ch.name}</span>
+          {role && (
+            <span className="block truncate text-[10px] font-normal uppercase tracking-wide text-[#8a8d93]">
+              {role}
+            </span>
+          )}
+        </span>
       </button>
       {hasUnread && (
         <span className="text-xs font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-tight shrink-0">

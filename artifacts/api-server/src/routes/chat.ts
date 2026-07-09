@@ -102,7 +102,7 @@ router.get(
     // and read-receipt state so the DM header can show "Online"/"Last seen"
     // and messages can show a seen/double-check indicator.
     const directChannelIds = channels.filter((c) => c.type === "direct").map((c) => c.id as string);
-    const otherUserByChannel = new Map<string, { id: string; name: string; onlineAt: string | null; lastReadAt: string | null }>();
+    const otherUserByChannel = new Map<string, { id: string; name: string; role: string | null; onlineAt: string | null; lastReadAt: string | null }>();
     if (directChannelIds.length > 0) {
       const { data: allMembers } = await supabaseAdmin
         .from("chat_channel_members")
@@ -112,7 +112,7 @@ router.get(
       const otherMemberRows = (allMembers ?? []).filter((m) => m.user_id !== req.userId);
       const otherUserIds = Array.from(new Set(otherMemberRows.map((m) => m.user_id as string)));
       const { data: profiles } = otherUserIds.length
-        ? await supabaseAdmin.from("profiles").select("id, first_name, last_name, online_at").in("id", otherUserIds)
+        ? await supabaseAdmin.from("profiles").select("id, first_name, last_name, online_at, role").in("id", otherUserIds)
         : { data: [] as Record<string, unknown>[] };
       const profileById = new Map((profiles ?? []).map((p) => [p.id, p]));
 
@@ -121,6 +121,7 @@ router.get(
         otherUserByChannel.set(m.channel_id as string, {
           id: m.user_id as string,
           name: profile ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || "Unknown" : "Unknown",
+          role: (profile?.role as string) ?? null,
           onlineAt: (profile?.online_at as string) ?? null,
           lastReadAt: (m.last_read_at as string) ?? null,
         });
