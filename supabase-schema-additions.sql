@@ -354,8 +354,10 @@ ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS course_id uuid REFEREN
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS type text;
 UPDATE public.chat_channels SET type = 'private' WHERE type IS NULL;
 ALTER TABLE public.chat_channels ALTER COLUMN type SET NOT NULL;
-ALTER TABLE public.chat_channels DROP CONSTRAINT IF EXISTS chat_channels_type_check;
-ALTER TABLE public.chat_channels ADD CONSTRAINT chat_channels_type_check CHECK (type IN ('school','course','direct','private'));
+-- (type check constraint is (re)created further down, once, with the full
+-- allowed list — recreating it here with a narrower list first would fail
+-- on any database that already has rows using a type only the later,
+-- wider constraint permits, e.g. 'program'.)
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id);
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS is_private boolean NOT NULL DEFAULT false;
 
@@ -415,7 +417,7 @@ ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_size bigint
 -- (previously school/course/direct/private) to allow it.
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS program_id uuid REFERENCES public.programs(id) ON DELETE CASCADE;
 ALTER TABLE public.chat_channels DROP CONSTRAINT IF EXISTS chat_channels_type_check;
-ALTER TABLE public.chat_channels ADD CONSTRAINT chat_channels_type_check CHECK (type IN ('school','course','direct','private','program'));
+ALTER TABLE public.chat_channels ADD CONSTRAINT chat_channels_type_check CHECK (type IN ('school','course','direct','private','program','public'));
 
 -- A program should only ever have one auto-managed chat channel.
 CREATE UNIQUE INDEX IF NOT EXISTS chat_channels_one_per_program
