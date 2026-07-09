@@ -326,13 +326,18 @@ router.get("/users/:id/detail", requireAuth, async (req: AuthenticatedRequest, r
   // verify a teacher actually teaches this student before granting access.
   const { data: enrollments } = await supabaseAdmin
     .from("course_enrollments")
-    .select("course_id, courses(id, title, code, program_id, teacher_id, programs(id, name))")
+    .select("course_id, enrolled_at, courses(id, title, code, program_id, teacher_id, programs(id, name))")
     .eq("student_id", id)
     .eq("status", "active");
 
   const courseRows = (enrollments ?? [])
     .map((e: Record<string, unknown>) => e.courses as Record<string, unknown> | null)
     .filter((c): c is Record<string, unknown> => !!c);
+
+  const earliestEnrolledAt = (enrollments ?? [])
+    .map((e: Record<string, unknown>) => e.enrolled_at as string | null)
+    .filter((d): d is string => !!d)
+    .sort()[0];
 
   if (isTeacher) {
     const teachesStudent = courseRows.some((c) => c.teacher_id === req.userId);
@@ -366,7 +371,7 @@ router.get("/users/:id/detail", requireAuth, async (req: AuthenticatedRequest, r
     avatarUrl: student.avatar_url,
     bio: student.bio,
     uniqueStudentId: student.unique_student_id,
-    enrolledSince: student.created_at ?? null,
+    enrolledSince: earliestEnrolledAt ?? student.created_at ?? null,
   };
 
   if (allowedFields.contact) {

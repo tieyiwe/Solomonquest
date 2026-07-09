@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { NotificationBell } from "@/components/NotificationBell";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +43,7 @@ import {
   Download,
   Loader2,
   Smile,
+  Mail,
 } from "lucide-react";
 import {
   Dialog,
@@ -302,21 +304,31 @@ function SidebarChannel({
   onDelete?: (ch: Channel) => void;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const hasUnread = (ch.unread_count ?? 0) > 0;
 
   return (
     <div
-      className={`group relative w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+      className={`group relative w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 ${
         active
           ? "bg-white/10 text-white"
+          : hasUnread
+          ? "text-white bg-white/[0.03]"
           : "text-[#b9bbbe] hover:bg-white/5 hover:text-white"
       }`}
     >
+      {active && (
+        <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-orange-400 to-pink-500" />
+      )}
       <button onClick={onClick} className="flex-1 flex items-center gap-2 min-w-0 text-left">
-        <ChannelIcon type={ch.type} className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
-        <span className="flex-1 truncate text-left">{ch.name}</span>
+        {hasUnread ? (
+          <Mail className="w-3.5 h-3.5 flex-shrink-0 text-orange-400" />
+        ) : (
+          <ChannelIcon type={ch.type} className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+        )}
+        <span className={`flex-1 truncate text-left ${hasUnread ? "font-bold" : ""}`}>{ch.name}</span>
       </button>
-      {(ch.unread_count ?? 0) > 0 && (
-        <span className="text-xs font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-tight shrink-0">
+      {hasUnread && (
+        <span className="text-xs font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-tight shrink-0">
           {ch.unread_count}
         </span>
       )}
@@ -1593,6 +1605,37 @@ export default function ChatPage() {
   channelsRef.current = channels;
   const activeCallRef = useRef<ActiveCall | null>(null);
   activeCallRef.current = activeCall;
+  const activeChannelIdRef = useRef<string | null>(null);
+  activeChannelIdRef.current = activeChannel?.id ?? null;
+
+  // Unread tracking: listen for new messages across every channel the user
+  // belongs to (not just the one currently open), so a channel you're not
+  // looking at shows an unread indicator the moment someone else messages it.
+  useEffect(() => {
+    const sub = supabase
+      .channel("chat-unread-tracker")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages" },
+        (payload) => {
+          const msg = payload.new as { channel_id: string; sender_id: string; thread_parent_id?: string | null };
+          if (msg.sender_id === currentUserId) return;
+          if (msg.thread_parent_id) return; // don't badge on thread replies
+          if (msg.channel_id === activeChannelIdRef.current) return;
+          const isMember = channelsRef.current.some((c) => c.id === msg.channel_id);
+          if (!isMember) return;
+          setChannels((prev) =>
+            prev.map((c) =>
+              c.id === msg.channel_id ? { ...c, unread_count: (c.unread_count ?? 0) + 1 } : c
+            )
+          );
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(sub);
+    };
+  }, [currentUserId]);
 
   useEffect(() => {
     const sub = supabase
@@ -1869,12 +1912,13 @@ export default function ChatPage() {
   async function selectChannel(ch: Channel) {
     setActiveChannel(ch);
     setMessages([]);
+    setChannels((prev) => prev.map((c) => (c.id === ch.id ? { ...c, unread_count: 0 } : c)));
     try {
       const res = await apiFetch(`/api/chat/channels/${ch.id}`);
       if (res.ok) {
         const detail: Channel = await res.json();
-        setActiveChannel(detail);
-        setChannels((prev) => prev.map((c) => (c.id === detail.id ? detail : c)));
+        setActiveChannel({ ...detail, unread_count: 0 });
+        setChannels((prev) => prev.map((c) => (c.id === detail.id ? { ...detail, unread_count: 0 } : c)));
       }
     } catch {
       /* ignore */
@@ -1922,9 +1966,14 @@ export default function ChatPage() {
         style={{ backgroundColor: "#1e1e2e" }}
       >
         {/* Workspace header */}
-        <div className="px-4 py-3 border-b border-white/10 flex-shrink-0">
-          <h1 className="font-bold text-white text-base">Chat</h1>
-          <p className="text-[#b9bbbe] text-xs mt-0.5">Learning Community</p>
+        <div className="px-4 py-3.5 border-b border-white/10 flex-shrink-0 flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center shadow-sm shrink-0">
+            <MessageSquare className="w-4 h-4 text-white" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="font-bold text-white text-base leading-tight truncate">Chat</h1>
+            <p className="text-[#8e9297] text-xs truncate">Learning Community</p>
+          </div>
         </div>
 
         {/* People search */}
@@ -2029,6 +2078,7 @@ export default function ChatPage() {
                     Video Call
                   </Button>
                 )}
+                <NotificationBell />
               </div>
             </header>
 
@@ -2078,10 +2128,13 @@ export default function ChatPage() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 relative flex items-center justify-center">
+          <div className="absolute top-3 right-3 md:right-5">
+            <NotificationBell />
+          </div>
           <div className="text-center space-y-3">
-            <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto">
-              <MessageSquare className="w-10 h-10 text-muted-foreground opacity-50" />
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-orange-100 to-pink-100 flex items-center justify-center mx-auto">
+              <MessageSquare className="w-10 h-10 text-orange-400" />
             </div>
             <h2 className="text-xl font-semibold">No channel selected</h2>
             <p className="text-muted-foreground text-sm">

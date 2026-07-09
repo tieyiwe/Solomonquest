@@ -619,6 +619,15 @@ ALTER TABLE public.invitations ADD COLUMN IF NOT EXISTS program_id uuid REFERENC
 -- but every row going forward is correct.
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
 
+-- course_enrollments had no timestamp at all, so "enrolled since" on the
+-- student detail card was falling back to the account's created_at (when
+-- they signed up) rather than when they actually enrolled in a course --
+-- wrong for e.g. a student invited to a program well after their account
+-- existed, or enrolled in a second course much later. Existing rows
+-- backfill to now() since the real enrollment date wasn't tracked before;
+-- every enrollment going forward is accurate.
+ALTER TABLE public.course_enrollments ADD COLUMN IF NOT EXISTS enrolled_at timestamptz NOT NULL DEFAULT now();
+
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
 NOTIFY pgrst, 'reload schema';
