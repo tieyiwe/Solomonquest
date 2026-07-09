@@ -116,6 +116,8 @@ interface ChatMessage {
   attachmentType?: string | null;
   attachmentSize?: number | null;
   reactions?: { emoji: string; count: number; userIds: string[] }[];
+  isEdited?: boolean;
+  editedAt?: string | null;
   sender: {
     id: string;
     name: string;
@@ -127,6 +129,7 @@ interface ChatMessage {
 }
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const EDIT_WINDOW_MS = 15 * 60 * 1000;
 
 function formatLastSeen(onlineAt?: string | null): string {
   if (!onlineAt) return "Offline";
@@ -914,6 +917,76 @@ async function toggleReaction(
   }
 }
 
+async function editMessage(
+  messageId: string,
+  content: string,
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+): Promise<boolean> {
+  try {
+    const res = await apiFetch(`/api/chat/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error ?? "Failed to edit message");
+      return false;
+    }
+    const data = await res.json();
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, content: data.content, isEdited: data.isEdited, editedAt: data.editedAt } : m))
+    );
+    return true;
+  } catch {
+    toast.error("Failed to edit message");
+    return false;
+  }
+}
+
+function EditHistoryPopover({ messageId }: { messageId: string }) {
+  const [open, setOpen] = useState(false);
+  const [history, setHistory] = useState<{ content: string; editedAt: string | null }[] | null>(null);
+
+  useEffect(() => {
+    if (!open || history) return;
+    apiFetch(`/api/chat/messages/${messageId}/edits`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setHistory(data?.history ?? []))
+      .catch(() => setHistory([]));
+  }, [open, messageId, history]);
+
+  return (
+    <span className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="text-[11px] text-muted-foreground hover:text-foreground underline decoration-dotted"
+      >
+        (edited)
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full left-0 mb-1 z-20 bg-popover border rounded-lg shadow-md p-3 w-72 max-h-64 overflow-y-auto space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Edit History</p>
+            {history === null ? (
+              <p className="text-xs text-muted-foreground">Loading…</p>
+            ) : (
+              history.map((h, i) => (
+                <div key={i} className="text-xs border-b last:border-0 pb-1.5 last:pb-0">
+                  <p className="text-muted-foreground mb-0.5">
+                    {h.editedAt ? new Date(h.editedAt).toLocaleString() : "Current"}
+                  </p>
+                  <p className="whitespace-pre-wrap break-words">{h.content}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
 function ReactionBar({
   msg,
   currentUserId,
@@ -983,6 +1056,7 @@ function MessageItem({
   isDirectChannel = false,
   otherUserLastReadAt = null,
   onReact,
+  onEdit,
 }: {
   msg: ChatMessage;
   grouped?: boolean;
@@ -996,6 +1070,7 @@ function MessageItem({
   isDirectChannel?: boolean;
   otherUserLastReadAt?: string | null;
   onReact?: (emoji: string) => void;
+  onEdit?: (content: string) => Promise<boolean>;
 }) {
   const online = isOnline(msg.sender?.online_at);
   const threadCount = msg.thread_count ?? 0;
@@ -1003,6 +1078,24 @@ function MessageItem({
   const gutterWidth = compact ? "w-7" : "w-9";
   const isOwn = msg.sender?.id === currentUserId;
   const seen = !!(otherUserLastReadAt && new Date(otherUserLastReadAt) >= new Date(msg.created_at));
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(msg.content);
+  const [saving, setSaving] = useState(false);
+  const withinEditWindow = Date.now() - new Date(msg.created_at).getTime() < EDIT_WINDOW_MS;
+  const canEdit = isOwn && !msg.attachmentUrl && !msg._optimistic && onEdit && withinEditWindow;
+
+  async function handleSaveEdit() {
+    const trimmed = editValue.trim();
+    if (!trimmed || trimmed === msg.content) {
+      setIsEditing(false);
+      setEditValue(msg.content);
+      return;
+    }
+    setSaving(true);
+    const ok = await onEdit!(trimmed);
+    setSaving(false);
+    if (ok) setIsEditing(false);
+  }
 
   return (
     <div
@@ -1038,28 +1131,74 @@ function MessageItem({
             <span className="text-xs text-muted-foreground">{formatTs(msg.created_at)}</span>
           </div>
         )}
-        <div className="flex items-end gap-1.5">
-          {msg.attachmentUrl ? (
-            <AttachmentBubble msg={msg} />
-          ) : (
-            <p
-              className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${
-                msg._optimistic ? "opacity-50" : ""
-              }`}
-            >
-              {msg.content}
-            </p>
-          )}
-          {isDirectChannel && isOwn && !msg._optimistic && (
-            <span title={seen ? "Seen" : "Sent"} className="shrink-0 mb-0.5">
-              {seen ? (
-                <CheckCheck className="w-3.5 h-3.5 text-blue-500" />
-              ) : (
-                <Check className="w-3.5 h-3.5 text-muted-foreground" />
-              )}
-            </span>
-          )}
-        </div>
+        {isEditing ? (
+          <div className="space-y-1.5 max-w-lg">
+            <textarea
+              autoFocus
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSaveEdit();
+                } else if (e.key === "Escape") {
+                  setIsEditing(false);
+                  setEditValue(msg.content);
+                }
+              }}
+              className="w-full text-sm rounded-md border bg-background px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+              rows={2}
+              disabled={saving}
+            />
+            <div className="flex items-center gap-2">
+              <Button size="sm" className="h-7 text-xs" onClick={handleSaveEdit} disabled={saving}>
+                Save
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                onClick={() => { setIsEditing(false); setEditValue(msg.content); }}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <span className="text-[11px] text-muted-foreground">Enter to save · Esc to cancel</span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-end gap-1.5">
+            {msg.attachmentUrl ? (
+              <AttachmentBubble msg={msg} />
+            ) : (
+              <p
+                className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${
+                  msg._optimistic ? "opacity-50" : ""
+                }`}
+              >
+                {msg.content}
+              </p>
+            )}
+            {msg.isEdited && !msg._optimistic && <EditHistoryPopover messageId={msg.id} />}
+            {canEdit && !isEditing && (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="hidden group-hover:inline text-[11px] text-muted-foreground hover:text-foreground underline decoration-dotted shrink-0"
+              >
+                Edit
+              </button>
+            )}
+            {isDirectChannel && isOwn && !msg._optimistic && (
+              <span title={seen ? "Seen" : "Sent"} className="shrink-0 mb-0.5">
+                {seen ? (
+                  <CheckCheck className="w-3.5 h-3.5 text-blue-500" />
+                ) : (
+                  <Check className="w-3.5 h-3.5 text-muted-foreground" />
+                )}
+              </span>
+            )}
+          </div>
+        )}
 
         {!msg._optimistic && onReact && <ReactionBar msg={msg} currentUserId={currentUserId} onReact={onReact} />}
 
@@ -2359,6 +2498,7 @@ export default function ChatPage() {
                       isDirectChannel={activeChannel.type === "direct"}
                       otherUserLastReadAt={activeChannel.otherUser?.lastReadAt ?? null}
                       onReact={(emoji) => toggleReaction(m.id, emoji, setMessages)}
+                      onEdit={(content) => editMessage(m.id, content, setMessages)}
                     />
                   );
                 })}

@@ -430,6 +430,8 @@ router.get(
         content,
         thread_parent_id,
         created_at,
+        is_edited,
+        edited_at,
         sender_id,
         attachment_url,
         attachment_name,
@@ -496,6 +498,8 @@ router.get(
         channelId,
         content: m.content,
         threadParentId: m.thread_parent_id,
+        isEdited: m.is_edited ?? false,
+        editedAt: m.edited_at ?? null,
         replyCount: replyCounts[m.id as string] ?? 0,
         createdAt: m.created_at,
         attachmentUrl: m.attachment_url ?? null,
@@ -586,6 +590,8 @@ router.post(
         content,
         thread_parent_id,
         created_at,
+        is_edited,
+        edited_at,
         sender_id,
         profiles:sender_id (
           first_name,
@@ -610,6 +616,8 @@ router.post(
       channelId,
       content: message.content,
       threadParentId: message.thread_parent_id,
+      isEdited: message.is_edited ?? false,
+      editedAt: message.edited_at ?? null,
       createdAt: message.created_at,
       reactions: [],
       sender: {
@@ -723,6 +731,8 @@ router.post(
         content,
         thread_parent_id,
         created_at,
+        is_edited,
+        edited_at,
         sender_id,
         attachment_url,
         attachment_name,
@@ -749,6 +759,8 @@ router.post(
       channelId,
       content: message.content,
       threadParentId: message.thread_parent_id,
+      isEdited: message.is_edited ?? false,
+      editedAt: message.edited_at ?? null,
       createdAt: message.created_at,
       attachmentUrl: message.attachment_url,
       attachmentName: message.attachment_name,
@@ -795,6 +807,8 @@ router.get(
         content,
         thread_parent_id,
         created_at,
+        is_edited,
+        edited_at,
         sender_id,
         attachment_url,
         attachment_name,
@@ -826,6 +840,8 @@ router.get(
         channelId,
         content: m.content,
         threadParentId: m.thread_parent_id,
+        isEdited: m.is_edited ?? false,
+        editedAt: m.edited_at ?? null,
         createdAt: m.created_at,
         attachmentUrl: m.attachment_url ?? null,
         attachmentName: m.attachment_name ?? null,
@@ -909,6 +925,120 @@ router.post(
 
     const reactionsByMessage = await fetchReactions([messageId as string]);
     res.json({ reactions: reactionsByMessage[messageId as string] ?? [] });
+  }
+);
+
+// ─── Edit history ─────────────────────────────────────────────────────────────
+// Messages can be edited after sending, but only within a short window — and
+// every prior version is kept, not overwritten.
+
+const EDIT_WINDOW_MS = 15 * 60 * 1000;
+
+// ─── PATCH /chat/messages/:messageId ───────────────────────────────────────────
+
+router.patch(
+  "/chat/messages/:messageId",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const { messageId } = req.params;
+    const { content } = req.body as { content?: string };
+
+    if (!content || content.trim() === "") {
+      res.status(400).json({ error: "content is required" });
+      return;
+    }
+
+    const { data: message } = await supabaseAdmin
+      .from("chat_messages")
+      .select("id, sender_id, content, created_at")
+      .eq("id", messageId)
+      .maybeSingle();
+
+    if (!message) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    if (message.sender_id !== req.userId) {
+      res.status(403).json({ error: "You can only edit your own messages" });
+      return;
+    }
+
+    const ageMs = Date.now() - new Date(message.created_at as string).getTime();
+    if (ageMs > EDIT_WINDOW_MS) {
+      res.status(403).json({ error: "This message is too old to edit" });
+      return;
+    }
+
+    const trimmed = content.trim();
+    if (trimmed === message.content) {
+      res.json({ id: message.id, content: message.content, isEdited: false, editedAt: null });
+      return;
+    }
+
+    await supabaseAdmin.from("chat_message_edits").insert({
+      message_id: messageId,
+      previous_content: message.content,
+      edited_by: req.userId!,
+    });
+
+    const editedAt = new Date().toISOString();
+    const { error } = await supabaseAdmin
+      .from("chat_messages")
+      .update({ content: trimmed, is_edited: true, edited_at: editedAt })
+      .eq("id", messageId);
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.json({ id: messageId, content: trimmed, isEdited: true, editedAt });
+  }
+);
+
+// ─── GET /chat/messages/:messageId/edits ───────────────────────────────────────
+
+router.get(
+  "/chat/messages/:messageId/edits",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const { messageId } = req.params;
+
+    const { data: message } = await supabaseAdmin
+      .from("chat_messages")
+      .select("channel_id, content")
+      .eq("id", messageId)
+      .maybeSingle();
+
+    if (!message) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    const isMember = await assertChannelMember(message.channel_id as string, req.userId!);
+    if (!isMember) {
+      res.status(403).json({ error: "Not a member of this channel" });
+      return;
+    }
+
+    const { data: edits, error } = await supabaseAdmin
+      .from("chat_message_edits")
+      .select("previous_content, edited_at")
+      .eq("message_id", messageId)
+      .order("edited_at", { ascending: true });
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    const history = [
+      ...(edits ?? []).map((e) => ({ content: e.previous_content as string, editedAt: e.edited_at as string })),
+      { content: message.content as string, editedAt: null },
+    ];
+
+    res.json({ history });
   }
 );
 

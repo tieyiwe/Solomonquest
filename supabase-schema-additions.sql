@@ -387,6 +387,7 @@ CREATE POLICY "Allow all on chat_calls" ON public.chat_calls FOR ALL USING (true
 -- find the 'thread_parent_id' column of 'chat_messages' in the schema cache").
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS thread_parent_id uuid REFERENCES public.chat_messages(id) ON DELETE SET NULL;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS is_edited boolean NOT NULL DEFAULT false;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS edited_at timestamptz;
 
 -- ─── Channel archiving ──────────────────────────────────────────────────────────
 ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false;
@@ -690,6 +691,21 @@ END $$;
 ALTER TABLE public.platform_audit_log ADD COLUMN IF NOT EXISTS performed_by uuid REFERENCES public.profiles(id);
 ALTER TABLE public.platform_audit_log ADD COLUMN IF NOT EXISTS metadata jsonb;
 CREATE INDEX IF NOT EXISTS platform_audit_log_performed_by_idx ON public.platform_audit_log (performed_by, action, created_at);
+
+-- ─── Chat message edit history ─────────────────────────────────────────────────
+-- Messages can be edited after sending, but the previous content is kept —
+-- one row per edit, storing what the content WAS right before that edit.
+CREATE TABLE IF NOT EXISTS public.chat_message_edits (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id       uuid NOT NULL REFERENCES public.chat_messages(id) ON DELETE CASCADE,
+  previous_content text NOT NULL,
+  edited_by        uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  edited_at        timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.chat_message_edits ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "chat_message_edits_all" ON public.chat_message_edits;
+CREATE POLICY "chat_message_edits_all" ON public.chat_message_edits FOR ALL USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS chat_message_edits_message_idx ON public.chat_message_edits (message_id, edited_at);
 
 -- Force PostgREST to pick up the columns above immediately instead of
 -- waiting for its schema cache to refresh on its own.
