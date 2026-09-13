@@ -81,4 +81,4 @@ create index if not exists platform_audit_log_created_at_idx on public.platform_
 create index if not exists tuition_plans_course_id_idx on public.tuition_plans (course_id);
 create index if not exists tuition_payments_student_id_idx on public.tuition_payments (student_id);
 create index if not exists tuition_payments_course_id_idx on public.tuition_payments (course_id);
-create index if not exists tuition_installments_tuition_payment_id_idx on public.tuition_installments (tuition_payment_id);
+create index if not exists tuition_installments_payment_id_idx on public.tuition_installments (payment_id);
