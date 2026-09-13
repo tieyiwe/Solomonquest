@@ -207,7 +207,7 @@ router.post(
       }
 
       const { rows } = req.body as {
-        rows?: { email?: string; role?: string; programId?: string }[];
+        rows?: { email?: string; role?: string; programId?: string; studentId?: string }[];
       };
 
       if (!Array.isArray(rows) || rows.length === 0) {
@@ -231,6 +231,7 @@ router.post(
           email,
           role: row.role ?? "student",
           programId: row.programId,
+          studentId: row.studentId,
           schoolId,
           invitedBy: userId ?? "",
         });

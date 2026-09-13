@@ -728,11 +728,14 @@ interface BulkImportRowResult {
 function BulkImportButton({ onImported }: { onImported: () => void }) {
   const [open, setOpen] = useState(false);
   const [fileName, setFileName] = useState("");
-  const [rows, setRows] = useState<{ email: string; role: string; programName?: string }[]>([]);
+  const [rows, setRows] = useState<
+    { email: string; role: string; programName?: string; studentIdentifier?: string }[]
+  >([]);
   const [parseError, setParseError] = useState("");
   const [importing, setImporting] = useState(false);
   const [results, setResults] = useState<BulkImportRowResult[] | null>(null);
   const { data: programs } = useListPrograms({ query: { enabled: open } });
+  const { data: students } = useListUsers({ role: "student" }, { query: { enabled: open } });
 
   const parseCsv = (text: string) => {
     const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -745,8 +748,9 @@ function BulkImportButton({ onImported }: { onImported: () => void }) {
     const emailIdx = header.indexOf("email");
     const roleIdx = header.indexOf("role");
     const programIdx = header.indexOf("program");
+    const studentIdx = header.indexOf("student");
     if (emailIdx === -1) {
-      setParseError('CSV must have an "email" column (role and program columns are optional).');
+      setParseError('CSV must have an "email" column (role, program, and student columns are optional).');
       setRows([]);
       return;
     }
@@ -757,6 +761,7 @@ function BulkImportButton({ onImported }: { onImported: () => void }) {
         email: cols[emailIdx] ?? "",
         role: (roleIdx !== -1 ? cols[roleIdx] : "") || "student",
         programName: programIdx !== -1 ? cols[programIdx] : undefined,
+        studentIdentifier: studentIdx !== -1 ? cols[studentIdx] : undefined,
       };
     }).filter((r) => r.email);
 
@@ -786,11 +791,29 @@ function BulkImportButton({ onImported }: { onImported: () => void }) {
     setImporting(true);
     try {
       const programByName = new Map((programs ?? []).map((p) => [p.name.toLowerCase(), p.id]));
-      const payloadRows = rows.map((r) => ({
-        email: r.email,
-        role: r.role,
-        programId: r.programName ? programByName.get(r.programName.toLowerCase()) : undefined,
-      }));
+      // Matched by unique student ID first (unambiguous), falling back to
+      // full name (works for most rosters but can collide on common names —
+      // the unique ID column is the more reliable option when available).
+      const studentById = new Map(
+        (students ?? [])
+          .filter((s) => !!(s as any).uniqueStudentId)
+          .map((s): [string, string] => [String((s as any).uniqueStudentId).toLowerCase(), s.id])
+      );
+      const studentByName = new Map(
+        (students ?? []).map((s) => [`${s.firstName ?? ""} ${s.lastName ?? ""}`.trim().toLowerCase(), s.id])
+      );
+      const payloadRows = rows.map((r) => {
+        const identifier = r.studentIdentifier?.toLowerCase();
+        return {
+          email: r.email,
+          role: r.role,
+          programId: r.programName ? programByName.get(r.programName.toLowerCase()) : undefined,
+          studentId:
+            r.role === "parent" && identifier
+              ? studentById.get(identifier) ?? studentByName.get(identifier)
+              : undefined,
+        };
+      });
 
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/invitations/bulk", {
@@ -840,9 +863,11 @@ function BulkImportButton({ onImported }: { onImported: () => void }) {
         <div className="space-y-4 mt-2">
           <p className="text-xs text-muted-foreground">
             CSV with columns <code className="bg-muted px-1 rounded">email</code>,{" "}
-            <code className="bg-muted px-1 rounded">role</code> (teacher/staff/student, defaults to student), and{" "}
-            <code className="bg-muted px-1 rounded">program</code> (program name, required for students). Everyone
-            gets an invite email, same as inviting one at a time.
+            <code className="bg-muted px-1 rounded">role</code> (teacher/staff/student/parent, defaults to
+            student — mix roles freely in one file), <code className="bg-muted px-1 rounded">program</code>{" "}
+            (program name, required for student rows), and <code className="bg-muted px-1 rounded">student</code>{" "}
+            (the student's unique ID or full name, required for parent rows). Everyone gets an invite email, same
+            as inviting one at a time.
           </p>
           <Input
             type="file"
@@ -1112,7 +1137,10 @@ export default function AdminUsers() {
                   Students enrolled in your school. New applicants should still go through Admissions —
                   use Invite Student for students transferring in from another school who don't need to apply.
                 </p>
-                <InviteButton role="student" onSent={addInvite} />
+                <div className="flex items-center gap-2">
+                  <BulkImportButton onImported={addInvite} />
+                  <InviteButton role="student" onSent={addInvite} />
+                </div>
               </div>
               <CardContent className="p-0">
                 <UserTable role="student" search={search} />
@@ -1130,7 +1158,10 @@ export default function AdminUsers() {
             <Card className="border-0 shadow-sm">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">Staff members associated with your school.</p>
-                <InviteButton role="staff" onSent={addInvite} />
+                <div className="flex items-center gap-2">
+                  <BulkImportButton onImported={addInvite} />
+                  <InviteButton role="staff" onSent={addInvite} />
+                </div>
               </div>
               <CardContent className="p-0">
                 <UserTable role="staff" search={search} />
@@ -1148,7 +1179,10 @@ export default function AdminUsers() {
             <Card className="border-0 shadow-sm">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">Parent/guardian accounts linked to your students.</p>
-                <InviteButton role="parent" onSent={addInvite} />
+                <div className="flex items-center gap-2">
+                  <BulkImportButton onImported={addInvite} />
+                  <InviteButton role="parent" onSent={addInvite} />
+                </div>
               </div>
               <CardContent className="p-0">
                 <UserTable role="parent" search={search} />
