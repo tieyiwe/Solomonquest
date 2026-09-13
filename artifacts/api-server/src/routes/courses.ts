@@ -256,7 +256,7 @@ router.patch("/courses/:id", requireAuth, async (req: AuthenticatedRequest, res)
     return;
   }
 
-  const { title, programId, teacherId, code, term, termStartDate, termEndDate, termId, description, isPublished } = req.body;
+  const { title, programId, teacherId, code, term, termStartDate, termEndDate, termId, description, isPublished, attendanceWeightPercent } = req.body;
 
   if (termId) {
     const { data: termRow } = await supabaseAdmin.from("terms").select("id").eq("id", termId).eq("school_id", req.schoolId ?? "").maybeSingle();
@@ -264,6 +264,14 @@ router.patch("/courses/:id", requireAuth, async (req: AuthenticatedRequest, res)
       res.status(400).json({ error: "Term not found" });
       return;
     }
+  }
+
+  if (
+    attendanceWeightPercent !== undefined &&
+    (typeof attendanceWeightPercent !== "number" || attendanceWeightPercent < 0 || attendanceWeightPercent > 100)
+  ) {
+    res.status(400).json({ error: "attendanceWeightPercent must be a number between 0 and 100" });
+    return;
   }
 
   const updates: Record<string, unknown> = {};
@@ -277,6 +285,7 @@ router.patch("/courses/:id", requireAuth, async (req: AuthenticatedRequest, res)
   if (termId !== undefined) updates.term_id = termId;
   if (description !== undefined) updates.description = description;
   if (isPublished !== undefined) updates.is_published = isPublished;
+  if (attendanceWeightPercent !== undefined) updates.attendance_weight_percent = attendanceWeightPercent;
 
   // Capture the pre-update teacher so a reassignment can be logged with
   // both sides of the change — fetched before the write, not from
@@ -563,6 +572,7 @@ async function enrichCourse(c: Record<string, unknown>) {
     termStartDate: c.term_start_date,
     termEndDate: c.term_end_date,
     termId: c.term_id ?? null,
+    attendanceWeightPercent: c.attendance_weight_percent ?? 0,
     description: c.description,
     isPublished: c.is_published,
     teacherName,
@@ -618,6 +628,7 @@ async function enrichCourses(rows: Record<string, unknown>[]) {
     termStartDate: c.term_start_date,
     termEndDate: c.term_end_date,
     termId: c.term_id ?? null,
+    attendanceWeightPercent: c.attendance_weight_percent ?? 0,
     description: c.description,
     isPublished: c.is_published,
     teacherName: c.teacher_id ? nameById.get(c.teacher_id as string) ?? null : null,

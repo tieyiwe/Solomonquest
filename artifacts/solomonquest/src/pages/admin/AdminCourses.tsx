@@ -87,6 +87,7 @@ interface CourseFormData {
   isLive: boolean;
   classDate: string;
   classEndTime: string;
+  attendanceWeightPercent: string;
 }
 
 const defaultForm: CourseFormData = {
@@ -103,6 +104,7 @@ const defaultForm: CourseFormData = {
   isLive: false,
   classDate: "",
   classEndTime: "",
+  attendanceWeightPercent: "0",
 };
 
 interface ScheduleTerm {
@@ -459,6 +461,7 @@ function CourseFormDialog({
           isLive: (course as any).isLive || false,
           classDate: (course as any).classDate || "",
           classEndTime: (course as any).classEndTime || "",
+          attendanceWeightPercent: String((course as any).attendanceWeightPercent ?? 0),
         }
       : defaultForm
   );
@@ -498,6 +501,12 @@ function CourseFormDialog({
       return;
     }
 
+    const attendanceWeightPercent = form.attendanceWeightPercent === "" ? 0 : Number(form.attendanceWeightPercent);
+    if (!Number.isFinite(attendanceWeightPercent) || attendanceWeightPercent < 0 || attendanceWeightPercent > 100) {
+      toast.error("Attendance weight must be a number between 0 and 100");
+      return;
+    }
+
     const corePayload = {
       title: form.title,
       code: form.code || undefined,
@@ -512,6 +521,7 @@ function CourseFormDialog({
       isLive: form.isLive,
       classDate: form.isLive && form.classDate ? form.classDate : undefined,
       classEndTime: form.isLive && form.classEndTime ? form.classEndTime : undefined,
+      attendanceWeightPercent,
     };
 
     if (mode === "create") {
@@ -690,6 +700,23 @@ function CourseFormDialog({
             <p className="text-xs text-muted-foreground">
               Groups this class under a quarter/semester/cycle for scheduling — manage terms
               under Admin → Terms & Scheduling.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Attendance Weight in Final Grade (%)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              placeholder="0"
+              value={form.attendanceWeightPercent}
+              onChange={(e) => set("attendanceWeightPercent", e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              0 means attendance doesn't affect the grade. Set to e.g. 10 to have attendance count
+              for 10% of each student's overall grade in this course, with assignments and quizzes
+              making up the rest.
             </p>
           </div>
 
