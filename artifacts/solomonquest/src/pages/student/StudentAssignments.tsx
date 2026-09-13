@@ -216,6 +216,7 @@ function SubmitDialog({
           </div>
           <RequiredVideoPlayer
             src={videoUrl}
+            assignmentId={assignment.id}
             onComplete={() => setVideoWatched(true)}
           />
           {requireFullWatch && !videoWatched && (

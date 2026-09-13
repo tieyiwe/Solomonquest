@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { gradeSubmission } from "../lib/gradingEngine";
 
 const router: IRouter = Router();
 
@@ -526,6 +527,148 @@ router.get("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
   }
 
   res.json(await enrichAssignment(data));
+});
+
+// Threshold at which server-verified watch progress counts as "fully
+// watched." Not 100 — a student who watches to 99.x% (browser rounding,
+// player stopping a frame short of the end event, etc.) shouldn't be
+// blocked from credit, and the client's own forward-seek block already
+// makes it impossible to reach a high percentage without having played
+// through nearly the whole video. 90 leaves a small, deliberate margin
+// while still requiring the student to have watched the bulk of it.
+const VIDEO_COMPLETION_THRESHOLD_PERCENT = 90;
+
+// POST /assignments/:id/watch-progress — the video player pings this
+// periodically (not on every timeupdate tick) with how far the student has
+// gotten. This is the server-side backstop for video-watch verification:
+// the client's own maxWatchedRef/seek-blocking gives immediate UX feedback,
+// but nothing previously stopped a student from bypassing it (devtools, a
+// direct API call) and submitting anyway. The server now tracks its own
+// high-water mark independently and only it is trusted for auto-grading.
+router.post("/assignments/:id/watch-progress", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const assignmentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const studentId = req.userId;
+
+  if (req.userRole !== "student" || !studentId) {
+    res.status(403).json({ error: "Only students record watch progress" });
+    return;
+  }
+
+  const watchedSecondsRaw = (req.body ?? {}).watchedSeconds;
+  const durationSecondsRaw = (req.body ?? {}).durationSeconds;
+  const watchedSeconds = typeof watchedSecondsRaw === "number" ? watchedSecondsRaw : Number(watchedSecondsRaw);
+  const durationSeconds = typeof durationSecondsRaw === "number" ? durationSecondsRaw : Number(durationSecondsRaw);
+
+  if (!Number.isFinite(watchedSeconds) || watchedSeconds < 0) {
+    res.status(400).json({ error: "watchedSeconds must be a non-negative number" });
+    return;
+  }
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    res.status(400).json({ error: "durationSeconds must be a positive number" });
+    return;
+  }
+
+  const { data: assignment, error: assignmentError } = await supabaseAdmin
+    .from("assignments")
+    .select("id, course_id, assignment_type, require_full_watch, points_possible")
+    .eq("id", assignmentId)
+    .single();
+
+  if (assignmentError || !assignment) {
+    res.status(404).json({ error: "Assignment not found" });
+    return;
+  }
+
+  if (assignment.assignment_type !== "video") {
+    res.status(400).json({ error: "This assignment is not a video assignment" });
+    return;
+  }
+
+  // Same enrollment check submissions.ts uses for POST /submissions — only
+  // an actively enrolled student may record progress against this
+  // assignment's course.
+  const { data: enrollment } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("course_id")
+    .eq("course_id", assignment.course_id as string)
+    .eq("student_id", studentId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (!enrollment) {
+    res.status(403).json({ error: "You are not enrolled in this course" });
+    return;
+  }
+
+  const { data: existingProgress } = await supabaseAdmin
+    .from("video_watch_progress")
+    .select("*")
+    .eq("assignment_id", assignmentId)
+    .eq("student_id", studentId)
+    .maybeSingle();
+
+  // High-water mark only: a client re-reporting a lower value (e.g. after
+  // seeking back) must never reduce what the server has already recorded.
+  // This is the actual anti-cheat property — the server doesn't trust
+  // "current position," only the furthest point ever reached.
+  const previousMax = (existingProgress?.max_watched_seconds as number | null) ?? 0;
+  const newMax = Math.max(previousMax, watchedSeconds);
+  const watchedPercent = durationSeconds > 0 ? Math.min(100, (newMax / durationSeconds) * 100) : 0;
+  const wasCompleted = existingProgress?.completed === true;
+  const completed = watchedPercent >= VIDEO_COMPLETION_THRESHOLD_PERCENT;
+
+  const { data: saved, error: upsertError } = await supabaseAdmin
+    .from("video_watch_progress")
+    .upsert(
+      {
+        assignment_id: assignmentId,
+        student_id: studentId,
+        max_watched_seconds: newMax,
+        duration_seconds: durationSeconds,
+        watched_percent: watchedPercent,
+        completed,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "assignment_id,student_id" }
+    )
+    .select()
+    .single();
+
+  if (upsertError || !saved) {
+    res.status(500).json({ error: upsertError?.message ?? "Failed to save watch progress" });
+    return;
+  }
+
+  // Auto-grade on the transition into "completed," only for assignments
+  // that require a full watch, and only when there's already an ungraded
+  // submission to grade — submission creation itself is a separate,
+  // unchanged flow.
+  if (completed && !wasCompleted && assignment.require_full_watch === true) {
+    const { data: submission } = await supabaseAdmin
+      .from("submissions")
+      .select("id, status")
+      .eq("assignment_id", assignmentId)
+      .eq("student_id", studentId)
+      .maybeSingle();
+
+    if (submission && submission.status !== "graded" && typeof assignment.points_possible === "number") {
+      await gradeSubmission({
+        submissionId: submission.id as string,
+        grade: assignment.points_possible,
+        gradedBy: undefined,
+      });
+    }
+  }
+
+  res.json({
+    assignmentId,
+    studentId,
+    maxWatchedSeconds: saved.max_watched_seconds,
+    durationSeconds: saved.duration_seconds,
+    watchedPercent: saved.watched_percent,
+    completed: saved.completed,
+    updatedAt: saved.updated_at,
+  });
 });
 
 // Update assignment (PATCH - legacy — accepts the same mixed-casing body as

@@ -1,11 +1,16 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Play, Pause, Volume2, VolumeX, Lock, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabase";
 
 interface RequiredVideoPlayerProps {
   src: string;
   onComplete?: () => void;
   className?: string;
+  /** When set, periodically reports watch progress to the server as a
+   *  backstop to this component's own (client-only) gating — see
+   *  reportProgress below. */
+  assignmentId?: string;
 }
 
 function formatTime(secs: number) {
@@ -14,9 +19,16 @@ function formatTime(secs: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function RequiredVideoPlayer({ src, onComplete, className = "" }: RequiredVideoPlayerProps) {
+// How often, at most, to ping the server with watch progress while playing.
+// The video element's timeupdate event fires many times per second — we
+// only want a periodic heartbeat, not a flood of requests.
+const PROGRESS_REPORT_INTERVAL_MS = 12_000;
+
+export function RequiredVideoPlayer({ src, onComplete, className = "", assignmentId }: RequiredVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const maxWatchedRef = useRef(0);
+  const lastReportedAtRef = useRef(0);
+  const lastReportedSecondsRef = useRef(0);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -49,6 +61,33 @@ export function RequiredVideoPlayer({ src, onComplete, className = "" }: Require
     }
   }, []);
 
+  // Reports current watch progress to the server — an authoritative
+  // backstop to the client-only gating above (which a student could bypass
+  // via devtools or a direct API call). Fire-and-forget: a failed report
+  // never blocks playback or the existing client-side UX.
+  const reportProgress = useCallback(
+    (watchedSeconds: number) => {
+      if (!assignmentId) return;
+      const v = videoRef.current;
+      const durationSeconds = v?.duration;
+      if (!durationSeconds || !Number.isFinite(durationSeconds)) return;
+
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        fetch(`/api/assignments/${assignmentId}/watch-progress`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+          body: JSON.stringify({ watchedSeconds, durationSeconds }),
+        }).catch(() => {
+          // Ignored — next periodic tick or the completion report will retry.
+        });
+      });
+    },
+    [assignmentId]
+  );
+
   const handleTimeUpdate = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -56,13 +95,30 @@ export function RequiredVideoPlayer({ src, onComplete, className = "" }: Require
       maxWatchedRef.current = v.currentTime;
     }
     setCurrentTime(v.currentTime);
-  }, []);
+
+    const now = Date.now();
+    if (
+      assignmentId &&
+      now - lastReportedAtRef.current >= PROGRESS_REPORT_INTERVAL_MS &&
+      maxWatchedRef.current > lastReportedSecondsRef.current
+    ) {
+      lastReportedAtRef.current = now;
+      lastReportedSecondsRef.current = maxWatchedRef.current;
+      reportProgress(maxWatchedRef.current);
+    }
+  }, [assignmentId, reportProgress]);
 
   const handleEnded = useCallback(() => {
     setCompleted(true);
     setPlaying(false);
+    // Always send one final report on completion, regardless of the
+    // periodic-interval throttle above, so the server's record reflects
+    // the true end-of-video position right away.
+    lastReportedAtRef.current = Date.now();
+    lastReportedSecondsRef.current = maxWatchedRef.current;
+    reportProgress(maxWatchedRef.current);
     onComplete?.();
-  }, [onComplete]);
+  }, [onComplete, reportProgress]);
 
   const handleLoadedMetadata = () => {
     const v = videoRef.current;
