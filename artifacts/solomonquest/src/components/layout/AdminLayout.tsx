@@ -30,6 +30,7 @@ import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter } from "@/components/help/HelpCenter";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
+import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { AgentWidget } from "@/components/agent/AgentWidget";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
@@ -266,6 +267,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           <div className="hidden md:block flex-1" />
 
           <div className="flex items-center gap-2 ml-auto">
+            <GlobalSearch />
             <ProfileMenu />
           </div>
         </header>

@@ -4,6 +4,7 @@ import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
+import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { AgentWidget } from "@/components/agent/AgentWidget";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
@@ -250,6 +251,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
           </div>
 
           <div className="flex items-center gap-2">
+            <GlobalSearch />
             <Button variant="ghost" size="icon" className="rounded-full relative">
               <Bell className="h-5 w-5 text-muted-foreground" />
             </Button>

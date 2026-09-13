@@ -35,6 +35,7 @@ import impersonationRouter from "./impersonation";
 import calendarRouter from "./calendar";
 import parentsRouter from "./parents";
 import termsRouter from "./terms";
+import searchRouter from "./search";
 
 const router: IRouter = Router();
 
@@ -74,5 +75,6 @@ router.use(impersonationRouter);
 router.use(calendarRouter);
 router.use(parentsRouter);
 router.use(termsRouter);
+router.use(searchRouter);
 
 export default router;

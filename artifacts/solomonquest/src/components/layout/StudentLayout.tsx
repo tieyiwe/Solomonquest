@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
+import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
 import { AgentWidget } from "@/components/agent/AgentWidget";
@@ -242,6 +243,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
           </div>
 
           <div className="flex items-center gap-2">
+            <GlobalSearch />
             <Button variant="ghost" size="icon" className="rounded-full relative" asChild>
               <Link href="/dashboard/student">
                 <Bell className="h-5 w-5 text-muted-foreground" />
