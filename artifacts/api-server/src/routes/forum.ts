@@ -14,6 +14,30 @@ const CONTENT_MAX_LENGTH = 10000;
 // Helpers
 // ---------------------------------------------------------------------------
 
+// The only reaction types the UI offers buttons for — always present in a
+// breakdown (as 0) even when nobody has used them yet, so the frontend
+// never has to guard against a missing key.
+const REACTION_TYPES = ["like", "heart", "celebrate"] as const;
+
+function emptyReactionCounts(): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const type of REACTION_TYPES) counts[type] = 0;
+  return counts;
+}
+
+function buildReactionBreakdown(
+  rows: { reaction: string; user_id: string }[],
+  viewerId: string | undefined
+): { reactionCounts: Record<string, number>; myReaction: string | null } {
+  const reactionCounts = emptyReactionCounts();
+  let myReaction: string | null = null;
+  for (const row of rows) {
+    reactionCounts[row.reaction] = (reactionCounts[row.reaction] ?? 0) + 1;
+    if (viewerId && row.user_id === viewerId) myReaction = row.reaction;
+  }
+  return { reactionCounts, myReaction };
+}
+
 async function getProfile(userId: string) {
   const { data } = await supabaseAdmin
     .from("profiles")
@@ -156,8 +180,8 @@ async function canAccessForumScope(
   return !!enrollment;
 }
 
-async function enrichTopic(topic: Record<string, unknown>) {
-  const [profile, commentCountRes, reactionCountRes, mentions] = await Promise.all([
+async function enrichTopic(topic: Record<string, unknown>, viewerId?: string) {
+  const [profile, commentCountRes, reactionsRes, mentions] = await Promise.all([
     topic.posted_by ? getProfile(topic.posted_by as string) : Promise.resolve(null),
     supabaseAdmin
       .from("forum_comments")
@@ -165,10 +189,12 @@ async function enrichTopic(topic: Record<string, unknown>) {
       .eq("topic_id", topic.id as string),
     supabaseAdmin
       .from("forum_reactions")
-      .select("id", { count: "exact", head: true })
+      .select("reaction, user_id")
       .eq("topic_id", topic.id as string),
     getMentions(topic.id as string, undefined),
   ]);
+
+  const { reactionCounts, myReaction } = buildReactionBreakdown(reactionsRes.data ?? [], viewerId);
 
   return {
     id: topic.id,
@@ -182,22 +208,25 @@ async function enrichTopic(topic: Record<string, unknown>) {
     postedBy: topic.posted_by,
     postedByProfile: profile,
     commentCount: commentCountRes.count ?? 0,
-    reactionCount: reactionCountRes.count ?? 0,
+    reactionCounts,
+    myReaction,
     mentions,
     createdAt: topic.created_at,
     updatedAt: topic.updated_at,
   };
 }
 
-async function enrichComment(comment: Record<string, unknown>) {
-  const [profile, reactionCountRes, mentions] = await Promise.all([
+async function enrichComment(comment: Record<string, unknown>, viewerId?: string) {
+  const [profile, reactionsRes, mentions] = await Promise.all([
     comment.posted_by ? getProfile(comment.posted_by as string) : Promise.resolve(null),
     supabaseAdmin
       .from("forum_reactions")
-      .select("id", { count: "exact", head: true })
+      .select("reaction, user_id")
       .eq("comment_id", comment.id as string),
     getMentions(undefined, comment.id as string),
   ]);
+
+  const { reactionCounts, myReaction } = buildReactionBreakdown(reactionsRes.data ?? [], viewerId);
 
   return {
     id: comment.id,
@@ -205,7 +234,8 @@ async function enrichComment(comment: Record<string, unknown>) {
     content: comment.content,
     postedBy: comment.posted_by,
     postedByProfile: profile,
-    reactionCount: reactionCountRes.count ?? 0,
+    reactionCounts,
+    myReaction,
     mentions,
     createdAt: comment.created_at,
     updatedAt: comment.updated_at,
@@ -213,9 +243,9 @@ async function enrichComment(comment: Record<string, unknown>) {
 }
 
 // Batched version of enrichTopic for list endpoints — one profiles query,
-// one comment-count query, one reaction-count query, and one mentions
-// query across all topics, instead of 4 queries per topic.
-async function enrichTopics(topics: Record<string, unknown>[]) {
+// one comment-count query, one reactions query, and one mentions query
+// across all topics, instead of 4 queries per topic.
+async function enrichTopics(topics: Record<string, unknown>[], viewerId?: string) {
   if (topics.length === 0) return [];
 
   const topicIds = topics.map((t) => t.id as string);
@@ -228,7 +258,7 @@ async function enrichTopics(topics: Record<string, unknown>[]) {
       ? supabaseAdmin.from("profiles").select("id, first_name, last_name, avatar_url").in("id", posterIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     supabaseAdmin.from("forum_comments").select("topic_id").in("topic_id", topicIds),
-    supabaseAdmin.from("forum_reactions").select("topic_id").in("topic_id", topicIds),
+    supabaseAdmin.from("forum_reactions").select("topic_id, reaction, user_id").in("topic_id", topicIds),
     supabaseAdmin.from("forum_mentions").select("topic_id, mentioned_user_id").in("topic_id", topicIds),
   ]);
 
@@ -240,10 +270,12 @@ async function enrichTopics(topics: Record<string, unknown>[]) {
     commentCountByTopic.set(tid, (commentCountByTopic.get(tid) ?? 0) + 1);
   }
 
-  const reactionCountByTopic = new Map<string, number>();
+  const reactionRowsByTopic = new Map<string, { reaction: string; user_id: string }[]>();
   for (const r of reactionsRes.data ?? []) {
     const tid = r.topic_id as string;
-    reactionCountByTopic.set(tid, (reactionCountByTopic.get(tid) ?? 0) + 1);
+    const arr = reactionRowsByTopic.get(tid) ?? [];
+    arr.push({ reaction: r.reaction as string, user_id: r.user_id as string });
+    reactionRowsByTopic.set(tid, arr);
   }
 
   const mentionedIdsByTopic = new Map<string, string[]>();
@@ -267,6 +299,7 @@ async function enrichTopics(topics: Record<string, unknown>[]) {
       const p = mentionProfileById.get(id);
       return { id, firstName: p?.first_name ?? null, lastName: p?.last_name ?? null };
     });
+    const { reactionCounts, myReaction } = buildReactionBreakdown(reactionRowsByTopic.get(tid) ?? [], viewerId);
 
     return {
       id: topic.id,
@@ -280,7 +313,8 @@ async function enrichTopics(topics: Record<string, unknown>[]) {
       postedBy: topic.posted_by,
       postedByProfile: profile,
       commentCount: commentCountByTopic.get(tid) ?? 0,
-      reactionCount: reactionCountByTopic.get(tid) ?? 0,
+      reactionCounts,
+      myReaction,
       mentions,
       createdAt: topic.created_at,
       updatedAt: topic.updated_at,
@@ -288,7 +322,7 @@ async function enrichTopics(topics: Record<string, unknown>[]) {
   });
 }
 
-async function enrichComments(comments: Record<string, unknown>[]) {
+async function enrichComments(comments: Record<string, unknown>[], viewerId?: string) {
   if (comments.length === 0) return [];
 
   const commentIds = comments.map((c) => c.id as string);
@@ -300,16 +334,18 @@ async function enrichComments(comments: Record<string, unknown>[]) {
     posterIds.length
       ? supabaseAdmin.from("profiles").select("id, first_name, last_name, avatar_url").in("id", posterIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
-    supabaseAdmin.from("forum_reactions").select("comment_id").in("comment_id", commentIds),
+    supabaseAdmin.from("forum_reactions").select("comment_id, reaction, user_id").in("comment_id", commentIds),
     supabaseAdmin.from("forum_mentions").select("comment_id, mentioned_user_id").in("comment_id", commentIds),
   ]);
 
   const profileById = new Map((profilesRes.data ?? []).map((p) => [p.id as string, p]));
 
-  const reactionCountByComment = new Map<string, number>();
+  const reactionRowsByComment = new Map<string, { reaction: string; user_id: string }[]>();
   for (const r of reactionsRes.data ?? []) {
     const cid = r.comment_id as string;
-    reactionCountByComment.set(cid, (reactionCountByComment.get(cid) ?? 0) + 1);
+    const arr = reactionRowsByComment.get(cid) ?? [];
+    arr.push({ reaction: r.reaction as string, user_id: r.user_id as string });
+    reactionRowsByComment.set(cid, arr);
   }
 
   const mentionedIdsByComment = new Map<string, string[]>();
@@ -333,6 +369,7 @@ async function enrichComments(comments: Record<string, unknown>[]) {
       const p = mentionProfileById.get(id);
       return { id, firstName: p?.first_name ?? null, lastName: p?.last_name ?? null };
     });
+    const { reactionCounts, myReaction } = buildReactionBreakdown(reactionRowsByComment.get(cid) ?? [], viewerId);
 
     return {
       id: comment.id,
@@ -340,7 +377,8 @@ async function enrichComments(comments: Record<string, unknown>[]) {
       content: comment.content,
       postedBy: comment.posted_by,
       postedByProfile: profile,
-      reactionCount: reactionCountByComment.get(cid) ?? 0,
+      reactionCounts,
+      myReaction,
       mentions,
       createdAt: comment.created_at,
       updatedAt: comment.updated_at,
@@ -390,7 +428,7 @@ router.get(
       if (ok) visible.push(topic);
     }
 
-    const topics = await enrichTopics(visible);
+    const topics = await enrichTopics(visible, req.userId);
     res.json(topics);
   }
 );
@@ -479,7 +517,7 @@ router.post(
       `/forum/topics/${data.id as string}`
     );
 
-    res.status(201).json(await enrichTopic(data));
+    res.status(201).json(await enrichTopic(data, req.userId));
   }
 );
 
@@ -518,17 +556,13 @@ router.get(
       return;
     }
 
-    const [enrichedTopic, commentsRes, topicReactionsRes] = await Promise.all([
-      enrichTopic(topic),
+    const [enrichedTopic, commentsRes] = await Promise.all([
+      enrichTopic(topic, req.userId),
       supabaseAdmin
         .from("forum_comments")
         .select("*")
         .eq("topic_id", topicId)
         .order("created_at", { ascending: true }),
-      supabaseAdmin
-        .from("forum_reactions")
-        .select("*")
-        .eq("topic_id", topicId),
     ]);
 
     if (commentsRes.error) {
@@ -536,28 +570,11 @@ router.get(
       return;
     }
 
-    const enrichedComments = await enrichComments(commentsRes.data ?? []);
-
-    // Attach per-comment reactions
-    const commentIds = (commentsRes.data ?? []).map((c) => c.id as string);
-    let commentReactions: Record<string, unknown>[] = [];
-    if (commentIds.length > 0) {
-      const { data: cr } = await supabaseAdmin
-        .from("forum_reactions")
-        .select("*")
-        .in("comment_id", commentIds);
-      commentReactions = cr ?? [];
-    }
-
-    const commentsWithReactions = enrichedComments.map((c) => ({
-      ...c,
-      reactions: commentReactions.filter((r) => r.comment_id === c.id),
-    }));
+    const enrichedComments = await enrichComments(commentsRes.data ?? [], req.userId);
 
     res.json({
       ...enrichedTopic,
-      reactions: topicReactionsRes.data ?? [],
-      comments: commentsWithReactions,
+      comments: enrichedComments,
     });
   }
 );
@@ -669,7 +686,7 @@ router.post(
       notifLink
     );
 
-    res.status(201).json(await enrichComment(newComment));
+    res.status(201).json(await enrichComment(newComment, req.userId));
   }
 );
 
@@ -683,8 +700,8 @@ router.post(
     const { topicId } = req.params;
     const { reaction } = req.body;
 
-    if (!reaction) {
-      res.status(400).json({ error: "reaction is required" });
+    if (!reaction || !REACTION_TYPES.includes(reaction)) {
+      res.status(400).json({ error: `reaction must be one of: ${REACTION_TYPES.join(", ")}` });
       return;
     }
 
@@ -715,9 +732,24 @@ router.post(
       return;
     }
 
-    const { data, error } = await supabaseAdmin
+    // Clicking the reaction you already have toggles it off; picking a
+    // different one replaces it — a user only ever has one active
+    // reaction per topic, matching the unique (topic_id, user_id) index.
+    const { data: existing } = await supabaseAdmin
       .from("forum_reactions")
-      .upsert(
+      .select("id, reaction")
+      .eq("topic_id", topicId)
+      .eq("user_id", req.userId ?? "")
+      .maybeSingle();
+
+    if (existing && existing.reaction === reaction) {
+      const { error: deleteError } = await supabaseAdmin.from("forum_reactions").delete().eq("id", existing.id);
+      if (deleteError) {
+        res.status(400).json({ error: deleteError.message });
+        return;
+      }
+    } else {
+      const { error: upsertError } = await supabaseAdmin.from("forum_reactions").upsert(
         {
           topic_id: topicId,
           comment_id: null,
@@ -725,26 +757,30 @@ router.post(
           reaction,
         },
         { onConflict: "topic_id,user_id" }
-      )
-      .select()
-      .single();
-
-    if (error) {
-      res.status(400).json({ error: error.message });
-      return;
-    }
-
-    // Notify topic author if not self
-    const authorId = topic.posted_by as string | null;
-    if (authorId && authorId !== req.userId) {
-      await createNotification(
-        authorId,
-        `Someone reacted to your topic: ${topic.title as string}`,
-        `/forum/topics/${topicId}`
       );
+      if (upsertError) {
+        res.status(400).json({ error: upsertError.message });
+        return;
+      }
+
+      // Notify topic author if not self — only on a new/changed reaction,
+      // not when toggling one off.
+      const authorId = topic.posted_by as string | null;
+      if (authorId && authorId !== req.userId) {
+        await createNotification(
+          authorId,
+          `Someone reacted to your topic: ${topic.title as string}`,
+          `/forum/topics/${topicId}`
+        );
+      }
     }
 
-    res.status(201).json(data);
+    const { data: allReactions } = await supabaseAdmin
+      .from("forum_reactions")
+      .select("reaction, user_id")
+      .eq("topic_id", topicId);
+
+    res.json(buildReactionBreakdown(allReactions ?? [], req.userId));
   }
 );
 
@@ -758,8 +794,8 @@ router.post(
     const { commentId } = req.params;
     const { reaction } = req.body;
 
-    if (!reaction) {
-      res.status(400).json({ error: "reaction is required" });
+    if (!reaction || !REACTION_TYPES.includes(reaction)) {
+      res.status(400).json({ error: `reaction must be one of: ${REACTION_TYPES.join(", ")}` });
       return;
     }
 
@@ -790,9 +826,21 @@ router.post(
       return;
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data: existing } = await supabaseAdmin
       .from("forum_reactions")
-      .upsert(
+      .select("id, reaction")
+      .eq("comment_id", commentId)
+      .eq("user_id", req.userId ?? "")
+      .maybeSingle();
+
+    if (existing && existing.reaction === reaction) {
+      const { error: deleteError } = await supabaseAdmin.from("forum_reactions").delete().eq("id", existing.id);
+      if (deleteError) {
+        res.status(400).json({ error: deleteError.message });
+        return;
+      }
+    } else {
+      const { error: upsertError } = await supabaseAdmin.from("forum_reactions").upsert(
         {
           topic_id: null,
           comment_id: commentId,
@@ -800,26 +848,30 @@ router.post(
           reaction,
         },
         { onConflict: "comment_id,user_id" }
-      )
-      .select()
-      .single();
-
-    if (error) {
-      res.status(400).json({ error: error.message });
-      return;
-    }
-
-    // Notify comment author if not self
-    const authorId = comment.posted_by as string | null;
-    if (authorId && authorId !== req.userId) {
-      await createNotification(
-        authorId,
-        "Someone reacted to your comment",
-        `/forum/topics/${comment.topic_id as string}`
       );
+      if (upsertError) {
+        res.status(400).json({ error: upsertError.message });
+        return;
+      }
+
+      // Notify comment author if not self — only on a new/changed
+      // reaction, not when toggling one off.
+      const authorId = comment.posted_by as string | null;
+      if (authorId && authorId !== req.userId) {
+        await createNotification(
+          authorId,
+          "Someone reacted to your comment",
+          `/forum/topics/${comment.topic_id as string}`
+        );
+      }
     }
 
-    res.status(201).json(data);
+    const { data: allReactions } = await supabaseAdmin
+      .from("forum_reactions")
+      .select("reaction, user_id")
+      .eq("comment_id", commentId);
+
+    res.json(buildReactionBreakdown(allReactions ?? [], req.userId));
   }
 );
 

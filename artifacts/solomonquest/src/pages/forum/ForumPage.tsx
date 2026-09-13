@@ -115,7 +115,11 @@ function normalizeTopic(
     created_at: raw.createdAt,
     updated_at: raw.updatedAt,
     comment_count: raw.commentCount ?? 0,
-    reaction_counts: { like: raw.reactionCount ?? 0, heart: 0, celebrate: 0 },
+    reaction_counts: {
+      like: raw.reactionCounts?.like ?? 0,
+      heart: raw.reactionCounts?.heart ?? 0,
+      celebrate: raw.reactionCounts?.celebrate ?? 0,
+    },
     course_id: raw.courseId ?? null,
     course_name: raw.courseId ? courseById.get(raw.courseId) ?? null : null,
     program_id: raw.programId ?? null,

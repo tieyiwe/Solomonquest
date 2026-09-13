@@ -46,12 +46,6 @@ interface ReactionCounts {
   celebrate: number;
 }
 
-interface UserReactions {
-  like: boolean;
-  heart: boolean;
-  celebrate: boolean;
-}
-
 interface ForumTopic {
   id: string;
   title: string;
@@ -63,7 +57,10 @@ interface ForumTopic {
   created_at: string;
   updated_at: string;
   reaction_counts: ReactionCounts;
-  user_reactions?: UserReactions;
+  // A user only ever has one active reaction per topic/comment (enforced
+  // by a unique index on (topic_id, user_id) / (comment_id, user_id)) —
+  // this is which one, or null if they haven't reacted.
+  my_reaction: ReactionType | null;
   course_id: string | null;
   course_name?: string | null;
   program_id: string | null;
@@ -80,7 +77,7 @@ interface ForumComment {
   author_avatar_url?: string | null;
   created_at: string;
   reaction_counts: ReactionCounts;
-  user_reactions?: UserReactions;
+  my_reaction: ReactionType | null;
 }
 
 function defaultReactionCounts(): ReactionCounts {
@@ -102,7 +99,8 @@ function normalizeTopic(raw: any): ForumTopic {
     author_avatar_url: raw.postedByProfile?.avatar_url ?? null,
     created_at: raw.createdAt,
     updated_at: raw.updatedAt,
-    reaction_counts: { ...defaultReactionCounts(), like: raw.reactionCount ?? 0 },
+    reaction_counts: { ...defaultReactionCounts(), ...raw.reactionCounts },
+    my_reaction: raw.myReaction ?? null,
     course_id: raw.courseId ?? null,
     course_name: null,
     program_id: raw.programId ?? null,
@@ -123,7 +121,8 @@ function normalizeComment(raw: any): ForumComment {
     author_name: authorName,
     author_avatar_url: raw.postedByProfile?.avatar_url ?? null,
     created_at: raw.createdAt,
-    reaction_counts: { ...defaultReactionCounts(), like: raw.reactionCount ?? 0 },
+    reaction_counts: { ...defaultReactionCounts(), ...raw.reactionCounts },
+    my_reaction: raw.myReaction ?? null,
   };
 }
 
@@ -164,10 +163,6 @@ function getInitials(name: string) {
 
 function defaultReactions(): ReactionCounts {
   return { like: 0, heart: 0, celebrate: 0 };
-}
-
-function defaultUserReactions(): UserReactions {
-  return { like: false, heart: false, celebrate: false };
 }
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
@@ -218,12 +213,12 @@ const REACTIONS: { type: ReactionType; emoji: string; label: string }[] = [
 
 function ReactionBar({
   counts,
-  userReactions,
+  myReaction,
   onReact,
   disabled,
 }: {
   counts: ReactionCounts;
-  userReactions: UserReactions;
+  myReaction: ReactionType | null;
   onReact: (type: ReactionType) => void;
   disabled?: boolean;
 }) {
@@ -231,7 +226,7 @@ function ReactionBar({
     <div className="flex items-center gap-1.5 flex-wrap">
       {REACTIONS.map(({ type, emoji, label }) => {
         const count = counts[type] ?? 0;
-        const active = userReactions[type] ?? false;
+        const active = myReaction === type;
         return (
           <button
             key={type}
@@ -324,7 +319,7 @@ function CommentCard({
         <div className="mt-2 pl-1">
           <ReactionBar
             counts={comment.reaction_counts ?? defaultReactions()}
-            userReactions={comment.user_reactions ?? defaultUserReactions()}
+            myReaction={comment.my_reaction}
             onReact={handleReact}
             disabled={reacting}
           />
@@ -402,8 +397,8 @@ export default function ForumTopicPage() {
               ...prev,
               {
                 ...newRow,
-                reaction_counts: newRow.reaction_counts ?? defaultReactions(),
-                user_reactions: newRow.user_reactions ?? defaultUserReactions(),
+                reaction_counts: defaultReactions(),
+                my_reaction: null,
               },
             ];
           });
@@ -436,26 +431,24 @@ export default function ForumTopicPage() {
   }, [fetchTopic]);
 
   // ── Topic reaction ──
+  // A user only ever has one active reaction per topic (server-enforced,
+  // see forum-reaction-indexes.sql), so picking a new one replaces the old
+  // rather than adding to it, and clicking the active one clears it.
   async function handleTopicReact(type: ReactionType) {
     if (!topic) return;
     setTopicReacting(true);
 
-    const wasActive = topic.user_reactions?.[type] ?? false;
+    const prevCounts = topic.reaction_counts;
+    const prevMyReaction = topic.my_reaction;
+    const turningOff = prevMyReaction === type;
 
     // Optimistic update
     setTopic((prev) => {
       if (!prev) return prev;
-      return {
-        ...prev,
-        reaction_counts: {
-          ...prev.reaction_counts,
-          [type]: (prev.reaction_counts[type] ?? 0) + (wasActive ? -1 : 1),
-        },
-        user_reactions: {
-          ...(prev.user_reactions ?? defaultUserReactions()),
-          [type]: !wasActive,
-        },
-      };
+      const counts = { ...prev.reaction_counts };
+      if (prev.my_reaction) counts[prev.my_reaction] = Math.max(0, (counts[prev.my_reaction] ?? 0) - 1);
+      if (!turningOff) counts[type] = (counts[type] ?? 0) + 1;
+      return { ...prev, reaction_counts: counts, my_reaction: turningOff ? null : type };
     });
 
     try {
@@ -464,29 +457,14 @@ export default function ForumTopicPage() {
         body: JSON.stringify({ reaction: type }),
       });
       if (!res.ok) throw new Error("Failed to react");
-      // Optionally sync server counts
       const data = await res.json().catch(() => null);
-      if (data?.reaction_counts) {
+      if (data?.reactionCounts) {
         setTopic((prev) =>
-          prev ? { ...prev, reaction_counts: data.reaction_counts } : prev
+          prev ? { ...prev, reaction_counts: data.reactionCounts, my_reaction: data.myReaction ?? null } : prev
         );
       }
     } catch (err: any) {
-      // Revert
-      setTopic((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          reaction_counts: {
-            ...prev.reaction_counts,
-            [type]: (prev.reaction_counts[type] ?? 0) + (wasActive ? 1 : -1),
-          },
-          user_reactions: {
-            ...(prev.user_reactions ?? defaultUserReactions()),
-            [type]: wasActive,
-          },
-        };
-      });
+      setTopic((prev) => (prev ? { ...prev, reaction_counts: prevCounts, my_reaction: prevMyReaction } : prev));
       toast.error(err?.message ?? "Could not react.");
     } finally {
       setTopicReacting(false);
@@ -498,23 +476,18 @@ export default function ForumTopicPage() {
     const comment = comments.find((c) => c.id === commentId);
     if (!comment) return;
 
-    const wasActive = comment.user_reactions?.[type] ?? false;
+    const prevCounts = comment.reaction_counts;
+    const prevMyReaction = comment.my_reaction;
+    const turningOff = prevMyReaction === type;
 
     // Optimistic update
     setComments((prev) =>
       prev.map((c) => {
         if (c.id !== commentId) return c;
-        return {
-          ...c,
-          reaction_counts: {
-            ...c.reaction_counts,
-            [type]: (c.reaction_counts[type] ?? 0) + (wasActive ? -1 : 1),
-          },
-          user_reactions: {
-            ...(c.user_reactions ?? defaultUserReactions()),
-            [type]: !wasActive,
-          },
-        };
+        const counts = { ...c.reaction_counts };
+        if (c.my_reaction) counts[c.my_reaction] = Math.max(0, (counts[c.my_reaction] ?? 0) - 1);
+        if (!turningOff) counts[type] = (counts[type] ?? 0) + 1;
+        return { ...c, reaction_counts: counts, my_reaction: turningOff ? null : type };
       })
     );
 
@@ -525,30 +498,16 @@ export default function ForumTopicPage() {
       });
       if (!res.ok) throw new Error("Failed to react");
       const data = await res.json().catch(() => null);
-      if (data?.reaction_counts) {
+      if (data?.reactionCounts) {
         setComments((prev) =>
           prev.map((c) =>
-            c.id === commentId ? { ...c, reaction_counts: data.reaction_counts } : c
+            c.id === commentId ? { ...c, reaction_counts: data.reactionCounts, my_reaction: data.myReaction ?? null } : c
           )
         );
       }
     } catch (err: any) {
-      // Revert
       setComments((prev) =>
-        prev.map((c) => {
-          if (c.id !== commentId) return c;
-          return {
-            ...c,
-            reaction_counts: {
-              ...c.reaction_counts,
-              [type]: (c.reaction_counts[type] ?? 0) + (wasActive ? 1 : -1),
-            },
-            user_reactions: {
-              ...(c.user_reactions ?? defaultUserReactions()),
-              [type]: wasActive,
-            },
-          };
-        })
+        prev.map((c) => (c.id === commentId ? { ...c, reaction_counts: prevCounts, my_reaction: prevMyReaction } : c))
       );
       toast.error(err?.message ?? "Could not react.");
     }
@@ -744,7 +703,7 @@ export default function ForumTopicPage() {
             </span>
             <ReactionBar
               counts={topic.reaction_counts ?? defaultReactions()}
-              userReactions={topic.user_reactions ?? defaultUserReactions()}
+              myReaction={topic.my_reaction}
               onReact={handleTopicReact}
               disabled={topicReacting}
             />
