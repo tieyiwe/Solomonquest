@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { gradeSubmission, computeCourseGrade, percentToLetterGrade, percentToGpaPoints } from "../lib/gradingEngine";
 
 const router: IRouter = Router();
 
@@ -22,7 +23,8 @@ router.get("/submissions", requireAuth, async (req: AuthenticatedRequest, res) =
         assignment_id,
         profiles:student_id (
           id,
-          full_name,
+          first_name,
+          last_name,
           email
         ),
         assignments:assignment_id (
@@ -51,7 +53,7 @@ router.get("/submissions", requireAuth, async (req: AuthenticatedRequest, res) =
       graded_at: s.graded_at,
       graded_by: s.graded_by,
       student_id: s.student_id,
-      student_name: s.profiles?.full_name ?? null,
+      student_name: s.profiles ? [s.profiles.first_name, s.profiles.last_name].filter(Boolean).join(" ") || null : null,
       student_email: s.profiles?.email ?? null,
       assignment_id: s.assignment_id,
       assignment_title: s.assignments?.title ?? null,
@@ -64,121 +66,59 @@ router.get("/submissions", requireAuth, async (req: AuthenticatedRequest, res) =
 });
 
 // PUT /grading/submissions/:id
+// Kept as an alias of PATCH /submissions/:id/grade (submissions.ts) — some
+// older frontend code may still call this path — both now share the exact
+// same gradeSubmission() implementation so grading never diverges between
+// them again (previously this route also queried assignments.school_id
+// and assignments.max_grade, neither of which exist, so it was silently
+// broken every time it was hit).
 router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const { id } = req.params;
-    const { grade, feedback } = req.body;
-    const userId = req.user?.id;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { grade, feedback, rubricScores } = req.body as {
+      grade?: number;
+      feedback?: string;
+      rubricScores?: Record<string, number>;
+    };
     const userRole = req.userRole;
 
-    // Fetch submission joined through assignments to courses so we can check ownership
-    const { data: submission, error: fetchError } = await supabaseAdmin
-      .from("submissions")
-      .select(`
-        id,
-        student_id,
-        assignment_id,
-        assignments:assignment_id (
-          id,
-          title,
-          course_id,
-          school_id,
-          courses:course_id (
-            id,
-            teacher_id
-          )
-        )
-      `)
-      .eq("id", id)
-      .single();
-
-    if (fetchError) throw fetchError;
-    if (!submission) {
-      return res.status(404).json({ error: "Submission not found" });
-    }
-
-    const assignment = (submission as any).assignments;
-    const course = assignment?.courses;
-
-    // Security: verify teacher owns the course, admin is in the same school
-    // as it, or requester is super_admin. Previously an admin was trusted
-    // unconditionally with no school comparison — any school's admin could
-    // grade/overwrite feedback on any OTHER school's submissions.
-    if (userRole === "teacher") {
-      if (course?.teacher_id !== userId) {
-        return res.status(403).json({ error: "Access denied: you do not own this course" });
-      }
-    } else if (userRole === "admin") {
-      const { data: callerProfile } = await supabaseAdmin
-        .from("profiles")
-        .select("school_id")
-        .eq("id", userId ?? "")
-        .single();
-      if (!callerProfile || callerProfile.school_id !== assignment?.school_id) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-    } else if (userRole !== "super_admin") {
+    if (userRole !== "teacher" && userRole !== "admin" && userRole !== "super_admin") {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const graded_at = new Date().toISOString();
-
-    // Update submission
-    const { data: updatedSubmission, error: updateError } = await supabaseAdmin
+    const { data: submission, error: fetchError } = await supabaseAdmin
       .from("submissions")
-      .update({
-        grade,
-        feedback,
-        graded_by: userId,
-        graded_at,
-      })
+      .select("id, assignment_id, assignments:assignment_id (course_id, courses:course_id (teacher_id, school_id))")
       .eq("id", id)
-      .select()
       .single();
 
-    if (updateError) throw updateError;
-
-    // Upsert into transcripts
-    const { error: transcriptError } = await supabaseAdmin
-      .from("transcripts")
-      .upsert({
-        student_id: submission.student_id,
-        school_id: assignment?.school_id ?? null,
-        course_id: assignment?.course_id ?? null,
-        assignment_id: submission.assignment_id,
-        submission_id: submission.id,
-        grade,
-        feedback,
-        graded_at,
-      }, {
-        onConflict: "submission_id",
-      });
-
-    if (transcriptError) throw transcriptError;
-
-    // Send notification to student
-    const assignmentTitle = assignment?.title ?? "assignment";
-    const { error: notifError } = await supabaseAdmin
-      .from("notifications")
-      .insert({
-        user_id: submission.student_id,
-        type: "grade",
-        title: "Assignment Graded",
-        message: `Your ${assignmentTitle} has been graded. Grade: ${grade}`,
-        data: {
-          submission_id: id,
-          assignment_id: submission.assignment_id,
-          grade,
-        },
-        read: false,
-        created_at: new Date().toISOString(),
-      });
-
-    if (notifError) {
-      console.error("Failed to send notification:", notifError.message);
+    if (fetchError || !submission) {
+      return res.status(404).json({ error: "Submission not found" });
     }
 
-    res.json({ submission: updatedSubmission });
+    const course = (submission.assignments as unknown as { courses: { teacher_id: string; school_id: string } | null })
+      ?.courses;
+
+    if (userRole === "teacher" && course?.teacher_id !== req.userId) {
+      return res.status(403).json({ error: "Access denied: you do not own this course" });
+    }
+    if (userRole === "admin" && course?.school_id !== req.schoolId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const result = await gradeSubmission({
+      submissionId: id,
+      grade,
+      rubricScores,
+      feedback,
+      gradedBy: req.userId,
+    });
+
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    res.json({ submission: result.submission });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -339,26 +279,43 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
       });
     }
 
-    // Calculate per-course averages
-    const courses = Object.values(courseMap).map((c: any) => {
-      const graded = c.assignments.filter(
-        (a: any) => a.grade != null && a.pointsPossible
-      );
-      c.courseAverage =
-        graded.length > 0
-          ? Math.round(
-              (graded.reduce((sum: number, a: any) => sum + a.grade / a.pointsPossible, 0) /
-                graded.length) *
-                100
-            )
-          : null;
-      return c;
-    });
+    // Per-course grade — the shared engine, so this matches the gradebook
+    // and every other grade display exactly, including quiz scores and
+    // (where a course has set one) an attendance weighting.
+    const courses = await Promise.all(
+      Object.values(courseMap).map(async (c: any) => {
+        const breakdown = await computeCourseGrade(c.id, student_id as string);
+        c.courseAverage = breakdown.overallPercent;
+        c.academicPercent = breakdown.academicPercent;
+        c.attendancePercent = breakdown.attendancePercent;
+        c.attendanceWeightPercent = breakdown.attendanceWeightPercent;
+        c.letterGrade = percentToLetterGrade(breakdown.overallPercent);
+        return c;
+      })
+    );
+
+    const gradedCourses = courses.filter((c: any) => c.courseAverage !== null);
+    const overallPercent =
+      gradedCourses.length > 0
+        ? Math.round(
+            (gradedCourses.reduce((sum: number, c: any) => sum + c.courseAverage, 0) / gradedCourses.length) * 10
+          ) / 10
+        : null;
+    const gpa =
+      gradedCourses.length > 0
+        ? Math.round(
+            (gradedCourses.reduce((sum: number, c: any) => sum + (percentToGpaPoints(c.courseAverage) ?? 0), 0) /
+              gradedCourses.length) *
+              100
+          ) / 100
+        : null;
 
     res.json({
       studentName,
       studentId: student_id,
       courses,
+      overallPercent,
+      gpa,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -377,7 +334,7 @@ router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res) => 
     // Get all assignments for the course
     const { data: assignments, error: assignmentsError } = await supabaseAdmin
       .from("assignments")
-      .select("id, title, max_grade, due_date")
+      .select("id, title, points_possible, due_date")
       .eq("course_id", course_id as string)
       .order("due_date", { ascending: true });
 
@@ -390,7 +347,8 @@ router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res) => 
         student_id,
         profiles:student_id (
           id,
-          full_name,
+          first_name,
+          last_name,
           email
         )
       `)
@@ -421,44 +379,39 @@ router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res) => 
       submissionMap[`${s.student_id}:${s.assignment_id}`] = s;
     }
 
-    // Build gradebook rows
-    const students = (enrollments || []).map((enrollment: any) => {
-      const profile = enrollment.profiles;
-      const studentId = enrollment.student_id;
+    // Build gradebook rows — course_average uses the shared grading engine
+    // (percentage-of-points, blending quizzes and any attendance weight
+    // the course has set), not a plain mean of raw grade values.
+    const students = await Promise.all(
+      (enrollments || []).map(async (enrollment: any) => {
+        const profile = enrollment.profiles;
+        const studentId = enrollment.student_id;
 
-      const grades: any[] = (assignments || []).map((assignment: any) => {
-        const sub = submissionMap[`${studentId}:${assignment.id}`] ?? null;
+        const grades: any[] = (assignments || []).map((assignment: any) => {
+          const sub = submissionMap[`${studentId}:${assignment.id}`] ?? null;
+          return {
+            assignment_id: assignment.id,
+            assignment_title: assignment.title,
+            points_possible: assignment.points_possible,
+            submission_id: sub?.id ?? null,
+            submitted_at: sub?.submitted_at ?? null,
+            grade: sub?.grade ?? null,
+            feedback: sub?.feedback ?? null,
+            graded_at: sub?.graded_at ?? null,
+          };
+        });
+
+        const breakdown = await computeCourseGrade(course_id as string, studentId);
+
         return {
-          assignment_id: assignment.id,
-          assignment_title: assignment.title,
-          max_grade: assignment.max_grade,
-          submission_id: sub?.id ?? null,
-          submitted_at: sub?.submitted_at ?? null,
-          grade: sub?.grade ?? null,
-          feedback: sub?.feedback ?? null,
-          graded_at: sub?.graded_at ?? null,
+          student_id: studentId,
+          student_name: profile ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || null : null,
+          student_email: profile?.email ?? null,
+          course_average: breakdown.overallPercent,
+          grades,
         };
-      });
-
-      // Calculate course average for this student
-      const gradedItems = grades.filter((g) => g.grade !== null && !isNaN(parseFloat(g.grade)));
-      const courseAverage =
-        gradedItems.length > 0
-          ? parseFloat(
-              (
-                gradedItems.reduce((sum, g) => sum + parseFloat(g.grade), 0) / gradedItems.length
-              ).toFixed(2)
-            )
-          : null;
-
-      return {
-        student_id: studentId,
-        student_name: profile?.full_name ?? null,
-        student_email: profile?.email ?? null,
-        course_average: courseAverage,
-        grades,
-      };
-    });
+      })
+    );
 
     res.json({
       course_id,

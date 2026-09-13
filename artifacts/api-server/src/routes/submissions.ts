@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { gradeSubmission } from "../lib/gradingEngine";
 
 const router: IRouter = Router();
 
@@ -135,9 +136,10 @@ router.post("/assignments/:assignmentId/submissions", requireAuth, async (req: A
 // Grade a submission
 router.patch("/submissions/:id/grade", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { grade, rubricScores } = req.body as {
+  const { grade, rubricScores, feedback } = req.body as {
     grade?: number;
     rubricScores?: Record<string, number>;
+    feedback?: string;
   };
 
   if ((grade === undefined || grade === null) && !rubricScores) {
@@ -162,59 +164,20 @@ router.patch("/submissions/:id/grade", requireAuth, async (req: AuthenticatedReq
     return;
   }
 
-  const updates: Record<string, unknown> = { status: "graded" };
+  const result = await gradeSubmission({
+    submissionId: id,
+    grade,
+    rubricScores,
+    feedback,
+    gradedBy: req.userId,
+  });
 
-  if (rubricScores) {
-    // Rubric-based grade: validate every score against the assignment's own
-    // rubric (never trust the client's total) and derive the numeric grade
-    // as the sum, so the plain-grade views (gradebook average, transcript,
-    // CSV export) keep working unmodified for rubric-graded assignments too.
-    const { data: assignment } = await supabaseAdmin
-      .from("assignments")
-      .select("rubric")
-      .eq("id", existing.assignment_id as string)
-      .single();
-
-    const rubric = (assignment?.rubric as { id: string; name: string; maxPoints: number }[] | null) ?? null;
-    if (!rubric || rubric.length === 0) {
-      res.status(400).json({ error: "This assignment has no rubric to grade against" });
-      return;
-    }
-
-    let total = 0;
-    const validatedScores: Record<string, { score: number; comment?: string }> = {};
-    for (const criterion of rubric) {
-      const raw = rubricScores[criterion.id];
-      if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0 || raw > criterion.maxPoints) {
-        res.status(400).json({
-          error: `Score for "${criterion.name}" must be between 0 and ${criterion.maxPoints}`,
-        });
-        return;
-      }
-      validatedScores[criterion.id] = { score: raw };
-      total += raw;
-    }
-
-    updates.rubric_scores = validatedScores;
-    updates.grade = total;
-  } else {
-    updates.grade = grade;
-    updates.rubric_scores = null;
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("submissions")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error || !data) {
-    res.status(404).json({ error: "Submission not found" });
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
     return;
   }
 
-  res.json(await enrichSubmission(data));
+  res.json(await enrichSubmission(result.submission));
 });
 
 async function enrichSubmission(s: Record<string, unknown>) {
@@ -238,6 +201,8 @@ async function enrichSubmission(s: Record<string, unknown>) {
     content: s.content,
     grade: s.grade,
     rubricScores: s.rubric_scores ?? null,
+    feedback: s.feedback ?? null,
+    gradedAt: s.graded_at ?? null,
     status: s.status,
     studentName,
   };
@@ -265,6 +230,8 @@ async function enrichSubmissions(rows: Record<string, unknown>[]) {
     content: s.content,
     grade: s.grade,
     rubricScores: s.rubric_scores ?? null,
+    feedback: s.feedback ?? null,
+    gradedAt: s.graded_at ?? null,
     status: s.status,
     studentName: s.student_id ? nameById.get(s.student_id as string) ?? null : null,
   }));
