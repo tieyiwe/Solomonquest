@@ -5,10 +5,51 @@ import { gradeSubmission, computeCourseGrade, percentToLetterGrade, percentToGpa
 
 const router: IRouter = Router();
 
+/** Verifies the caller teaches/administers this course before exposing grades for it. */
+async function assertCourseTeacherOrAdmin(
+  req: AuthenticatedRequest,
+  courseId: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  const { data: course, error } = await supabaseAdmin
+    .from("courses")
+    .select("id, school_id, teacher_id")
+    .eq("id", courseId)
+    .single();
+
+  if (error || !course) {
+    return { ok: false, status: 404, error: "Course not found" };
+  }
+
+  if (req.userRole === "teacher" && course.teacher_id !== req.userId) {
+    return { ok: false, status: 403, error: "You do not teach this course" };
+  }
+
+  if (req.userRole !== "super_admin" && course.school_id !== req.schoolId) {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  return { ok: true };
+}
+
 // GET /grading/submissions?course_id=X&assignment_id=Y
 router.get("/submissions", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { course_id, assignment_id } = req.query;
+
+    if (!course_id) {
+      res.status(400).json({ error: "course_id is required" });
+      return;
+    }
+
+    const access = await assertCourseTeacherOrAdmin(req, course_id as string);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
 
     let query = supabaseAdmin
       .from("submissions")
@@ -60,6 +101,7 @@ router.get("/submissions", requireAuth, async (req: AuthenticatedRequest, res) =
     }));
 
     res.json({ submissions });
+    return;
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -329,6 +371,11 @@ router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res) => 
 
     if (!course_id) {
       return res.status(400).json({ error: "course_id is required" });
+    }
+
+    const access = await assertCourseTeacherOrAdmin(req, course_id as string);
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
     }
 
     // Get all assignments for the course

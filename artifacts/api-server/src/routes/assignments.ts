@@ -602,42 +602,44 @@ router.post("/assignments/:id/watch-progress", requireAuth, async (req: Authenti
 
   const { data: existingProgress } = await supabaseAdmin
     .from("video_watch_progress")
-    .select("*")
+    .select("completed")
     .eq("assignment_id", assignmentId)
     .eq("student_id", studentId)
     .maybeSingle();
 
+  const wasCompleted = existingProgress?.completed === true;
+
   // High-water mark only: a client re-reporting a lower value (e.g. after
   // seeking back) must never reduce what the server has already recorded.
   // This is the actual anti-cheat property — the server doesn't trust
-  // "current position," only the furthest point ever reached.
-  const previousMax = (existingProgress?.max_watched_seconds as number | null) ?? 0;
-  const newMax = Math.max(previousMax, watchedSeconds);
-  const watchedPercent = durationSeconds > 0 ? Math.min(100, (newMax / durationSeconds) * 100) : 0;
-  const wasCompleted = existingProgress?.completed === true;
-  const completed = watchedPercent >= VIDEO_COMPLETION_THRESHOLD_PERCENT;
-
-  const { data: saved, error: upsertError } = await supabaseAdmin
-    .from("video_watch_progress")
-    .upsert(
-      {
-        assignment_id: assignmentId,
-        student_id: studentId,
-        max_watched_seconds: newMax,
-        duration_seconds: durationSeconds,
-        watched_percent: watchedPercent,
-        completed,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "assignment_id,student_id" }
-    )
-    .select()
+  // "current position," only the furthest point ever reached. The GREATEST
+  // computation happens atomically inside upsert_video_watch_progress
+  // (see video-watch-progress-atomic-upsert.sql) so concurrent requests for
+  // the same student/assignment (e.g. two tabs) can't race each other and
+  // silently lower the recorded max.
+  const { data: savedRaw, error: upsertError } = await supabaseAdmin
+    .rpc("upsert_video_watch_progress", {
+      p_assignment_id: assignmentId,
+      p_student_id: studentId,
+      p_watched_seconds: watchedSeconds,
+      p_duration_seconds: durationSeconds,
+      p_completion_threshold_percent: VIDEO_COMPLETION_THRESHOLD_PERCENT,
+    })
     .single();
 
-  if (upsertError || !saved) {
+  if (upsertError || !savedRaw) {
     res.status(500).json({ error: upsertError?.message ?? "Failed to save watch progress" });
     return;
   }
+
+  const saved = savedRaw as {
+    max_watched_seconds: number;
+    duration_seconds: number;
+    watched_percent: number;
+    completed: boolean;
+    updated_at: string;
+  };
+  const completed = saved.completed === true;
 
   // Auto-grade on the transition into "completed," only for assignments
   // that require a full watch, and only when there's already an ungraded
@@ -651,10 +653,15 @@ router.post("/assignments/:id/watch-progress", requireAuth, async (req: Authenti
       .eq("student_id", studentId)
       .maybeSingle();
 
-    if (submission && submission.status !== "graded" && typeof assignment.points_possible === "number") {
+    if (submission && submission.status !== "graded") {
+      // Full credit for completing a required-watch video. Assignments
+      // created without an explicit points value still default to 100 so
+      // completion always grades instead of silently never grading.
+      const fullCreditPoints =
+        typeof assignment.points_possible === "number" ? assignment.points_possible : 100;
       await gradeSubmission({
         submissionId: submission.id as string,
-        grade: assignment.points_possible,
+        grade: fullCreditPoints,
         gradedBy: undefined,
       });
     }
@@ -752,16 +759,19 @@ async function notifyStudentsOfPublish(courseId: string, referenceId: string, ti
 
   if (!enrollments || enrollments.length === 0) return;
 
+  // Matches the real notifications schema (title/body/link/is_read) — not
+  // message/type/reference_id, which don't exist and would silently fail
+  // to insert every "new assignment" notification.
   const notifications = enrollments.map((e: Record<string, unknown>) => ({
     user_id: e.student_id as string,
     title: "New Assignment",
-    message: `A new assignment "${title}" has been posted.`,
-    type,
-    reference_id: referenceId,
+    body: `A new assignment "${title}" has been posted.`,
+    link: `/dashboard/student/courses/${courseId}`,
     is_read: false,
   }));
 
-  await supabaseAdmin.from("notifications").insert(notifications);
+  const { error } = await supabaseAdmin.from("notifications").insert(notifications);
+  if (error) console.warn("[assignments] publish notification failed:", error.message, { referenceId, type });
 }
 
 function enrichAssignmentFields(a: Record<string, unknown>, courseTitle: string | null) {
