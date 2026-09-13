@@ -439,9 +439,9 @@ router.post("/transcripts/release", requireAuth, async (req: AuthenticatedReques
   if (students && students.length > 0) {
     const notifications = students.map((s: { id: string }) => ({
       user_id: s.id,
-      type: "transcript_available",
       title: `Transcript Available${semester ? ` - ${semester}` : ""}`,
-      message: message || "Your transcript for the semester is now available. Use your platform email and unique ID to access it.",
+      body: message || "Your transcript for the semester is now available.",
+      link: "/dashboard/student/transcript",
       is_read: false,
     }));
     await supabaseAdmin.from("notifications").insert(notifications);

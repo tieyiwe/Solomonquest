@@ -2,6 +2,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { StudentLayout } from "@/components/layout/StudentLayout";
 import { useQuery } from "@tanstack/react-query";
+import { useGetMySchool } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import {
   Clock,
   TrendingUp,
   ArrowLeft,
+  ShieldCheck,
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -40,12 +42,18 @@ interface TranscriptCourse {
   teacherName: string | null;
   assignments: TranscriptAssignment[];
   courseAverage: number | null;
+  academicPercent?: number | null;
+  attendancePercent?: number | null;
+  attendanceWeightPercent?: number;
+  letterGrade?: string | null;
 }
 
 interface TranscriptData {
   studentName: string;
   studentId: string;
   courses: TranscriptCourse[];
+  overallPercent?: number | null;
+  gpa?: number | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -191,11 +199,16 @@ function CourseTranscriptCard({ course }: { course: TranscriptCourse }) {
               );
             })}
           </div>
-          <div className="mt-2 pt-2 border-t flex items-center justify-between text-xs text-muted-foreground">
+          <div className="mt-2 pt-2 border-t flex items-center justify-between text-xs text-muted-foreground flex-wrap gap-1">
             <span>
               {gradedCount} of {course.assignments.length} assignment
               {course.assignments.length !== 1 ? "s" : ""} graded
             </span>
+            {!!course.attendanceWeightPercent && course.attendancePercent != null && (
+              <span>
+                Attendance: {course.attendancePercent}% (counts {course.attendanceWeightPercent}% of grade)
+              </span>
+            )}
             {average != null && (
               <span className={cn("font-semibold", gradeColor(average))}>
                 Course Average: {average}%
@@ -210,8 +223,17 @@ function CourseTranscriptCard({ course }: { course: TranscriptCourse }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function StudentTranscript() {
+interface StudentTranscriptProps {
+  /** When provided (admin/teacher viewing a specific student), overrides the current user. */
+  studentId?: string;
+  /** Set by the admin wrapper page — renders without StudentLayout's own chrome/back-link. */
+  bare?: boolean;
+}
+
+export function TranscriptDocument({ studentId: studentIdProp, bare }: StudentTranscriptProps) {
   const { user } = useAuth();
+  const studentId = studentIdProp ?? user?.id;
+  const { data: school } = useGetMySchool({ query: { enabled: !!user?.schoolId } });
 
   const {
     data: transcript,
@@ -219,15 +241,21 @@ export default function StudentTranscript() {
     isError,
     error,
   } = useQuery<TranscriptData, Error>({
-    queryKey: ["transcript", user?.id],
-    queryFn: () => fetchTranscript(user!.id),
-    enabled: !!user?.id,
+    queryKey: ["transcript", studentId],
+    queryFn: () => fetchTranscript(studentId!),
+    enabled: !!studentId,
     retry: 1,
   });
 
-  // Compute overall GPA from all courses that have a calculable average
+  // The API (lib/gradingEngine.ts's computeCourseGrade, blending
+  // assignments/quizzes/attendance) already returns the authoritative
+  // overall percent and GPA — only fall back to a client recompute if an
+  // older API response somehow doesn't include them.
   const gpaData = (() => {
     if (!transcript) return null;
+    if (transcript.overallPercent != null && transcript.gpa != null) {
+      return { overallPct: transcript.overallPercent, gpa: transcript.gpa };
+    }
     const averages = transcript.courses
       .map((c) => c.courseAverage ?? calcCourseAverage(c.assignments))
       .filter((v): v is number => v != null);
@@ -241,45 +269,73 @@ export default function StudentTranscript() {
     window.print();
   };
 
-  return (
-    <StudentLayout>
-      <div className="px-6 pt-4 pb-0">
-        <Link href="/dashboard/student">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Dashboard
-          </button>
-        </Link>
+  const body = (
+    <div className="space-y-6 print:space-y-4 max-w-4xl mx-auto print:max-w-none">
+      {/* Header — hidden when printing */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <GraduationCap className="h-6 w-6 text-primary" />
+            {studentIdProp ? "Student Transcript" : "My Transcript"}
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            {school?.name ? `${school.name} — ` : ""}
+            Academic record across all enrolled courses.
+          </p>
+        </div>
+        <Button variant="outline" onClick={handlePrint} className="gap-2 self-start sm:self-auto">
+          <Printer className="h-4 w-4" />
+          Print / Save as PDF
+        </Button>
       </div>
-      <div className="space-y-6 print:space-y-4">
-        {/* Header — hidden when printing */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <GraduationCap className="h-6 w-6 text-primary" />
-              My Transcript
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Your academic record across all enrolled courses.
+
+      {/* Official letterhead — shown on screen too, styled like a real document header */}
+      <div className="rounded-xl border-2 border-primary/15 bg-gradient-to-b from-primary/5 to-transparent px-6 py-5 print:border-b-2 print:border-black print:rounded-none print:bg-white print:px-0 print:pb-4">
+        <div className="flex items-center gap-4">
+          {school?.logoUrl ? (
+            <img
+              src={school.logoUrl}
+              alt={school.name ?? "School logo"}
+              className="h-14 w-14 rounded-lg object-cover border shrink-0 print:h-12 print:w-12"
+            />
+          ) : (
+            <div className="h-14 w-14 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 print:h-12 print:w-12">
+              <GraduationCap className="h-7 w-7 text-primary" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="text-lg font-bold tracking-tight leading-tight truncate">
+              {school?.name ?? "SolomonQuest School"}
+            </p>
+            <p className="text-sm font-semibold text-primary uppercase tracking-wide">
+              Official Academic Transcript
             </p>
           </div>
-          <Button variant="outline" onClick={handlePrint} className="gap-2 self-start sm:self-auto">
-            <Printer className="h-4 w-4" />
-            Print Transcript
-          </Button>
         </div>
+        {transcript && (
+          <div className="mt-4 pt-4 border-t grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Student</p>
+              <p className="font-semibold">{transcript.studentName}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Issued</p>
+              <p className="font-semibold">
+                {new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+              </p>
+            </div>
+            <div className="flex items-start gap-1.5 col-span-2 sm:col-span-1">
+              <ShieldCheck className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Verification</p>
+                <p className="text-xs text-muted-foreground">Verify any released transcript at /transcript</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
-        {/* Print-only header */}
-        <div className="hidden print:block mb-6">
-          <h1 className="text-2xl font-bold">Academic Transcript</h1>
-          {transcript && (
-            <p className="text-sm text-muted-foreground mt-1">
-              {transcript.studentName} &bull; Generated {new Date().toLocaleDateString()}
-            </p>
-          )}
-        </div>
-
-        {isLoading ? (
+      {isLoading ? (
           <div className="space-y-4">
             <Skeleton className="h-28 w-full rounded-xl" />
             {[1, 2, 3].map((i) => (
@@ -382,7 +438,26 @@ export default function StudentTranscript() {
             )}
           </>
         ) : null}
+    </div>
+  );
+
+  if (bare) return body;
+
+  return (
+    <StudentLayout>
+      <div className="px-6 pt-4 pb-0 print:hidden">
+        <Link href="/dashboard/student">
+          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </button>
+        </Link>
       </div>
+      {body}
     </StudentLayout>
   );
+}
+
+export default function StudentTranscript() {
+  return <TranscriptDocument />;
 }

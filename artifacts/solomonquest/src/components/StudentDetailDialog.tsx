@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { supabase } from "@/lib/supabase";
 import {
   Dialog,
@@ -8,8 +9,9 @@ import {
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Mail, Phone, GraduationCap, BookOpen, CalendarCheck, CalendarDays } from "lucide-react";
+import { Mail, Phone, GraduationCap, BookOpen, CalendarCheck, CalendarDays, ScrollText } from "lucide-react";
 
 interface StudentDetail {
   id: string;
@@ -192,6 +194,13 @@ export function StudentDetailDialog({
                 </div>
               </div>
             )}
+
+            <Link href={`/dashboard/admin/students/${studentId}/transcript`}>
+              <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => onOpenChange(false)}>
+                <ScrollText className="h-3.5 w-3.5" />
+                View Full Transcript
+              </Button>
+            </Link>
           </div>
         )}
       </DialogContent>
