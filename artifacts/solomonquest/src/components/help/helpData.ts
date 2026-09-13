@@ -10,6 +10,9 @@ export interface HelpArticle {
   summary: string;
   steps: HelpStep[];
   troubleshoot?: { problem: string; solution: string }[];
+  /** A real, annotated screenshot of this flow — path under /help/. */
+  image?: string;
+  imageAlt?: string;
 }
 
 export interface HelpCategory {
@@ -90,6 +93,8 @@ export const adminHelp: HelpCategory[] = [
         title: "Invite a teacher, staff member, or transferring student",
         icon: "✉️",
         summary: "Send an email invitation so teachers, staff, or already-enrolled-elsewhere students can create their account directly.",
+        image: "/help/admin-users-invite-dialog.png",
+        imageAlt: "The Invite Teacher dialog open over the Users list, with the search field highlighted",
         steps: [
           { text: "Go to Users in the left sidebar." },
           { text: "Pick the Teachers, Students, or Staff tab, then click the Invite button." },
@@ -109,6 +114,8 @@ export const adminHelp: HelpCategory[] = [
         title: "View and manage students",
         icon: "🎓",
         summary: "See all enrolled students, view their profiles, and update their details.",
+        image: "/help/admin-users-list.png",
+        imageAlt: "The Students tab of the Users list with the search bar highlighted",
         steps: [
           { text: "Go to Users → Students tab." },
           { text: "Use the search bar to find a student by name or ID." },
@@ -128,6 +135,8 @@ export const adminHelp: HelpCategory[] = [
         title: "Create a new course",
         icon: "➕",
         summary: "Set up a course, assign a teacher, and enroll students.",
+        image: "/help/admin-courses-new.png",
+        imageAlt: "The New Course form with the course name field highlighted",
         steps: [
           { text: "Go to Courses → New Course." },
           { text: "Fill in the course name, description, and subject." },
@@ -149,6 +158,8 @@ export const adminHelp: HelpCategory[] = [
         title: "Review and approve applications",
         icon: "✅",
         summary: "Process applications from prospective students.",
+        image: "/help/admin-admissions-list.png",
+        imageAlt: "The Admissions list with an applicant row highlighted",
         steps: [
           { text: "Go to Admissions in the sidebar." },
           { text: "Applications are listed with status: Pending, Approved, or Rejected." },
@@ -261,6 +272,8 @@ export const teacherHelp: HelpCategory[] = [
         title: "Add lesson materials to a course",
         icon: "📎",
         summary: "Upload files, links, and videos for students to access.",
+        image: "/help/teacher-add-material.png",
+        imageAlt: "The Add Material dialog with the material type selector highlighted",
         steps: [
           { text: "Click your course name in the sidebar under My Courses." },
           { text: "Go to the Materials tab." },
@@ -300,6 +313,8 @@ export const teacherHelp: HelpCategory[] = [
         title: "Grade a student submission",
         icon: "✏️",
         summary: "Review and score submitted assignments.",
+        image: "/help/teacher-grade-assignment.png",
+        imageAlt: "A student submission open for grading with the score field highlighted",
         steps: [
           { text: "Go to Assignments in the sidebar." },
           { text: "Click the assignment you want to grade." },
@@ -317,6 +332,8 @@ export const teacherHelp: HelpCategory[] = [
         title: "Use the Gradebook",
         icon: "📊",
         summary: "View and edit all grades in a spreadsheet-style matrix.",
+        image: "/help/teacher-gradebook.png",
+        imageAlt: "The Gradebook matrix view with a grade cell highlighted",
         steps: [
           { text: "Click Gradebook in the sidebar." },
           { text: "Select the course from the dropdown at the top." },
@@ -410,6 +427,8 @@ export const studentHelp: HelpCategory[] = [
         title: "Find and access your courses",
         icon: "🔍",
         summary: "See all the courses you're enrolled in.",
+        image: "/help/student-find-courses.png",
+        imageAlt: "The Student Dashboard overview with an enrolled course card highlighted",
         steps: [
           { text: "Log in and go to your Student Dashboard." },
           { text: "Your enrolled courses are listed on the Overview page." },
@@ -455,6 +474,8 @@ export const studentHelp: HelpCategory[] = [
         title: "Submit an assignment",
         icon: "📤",
         summary: "Upload your work before the deadline.",
+        image: "/help/student-submit-assignment.png",
+        imageAlt: "The assignment submission form with the Submit button highlighted",
         steps: [
           { text: "Go to Assignments in the sidebar." },
           { text: "Click the assignment title." },
@@ -522,6 +543,8 @@ export const studentHelp: HelpCategory[] = [
         title: "Download your transcript",
         icon: "📄",
         summary: "Export your official grades as a PDF.",
+        image: "/help/student-transcript.png",
+        imageAlt: "The official transcript page with the Download PDF button highlighted",
         steps: [
           { text: "Go to Transcript in the sidebar." },
           { text: "Review your course grades." },
@@ -657,6 +680,8 @@ export const superAdminHelp: HelpCategory[] = [
         title: "Check the audit log",
         icon: "📜",
         summary: "Every platform-level action (role changes, deletions, approvals) is recorded here with who did it and when.",
+        image: "/help/admin-audit-log.png",
+        imageAlt: "The Audit Log table with a recorded action row highlighted",
         steps: [
           { text: "Go to Audit Log." },
           { text: "Filter by actor, action type, target type, or date range." },

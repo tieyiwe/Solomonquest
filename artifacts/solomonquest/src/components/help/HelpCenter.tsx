@@ -75,6 +75,18 @@ export function HelpCenter({ role, onClose, onStartTour }: HelpCenterProps) {
 
   return createPortal(
     <>
+      <style>{`
+        @keyframes help-screenshot-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb, 37, 99, 235), 0.35); }
+          50% { box-shadow: 0 0 0 6px rgba(var(--primary-rgb, 37, 99, 235), 0); }
+        }
+        .help-screenshot-glow {
+          animation: help-screenshot-pulse 2.4s ease-in-out 2;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .help-screenshot-glow { animation: none; }
+        }
+      `}</style>
       {/* Backdrop */}
       <div
         className="fixed inset-0 z-[9998] bg-black/30"
@@ -236,6 +248,17 @@ export function HelpCenter({ role, onClose, onStartTour }: HelpCenterProps) {
                   <p className="text-sm text-gray-500 mt-1">{currentArticle.summary}</p>
                 </div>
               </div>
+
+              {/* Screenshot */}
+              {currentArticle.image && (
+                <div className="help-screenshot-glow rounded-xl border border-gray-100 overflow-hidden">
+                  <img
+                    src={currentArticle.image}
+                    alt={currentArticle.imageAlt ?? currentArticle.title}
+                    className="w-full block"
+                  />
+                </div>
+              )}
 
               {/* Steps */}
               <div>
