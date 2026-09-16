@@ -70,7 +70,11 @@ select * from (values
 
   ('school-creation-requests.sql: school_creation_requests table',
     exists (select 1 from information_schema.tables
-      where table_schema='public' and table_name='school_creation_requests'))
+      where table_schema='public' and table_name='school_creation_requests')),
+
+  ('profile-suspension.sql: profiles.is_suspended',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='profiles' and column_name='is_suspended'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

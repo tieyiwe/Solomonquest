@@ -1241,6 +1241,97 @@ router.post(
   }
 );
 
+// ─── Direct School Deletion (super admin, no deletion request needed) ─────────
+// The request -> approve -> execute pipeline above exists for a school's OWN
+// admin to ask for deletion. A super admin needs to be able to delete any
+// school directly (e.g. for a non-compliant or abandoned school) without
+// waiting on that school's admin to request it first — this does the same
+// archive-snapshot-then-soft-delete as execute-deletion, in one step, with
+// the same 30-day restore window (school_archive.restore_deadline's DB
+// default) so it's never an irreversible action.
+router.post(
+  "/super-admin/schools/:id/delete",
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { reason } = req.body as { reason?: string };
+
+      const { data: school, error: schoolErr } = await supabaseAdmin
+        .from("schools")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (schoolErr || !school) {
+        res.status(404).json({ error: "School not found" });
+        return;
+      }
+
+      if (school.deleted_at) {
+        res.status(400).json({ error: "This school is already deleted" });
+        return;
+      }
+
+      const [studentsRes, teachersRes, coursesRes, enrollmentsRes] = await Promise.all([
+        supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("school_id", id).eq("role", "student"),
+        supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("school_id", id).eq("role", "teacher"),
+        supabaseAdmin.from("courses").select("id", { count: "exact", head: true }).eq("school_id", id),
+        supabaseAdmin.from("course_enrollments").select("id", { count: "exact", head: true }).eq("school_id", id),
+      ]);
+
+      const { data: archiveEntry, error: archiveErr } = await supabaseAdmin
+        .from("school_archive")
+        .insert({
+          school_id: id,
+          school_data: school,
+          stats_snapshot: {
+            students: studentsRes.count ?? 0,
+            teachers: teachersRes.count ?? 0,
+            courses: coursesRes.count ?? 0,
+            enrollments: enrollmentsRes.count ?? 0,
+          },
+          deleted_by: req.userId,
+          deletion_request_id: null,
+        })
+        .select("restore_deadline")
+        .single();
+
+      if (archiveErr) {
+        res.status(500).json({ error: archiveErr.message });
+        return;
+      }
+
+      const deletedAt = new Date().toISOString();
+      const { error: updateErr } = await supabaseAdmin
+        .from("schools")
+        .update({ is_active: false, deleted_at: deletedAt })
+        .eq("id", id);
+
+      if (updateErr) {
+        res.status(500).json({ error: updateErr.message });
+        return;
+      }
+
+      await auditLog({
+        actorId: req.userId,
+        action: "school_deleted_directly",
+        targetType: "school",
+        targetId: id,
+        targetName: school.name,
+        details: { reason: reason ?? null, restore_deadline: archiveEntry?.restore_deadline },
+        ipAddress: req.ip,
+      });
+
+      res.json({ success: true, deleted_at: deletedAt, restore_deadline: archiveEntry?.restore_deadline });
+    } catch (err) {
+      console.error("Direct school deletion error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
 // ─── Custom Domain Requests ─────────────────────────────────────────────────────
 router.get(
   "/super-admin/domain-requests",

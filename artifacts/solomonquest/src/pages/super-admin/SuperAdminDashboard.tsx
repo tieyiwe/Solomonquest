@@ -362,6 +362,34 @@ export default function SuperAdminDashboard() {
     }
   };
 
+  // Direct delete (non-empty schools) — archives with a 30-day restore window
+  const [directDeleteDialog, setDirectDeleteDialog] = useState<{ id: string; name: string } | null>(null);
+  const [directDeleteReason, setDirectDeleteReason] = useState("");
+  const [directDeleting, setDirectDeleting] = useState(false);
+
+  const handleDirectDelete = async () => {
+    if (!directDeleteDialog) return;
+    setDirectDeleting(true);
+    try {
+      const res = await apiFetch(`/api/super-admin/schools/${directDeleteDialog.id}/delete`, {
+        method: "POST",
+        body: JSON.stringify({ reason: directDeleteReason }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to delete school");
+      }
+      toast.success(`"${directDeleteDialog.name}" deleted — restorable for 30 days from the Archive tab.`);
+      setDirectDeleteDialog(null);
+      setDirectDeleteReason("");
+      fetchSchools();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete school");
+    } finally {
+      setDirectDeleting(false);
+    }
+  };
+
   // Archive
   const [archive, setArchive] = useState<ArchiveEntry[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -1077,8 +1105,8 @@ export default function SuperAdminDashboard() {
                   <thead>
                     <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
                       <th className="text-left px-4 py-3">School Name</th>
-                      <th className="text-left px-4 py-3">Owner</th>
-                      <th className="text-left px-4 py-3">Owner Email</th>
+                      <th className="text-left px-4 py-3">Created By</th>
+                      <th className="text-left px-4 py-3">Creator Email</th>
                       <th className="text-left px-4 py-3">Users</th>
                       <th className="text-left px-4 py-3">Courses</th>
                       <th className="text-left px-4 py-3">Status</th>
@@ -1146,7 +1174,7 @@ export default function SuperAdminDashboard() {
                               >
                                 {school.status === "active" ? "Deactivate" : "Activate"}
                               </Button>
-                              {school.students === 0 && school.teachers === 0 && school.courses === 0 && (
+                              {school.students === 0 && school.teachers === 0 && school.courses === 0 ? (
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -1154,6 +1182,15 @@ export default function SuperAdminDashboard() {
                                   onClick={() => setQuickDeleteDialog({ id: school.id, name: school.name })}
                                 >
                                   Delete
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-red-800 text-red-400 hover:bg-red-900/30"
+                                  onClick={() => setDirectDeleteDialog({ id: school.id, name: school.name })}
+                                >
+                                  Delete &amp; Archive
                                 </Button>
                               )}
                             </div>
@@ -1168,11 +1205,14 @@ export default function SuperAdminDashboard() {
                                   <p className="text-white font-mono">{school.id}</p>
                                 </div>
                                 <div>
-                                  <p className="text-gray-400 text-xs mb-1">Owner</p>
+                                  <p className="text-gray-400 text-xs mb-1">Created By</p>
                                   <p className="text-white">{school.owner}</p>
+                                  <p className="text-gray-500 text-xs mt-0.5">
+                                    The account that originally created this school — not necessarily its only admin.
+                                  </p>
                                 </div>
                                 <div>
-                                  <p className="text-gray-400 text-xs mb-1">Owner Email</p>
+                                  <p className="text-gray-400 text-xs mb-1">Creator Email</p>
                                   {school.ownerEmail ? (
                                     <a href={`mailto:${school.ownerEmail}`} className="text-blue-300 hover:underline">
                                       {school.ownerEmail}
@@ -1956,6 +1996,42 @@ export default function SuperAdminDashboard() {
             </Button>
             <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleQuickDelete} disabled={quickDeleting}>
               {quickDeleting ? "Deleting…" : "Delete School"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Direct Delete (non-empty school) — archived with a 30-day restore window */}
+      <Dialog
+        open={!!directDeleteDialog}
+        onOpenChange={() => { setDirectDeleteDialog(null); setDirectDeleteReason(""); }}
+      >
+        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Delete &amp; Archive School</DialogTitle>
+          </DialogHeader>
+          <p className="text-gray-300 text-sm">
+            Delete <strong>{directDeleteDialog?.name}</strong> and all its students, teachers, and courses?
+            This is not permanent right away — it's archived and can be fully restored from the Archive tab
+            within 30 days. After that, it's gone for good.
+          </p>
+          <textarea
+            value={directDeleteReason}
+            onChange={(e) => setDirectDeleteReason(e.target.value)}
+            placeholder="Reason (optional, kept in the audit log)..."
+            rows={3}
+            className="w-full bg-gray-700 border border-gray-600 rounded text-white text-sm p-2 resize-none"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="border-gray-600 text-gray-300"
+              onClick={() => { setDirectDeleteDialog(null); setDirectDeleteReason(""); }}
+            >
+              Cancel
+            </Button>
+            <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleDirectDelete} disabled={directDeleting}>
+              {directDeleting ? "Deleting…" : "Delete & Archive"}
             </Button>
           </DialogFooter>
         </DialogContent>
