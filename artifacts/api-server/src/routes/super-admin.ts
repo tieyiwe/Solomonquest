@@ -192,64 +192,82 @@ router.get(
         return;
       }
 
-      const enriched = await Promise.all(
-        (schools ?? []).map(async (school) => {
-          const [ownerRes, roleRowsRes, coursesRes] = await Promise.all([
-            school.owner_id
-              ? supabaseAdmin
-                  .from("profiles")
-                  .select("first_name, last_name, email")
-                  .eq("id", school.owner_id)
-                  .single()
-              : Promise.resolve({ data: null }),
-            // A single grouped query for the role breakdown — only role
-            // counts leave this route, never any per-user identity.
-            supabaseAdmin.from("profiles").select("role").eq("school_id", school.id),
-            supabaseAdmin
-              .from("courses")
-              .select("id", { count: "exact", head: true })
-              .eq("school_id", school.id),
-          ]);
-
-          const owner = ownerRes.data as { first_name?: string; last_name?: string; email?: string } | null;
-          const ownerEmail = owner?.email ?? null;
-          const ownerName = owner ? `${owner.first_name ?? ""} ${owner.last_name ?? ""}`.trim() : null;
-
-          const roleCounts: Record<string, number> = {};
-          for (const row of (roleRowsRes.data as { role: string }[] | null) ?? []) {
-            roleCounts[row.role] = (roleCounts[row.role] ?? 0) + 1;
-          }
-          const totalUsers = Object.values(roleCounts).reduce((sum, n) => sum + n, 0);
-
-          return {
-            id: school.id,
-            name: school.name,
-            slug: school.slug,
-            // Field names the frontend table actually reads
-            owner: ownerName || ownerEmail || "—",
-            status: school.is_active ? "active" : "inactive",
-            created: school.created_at,
-            // Kept for any other consumer relying on the older shape
-            owner_name: ownerName,
-            owner_email: ownerEmail,
-            students: roleCounts.student ?? 0,
-            teachers: roleCounts.teacher ?? 0,
-            courses: coursesRes.count ?? 0,
-            // Aggregate role breakdown only — no per-user data included.
-            totalUsers,
-            roleCounts,
-            is_active: school.is_active,
-            created_at: school.created_at,
-            details: {
-              plan: school.plan ?? "free",
-              subscription_status: school.subscription_status ?? "active",
-              billing_amount: `$${(((school.billing_amount_cents as number) ?? 0) / 100).toFixed(2)}/mo`,
-              custom_domain: school.custom_domain ?? "none",
-              custom_domain_status: school.custom_domain_status ?? "unset",
-            },
-          };
-        })
+      // Batched lookups instead of 3 queries PER school — the old code ran
+      // Promise.all([...]) inside a per-school .map(), so N schools meant up
+      // to 3*N concurrent queries fired at once, which can exhaust the DB
+      // connection pool and fail the whole request once there's more than a
+      // handful of schools (the exact same N+1 pattern fixed on the Users
+      // list route above).
+      const schoolIds = (schools ?? []).map((s) => s.id as string);
+      const ownerIds = Array.from(
+        new Set((schools ?? []).map((s) => s.owner_id).filter((id): id is string => !!id))
       );
+
+      const [ownersRes, roleRowsRes, courseRowsRes] = await Promise.all([
+        ownerIds.length
+          ? supabaseAdmin.from("profiles").select("id, first_name, last_name, email").in("id", ownerIds)
+          : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+        schoolIds.length
+          ? supabaseAdmin.from("profiles").select("school_id, role").in("school_id", schoolIds)
+          : Promise.resolve({ data: [] as { school_id: string; role: string }[] }),
+        schoolIds.length
+          ? supabaseAdmin.from("courses").select("school_id").in("school_id", schoolIds)
+          : Promise.resolve({ data: [] as { school_id: string }[] }),
+      ]);
+
+      const ownerById = new Map(
+        (ownersRes.data ?? []).map((o: any) => [o.id as string, o as { first_name?: string; last_name?: string; email?: string }])
+      );
+
+      const roleCountsBySchool = new Map<string, Record<string, number>>();
+      for (const row of (roleRowsRes.data as { school_id: string; role: string }[] | null) ?? []) {
+        if (!row.school_id) continue;
+        const counts = roleCountsBySchool.get(row.school_id) ?? {};
+        counts[row.role] = (counts[row.role] ?? 0) + 1;
+        roleCountsBySchool.set(row.school_id, counts);
+      }
+
+      const courseCountBySchool = new Map<string, number>();
+      for (const row of (courseRowsRes.data as { school_id: string }[] | null) ?? []) {
+        courseCountBySchool.set(row.school_id, (courseCountBySchool.get(row.school_id) ?? 0) + 1);
+      }
+
+      const enriched = (schools ?? []).map((school) => {
+        const owner = school.owner_id ? ownerById.get(school.owner_id as string) : null;
+        const ownerEmail = owner?.email ?? null;
+        const ownerName = owner ? `${owner.first_name ?? ""} ${owner.last_name ?? ""}`.trim() : null;
+
+        const roleCounts = roleCountsBySchool.get(school.id as string) ?? {};
+        const totalUsers = Object.values(roleCounts).reduce((sum, n) => sum + n, 0);
+
+        return {
+          id: school.id,
+          name: school.name,
+          slug: school.slug,
+          // Field names the frontend table actually reads
+          owner: ownerName || ownerEmail || "—",
+          status: school.is_active ? "active" : "inactive",
+          created: school.created_at,
+          // Kept for any other consumer relying on the older shape
+          owner_name: ownerName,
+          owner_email: ownerEmail,
+          students: roleCounts.student ?? 0,
+          teachers: roleCounts.teacher ?? 0,
+          courses: courseCountBySchool.get(school.id as string) ?? 0,
+          // Aggregate role breakdown only — no per-user data included.
+          totalUsers,
+          roleCounts,
+          is_active: school.is_active,
+          created_at: school.created_at,
+          details: {
+            plan: school.plan ?? "free",
+            subscription_status: school.subscription_status ?? "active",
+            billing_amount: `$${(((school.billing_amount_cents as number) ?? 0) / 100).toFixed(2)}/mo`,
+            custom_domain: school.custom_domain ?? "none",
+            custom_domain_status: school.custom_domain_status ?? "unset",
+          },
+        };
+      });
 
       res.json(enriched);
     } catch (err) {
@@ -603,30 +621,28 @@ router.get(
         return;
       }
 
-      const enriched = await Promise.all(
-        (profiles ?? []).map(async (p) => {
-          let schoolName: string | null = null;
-          if (p.school_id) {
-            const { data: sc } = await supabaseAdmin
-              .from("schools")
-              .select("name")
-              .eq("id", p.school_id)
-              .single();
-            schoolName = sc?.name ?? null;
-          }
-
-          return {
-            id: p.id,
-            name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
-            email: p.email ?? null,
-            internal_email: p.internal_email,
-            role: p.role,
-            school: schoolName,
-            joined: p.created_at,
-            suspended: p.is_suspended === true,
-          };
-        })
+      // One batched lookup for every school name instead of a query per
+      // user — the old code ran one single-row query per profile, which is
+      // an N+1 pattern that can exhaust the DB connection pool (and time
+      // out the whole request) once there are more than a handful of users.
+      const schoolIds = Array.from(
+        new Set((profiles ?? []).map((p) => p.school_id).filter((id): id is string => !!id))
       );
+      const { data: schoolsForUsers } = schoolIds.length
+        ? await supabaseAdmin.from("schools").select("id, name").in("id", schoolIds)
+        : { data: [] as { id: string; name: string }[] };
+      const schoolNameById = new Map((schoolsForUsers ?? []).map((s) => [s.id, s.name as string]));
+
+      const enriched = (profiles ?? []).map((p) => ({
+        id: p.id,
+        name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
+        email: p.email ?? null,
+        internal_email: p.internal_email,
+        role: p.role,
+        school: p.school_id ? schoolNameById.get(p.school_id as string) ?? null : null,
+        joined: p.created_at,
+        suspended: p.is_suspended === true,
+      }));
 
       res.json(enriched);
     } catch (err) {
