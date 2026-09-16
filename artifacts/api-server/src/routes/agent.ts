@@ -14,6 +14,26 @@ function isStaff(role?: string): boolean {
   return role === "admin" || role === "super_admin" || role === "teacher" || role === "staff";
 }
 
+// ─── Lightweight abuse/rate guard ───────────────────────────────────────────
+// A rolling per-user message count. High-volume chatting is almost always
+// either someone hammering it for fun/testing or a question the Help
+// Center already answers — past the threshold, redirect there instead of
+// burning another model call (protects cost, not just UX).
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const RATE_LIMIT = 15;
+const rateLog = new Map<string, number[]>();
+
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const timestamps = (rateLog.get(userId) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  timestamps.push(now);
+  rateLog.set(userId, timestamps);
+  return timestamps.length > RATE_LIMIT;
+}
+
+const RATE_LIMIT_MESSAGE =
+  "You've sent quite a few messages in a short time! For step-by-step guides on most topics, check the Help Center (the ? button) — it's usually faster than chatting. Feel free to come back to me for anything it doesn't cover.";
+
 // ─── Tool definitions ──────────────────────────────────────────────────────────
 // Each tool maps to a real write operation. The agent proposes a tool call;
 // the frontend shows it to the user for confirmation before /agent/execute-action
@@ -322,6 +342,15 @@ router.post(
       const { message } = req.body as { message?: string };
       if (!message || !message.trim()) {
         res.status(400).json({ error: "message is required" });
+        return;
+      }
+
+      if (isRateLimited(userId!)) {
+        await supabaseAdmin.from("agent_conversations").insert([
+          { school_id: schoolId, user_id: userId, role: "user", content: message.trim() },
+          { school_id: schoolId, user_id: userId, role: "assistant", content: RATE_LIMIT_MESSAGE },
+        ]);
+        res.json({ type: "message", message: RATE_LIMIT_MESSAGE });
         return;
       }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Fragment } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -49,6 +49,84 @@ function actionLabel(action: PendingAction): string {
     return `Post to the forum: "${input.title ?? ""}" — ${input.content ?? ""}`;
   }
   return `Perform action: ${action.name}`;
+}
+
+// A small, dependency-free renderer for the light markdown Claude tends to
+// produce (bold, inline code, bullet/numbered lists, paragraphs) — full
+// react-markdown is overkill for replies that are meant to stay to 1-3
+// sentences, and this keeps the bundle untouched.
+function renderInline(text: string, keyPrefix: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong key={`${keyPrefix}-${i}`} className="font-semibold">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={`${keyPrefix}-${i}`} className="px-1 py-0.5 rounded bg-black/[0.06] font-mono text-[0.85em]">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return <Fragment key={`${keyPrefix}-${i}`}>{part}</Fragment>;
+  });
+}
+
+function MarkdownLite({ content }: { content: string }) {
+  const lines = content.split("\n");
+  const blocks: React.ReactNode[] = [];
+  let listBuffer: string[] = [];
+  let listOrdered = false;
+
+  const flushList = (key: string) => {
+    if (listBuffer.length === 0) return;
+    const Tag = listOrdered ? "ol" : "ul";
+    blocks.push(
+      <Tag key={key} className={`ml-4 space-y-0.5 ${listOrdered ? "list-decimal" : "list-disc"}`}>
+        {listBuffer.map((item, i) => (
+          <li key={i}>{renderInline(item, `${key}-li-${i}`)}</li>
+        ))}
+      </Tag>
+    );
+    listBuffer = [];
+  };
+
+  lines.forEach((line, i) => {
+    const bulletMatch = line.match(/^\s*[-•]\s+(.*)/);
+    const numberedMatch = line.match(/^\s*\d+[.)]\s+(.*)/);
+    if (bulletMatch) {
+      if (listOrdered) flushList(`block-${i}`);
+      listOrdered = false;
+      listBuffer.push(bulletMatch[1]);
+      return;
+    }
+    if (numberedMatch) {
+      if (!listOrdered) flushList(`block-${i}`);
+      listOrdered = true;
+      listBuffer.push(numberedMatch[1]);
+      return;
+    }
+    flushList(`block-${i}`);
+    if (line.trim() === "") {
+      return;
+    }
+    blocks.push(<p key={`block-${i}`}>{renderInline(line, `block-${i}`)}</p>);
+  });
+  flushList("block-final");
+
+  return <div className="space-y-1.5 leading-relaxed">{blocks}</div>;
+}
+
+function AgentAvatar() {
+  return (
+    <div className="h-6 w-6 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center shrink-0 shadow-sm">
+      <Sparkles className="h-3 w-3 text-white" />
+    </div>
+  );
 }
 
 export function AgentWidget() {
@@ -149,7 +227,7 @@ export function AgentWidget() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-20 md:bottom-6 right-4 md:right-24 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex flex-col items-center justify-center gap-0.5 hover:scale-105 transition-transform"
+          className="fixed bottom-20 md:bottom-6 right-4 md:right-24 z-40 h-14 w-14 rounded-full bg-gradient-to-br from-primary to-purple-500 text-white shadow-lg flex flex-col items-center justify-center gap-0.5 hover:scale-105 hover:shadow-xl transition-all duration-200"
           title={`Chat with ${agentName}`}
         >
           <Sparkles className="h-4 w-4" />
@@ -159,22 +237,30 @@ export function AgentWidget() {
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-24 z-50 w-full md:w-96 h-[85vh] md:h-[600px] bg-white md:rounded-xl shadow-2xl border flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b bg-primary text-primary-foreground shrink-0">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              <span className="font-semibold text-sm">{agentName}</span>
+        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-24 z-50 w-full md:w-96 h-[85vh] md:h-[600px] bg-white md:rounded-2xl shadow-2xl border border-black/5 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="relative flex items-center justify-between px-4 py-3.5 shrink-0 bg-gradient-to-r from-primary to-purple-500 text-white overflow-hidden">
+            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_20%_-20%,white,transparent_60%)]" />
+            <div className="relative flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-full bg-white/15 backdrop-blur flex items-center justify-center">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="font-semibold text-sm leading-tight">{agentName}</p>
+                <p className="text-[10px] text-white/70 leading-tight">AI Assistant</p>
+              </div>
             </div>
-            <button onClick={() => setOpen(false)} className="opacity-80 hover:opacity-100">
+            <button onClick={() => setOpen(false)} className="relative opacity-80 hover:opacity-100 transition-opacity">
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-gray-50/50 to-white">
             {messages.length === 0 && (
-              <div className="text-center text-sm text-muted-foreground mt-8">
-                <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                <p>
+              <div className="text-center text-sm text-muted-foreground mt-8 px-4">
+                <div className="h-12 w-12 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-primary/10 to-purple-500/10 flex items-center justify-center">
+                  <Sparkles className="h-6 w-6 text-primary/60" />
+                </div>
+                <p className="leading-relaxed">
                   Hi, I'm {agentName}. Ask me anything about your school, or ask me to draft a reminder,
                   announcement, or forum note — or just say "open analytics" to jump straight to a page.
                 </p>
@@ -183,31 +269,45 @@ export function AgentWidget() {
             {messages.map((m) => (
               <div
                 key={m.id}
-                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
-                  m.role === "user"
-                    ? "ml-auto bg-primary text-primary-foreground"
-                    : "mr-auto bg-gray-100 text-gray-900"
-                }`}
+                className={`flex items-end gap-2 max-w-[88%] ${m.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"}`}
               >
-                {m.content}
+                {m.role === "assistant" && <AgentAvatar />}
+                <div
+                  className={`rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${
+                    m.role === "user"
+                      ? "bg-gradient-to-br from-primary to-primary/90 text-primary-foreground rounded-br-sm"
+                      : "bg-white border border-gray-100 text-gray-800 rounded-bl-sm"
+                  }`}
+                >
+                  {m.role === "assistant" ? <MarkdownLite content={m.content} /> : (
+                    <span className="whitespace-pre-wrap">{m.content}</span>
+                  )}
+                </div>
               </div>
             ))}
             {loading && (
-              <div className="mr-auto flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {agentName} is thinking...
+              <div className="flex items-center gap-2 mr-auto">
+                <AgentAvatar />
+                <div className="rounded-2xl rounded-bl-sm bg-white border border-gray-100 px-3.5 py-2.5 shadow-sm flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-bounce [animation-delay:-0.3s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-bounce [animation-delay:-0.15s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-bounce" />
+                </div>
               </div>
             )}
             {pendingAction && (
-              <div className="mr-auto max-w-[90%] rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
-                <p className="font-medium text-amber-900 mb-2">Confirm action</p>
-                <p className="text-amber-800 mb-3">{actionLabel(pendingAction)}</p>
+              <div className="mr-auto max-w-[92%] rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-orange-50/50 p-3.5 text-sm shadow-sm">
+                <p className="font-semibold text-amber-900 mb-1.5 flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Confirm this action
+                </p>
+                <p className="text-amber-800/90 mb-3 leading-relaxed">{actionLabel(pendingAction)}</p>
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={handleConfirmAction} disabled={actionLoading}>
+                  <Button size="sm" onClick={handleConfirmAction} disabled={actionLoading} className="shadow-sm">
                     {actionLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
                     Confirm
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setPendingAction(null)} disabled={actionLoading}>
+                  <Button size="sm" variant="outline" onClick={() => setPendingAction(null)} disabled={actionLoading} className="bg-white/60">
                     <XCircle className="mr-1.5 h-3.5 w-3.5" />
                     Cancel
                   </Button>
@@ -216,15 +316,21 @@ export function AgentWidget() {
             )}
           </div>
 
-          <div className="p-3 border-t flex items-center gap-2 shrink-0">
+          <div className="p-3 border-t border-black/5 flex items-center gap-2 shrink-0 bg-white">
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               placeholder={`Message ${agentName}...`}
               disabled={loading}
+              className="rounded-full border-gray-200 focus-visible:ring-primary/30"
             />
-            <Button size="icon" onClick={handleSend} disabled={loading || !input.trim()}>
+            <Button
+              size="icon"
+              onClick={handleSend}
+              disabled={loading || !input.trim()}
+              className="rounded-full shrink-0 bg-gradient-to-br from-primary to-purple-500 hover:opacity-90"
+            >
               <Send className="h-4 w-4" />
             </Button>
           </div>
