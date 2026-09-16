@@ -28,6 +28,17 @@ function isRateLimited(userId: string): boolean {
   const timestamps = (rateLog.get(userId) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
   timestamps.push(now);
   rateLog.set(userId, timestamps);
+
+  // rateLog never otherwise shrinks — a one-time visitor's empty-after-
+  // filtering entry would sit in memory forever. A cheap opportunistic
+  // sweep on the (rare) occasion the map gets large keeps this bounded
+  // without needing a separate timer.
+  if (rateLog.size > 5000) {
+    for (const [key, times] of rateLog) {
+      if (times.every((t) => now - t >= RATE_WINDOW_MS)) rateLog.delete(key);
+    }
+  }
+
   return timestamps.length > RATE_LIMIT;
 }
 

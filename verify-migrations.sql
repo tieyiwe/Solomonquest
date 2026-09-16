@@ -74,7 +74,11 @@ select * from (values
 
   ('profile-suspension.sql: profiles.is_suspended',
     exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='profiles' and column_name='is_suspended'))
+      where table_schema='public' and table_name='profiles' and column_name='is_suspended')),
+
+  ('schools-deleted-at.sql: schools.deleted_at',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='schools' and column_name='deleted_at'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;
