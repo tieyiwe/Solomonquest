@@ -26,6 +26,7 @@ import {
   CalendarRange,
   History,
   DollarSign,
+  Shield,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter } from "@/components/help/HelpCenter";
@@ -83,6 +84,7 @@ const bottomNavPrimaryHrefs = new Set(bottomNavPrimaryLinks.map((l) => l.href));
 const bottomNavOverflowLinks = adminLinks.filter((l) => !bottomNavPrimaryHrefs.has(l.href));
 
 function NavLinks({ onClose }: { onClose?: () => void }) {
+  const { user } = useAuth();
   const [location] = useLocation();
   const isInSettings =
     location.startsWith("/dashboard/admin/settings") ||
@@ -169,6 +171,18 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
           </div>
         </div>
       </div>
+
+      {user?.role === "super_admin" && (
+        <Link href="/super_admin">
+          <button
+            onClick={onClose}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 text-slate-300 font-medium hover:bg-white/8 hover:text-white mt-1 border-t border-white/10 pt-3"
+          >
+            <Shield className="h-4 w-4 shrink-0 text-slate-400" />
+            <span>Platform Admin</span>
+          </button>
+        </Link>
+      )}
     </nav>
   );
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
+import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import {
   TrendingUp,
   LayoutDashboard,
   LogOut,
+  ArrowLeftRight,
   RefreshCw,
   CheckCircle,
   XCircle,
@@ -826,6 +828,11 @@ export default function SuperAdminDashboard() {
 
   const uniqueSchools = Array.from(new Set(users.map((u) => u.school))).filter(Boolean);
 
+  const userRoleCounts = users.reduce<Record<string, number>>((acc, u) => {
+    acc[u.role] = (acc[u.role] ?? 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
       {/* Sidebar */}
@@ -877,7 +884,13 @@ export default function SuperAdminDashboard() {
             );
           })}
         </nav>
-        <div className="p-4 border-t border-gray-800">
+        <div className="p-4 border-t border-gray-800 space-y-1">
+          <Link href="/dashboard/admin">
+            <a className="flex items-center gap-2 text-gray-400 hover:text-white text-sm transition-colors w-full">
+              <ArrowLeftRight size={16} />
+              Back to Regular Dashboard
+            </a>
+          </Link>
           <button
             onClick={() => signOut?.()}
             className="flex items-center gap-2 text-gray-400 hover:text-red-400 text-sm transition-colors w-full"
@@ -1330,6 +1343,25 @@ export default function SuperAdminDashboard() {
           {/* ALL USERS */}
           {activeSection === "users" && (
             <div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+                <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                  <p className="text-xs text-gray-400">Total Users</p>
+                  <p className="text-xl font-bold text-white mt-0.5">{users.length}</p>
+                </div>
+                {[
+                  { role: "super_admin", label: "Super Admins" },
+                  { role: "admin", label: "Admins" },
+                  { role: "teacher", label: "Teachers" },
+                  { role: "staff", label: "Staff" },
+                  { role: "student", label: "Students" },
+                  { role: "parent", label: "Parents" },
+                ].map(({ role, label }) => (
+                  <div key={role} className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                    <p className="text-xs text-gray-400">{label}</p>
+                    <p className="text-xl font-bold text-white mt-0.5">{userRoleCounts[role] ?? 0}</p>
+                  </div>
+                ))}
+              </div>
               <div className="flex flex-wrap gap-3 mb-4">
                 <Input
                   placeholder="Search users..."
@@ -1346,7 +1378,9 @@ export default function SuperAdminDashboard() {
                   <option value="super_admin">Super Admin</option>
                   <option value="admin">Admin</option>
                   <option value="teacher">Teacher</option>
+                  <option value="staff">Staff</option>
                   <option value="student">Student</option>
+                  <option value="parent">Parent</option>
                 </select>
                 <select
                   value={userSchoolFilter}
