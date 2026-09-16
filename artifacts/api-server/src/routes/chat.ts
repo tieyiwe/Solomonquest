@@ -3,6 +3,7 @@ import multer from "multer";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { requireSchoolFeature } from "../lib/featureFlags";
+import { logUsageEvent } from "../lib/usageTracking";
 import { scanFile } from "../lib/fileScan";
 import { logger } from "../lib/logger";
 import { notifyUsers } from "../lib/notifications";
@@ -32,7 +33,7 @@ function ensureAttachmentsBucket(): Promise<void> {
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-async function assertChannelMember(
+export async function assertChannelMember(
   channelId: string,
   userId: string
 ): Promise<boolean> {
@@ -613,6 +614,8 @@ router.post(
     const senderName =
       [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Someone";
 
+    logUsageEvent({ schoolId: req.schoolId!, userId: req.userId, eventType: "chat_message" });
+
     res.status(201).json({
       id: message.id,
       channelId,
@@ -872,6 +875,28 @@ router.get(
   requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { messageId } = req.params;
+
+    // Security: this had no scoping at all, so any authenticated user could
+    // read the reactions (and the reacting users' ids) on any message in any
+    // channel of any school just by guessing/leaking a message id. The POST
+    // sibling below already gated on channel membership; do the same here.
+    const { data: message } = await supabaseAdmin
+      .from("chat_messages")
+      .select("channel_id")
+      .eq("id", messageId as string)
+      .maybeSingle();
+
+    if (!message) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    const isMember = await assertChannelMember(message.channel_id as string, req.userId!);
+    if (!isMember) {
+      res.status(403).json({ error: "You are not a member of this channel" });
+      return;
+    }
+
     const reactionsByMessage = await fetchReactions([messageId as string]);
     res.json({ reactions: reactionsByMessage[messageId as string] ?? [] });
   }

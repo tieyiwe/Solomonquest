@@ -108,20 +108,20 @@ router.get("/dashboard/teacher/stats", requireAuth, async (req: AuthenticatedReq
   const recentActivity = courseIds.length > 0 ? await (async () => {
     const { data: subs } = await supabaseAdmin
       .from("submissions")
-      .select("id, status, created_at")
+      .select("id, status, submitted_at")
       .in("assignment_id",
         courseIds.length > 0
           ? ((await supabaseAdmin.from("assignments").select("id").in("course_id", courseIds)).data ?? []).map((a: Record<string, unknown>) => a.id as string)
           : ["__none__"]
       )
-      .order("created_at", { ascending: false })
+      .order("submitted_at", { ascending: false })
       .limit(5);
 
     return (subs ?? []).map((s: Record<string, unknown>) => ({
       id: s.id as string,
       type: "submission",
       description: `New submission (${s.status})`,
-      createdAt: s.created_at as string,
+      createdAt: s.submitted_at as string,
     }));
   })() : [];
 
@@ -181,16 +181,16 @@ router.get("/dashboard/student/stats", requireAuth, async (req: AuthenticatedReq
   // Recent activity
   const { data: mySubmissions } = await supabaseAdmin
     .from("submissions")
-    .select("id, status, created_at")
+    .select("id, status, submitted_at")
     .eq("student_id", userId)
-    .order("created_at", { ascending: false })
+    .order("submitted_at", { ascending: false })
     .limit(5);
 
   const recentActivity = (mySubmissions ?? []).map((s: Record<string, unknown>) => ({
     id: s.id as string,
     type: "submission",
     description: `Assignment ${s.status}`,
-    createdAt: s.created_at as string,
+    createdAt: s.submitted_at as string,
   }));
 
   res.json({

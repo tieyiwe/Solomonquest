@@ -17,6 +17,7 @@ router.get("/schools", async (_req, res): Promise<void> => {
       .from("schools")
       .select("*")
       .eq("is_active", true)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -64,6 +65,7 @@ router.get("/schools/by-domain/:domain", async (req, res): Promise<void> => {
     .select("*")
     .eq("custom_domain", domain)
     .eq("custom_domain_status", "verified")
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (error || !data) {
@@ -82,6 +84,7 @@ router.get("/schools/:slug", optionalAuth, async (req, res): Promise<void> => {
     .from("schools")
     .select("*")
     .eq("slug", slug)
+    .is("deleted_at", null)
     .single();
 
   if (error || !data) {
@@ -199,6 +202,7 @@ router.get("/schools/slug/:slug", async (req, res): Promise<void> => {
     .from("schools")
     .select("*")
     .eq("slug", slug)
+    .is("deleted_at", null)
     .single();
 
   if (error || !data) {

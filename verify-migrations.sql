@@ -76,6 +76,66 @@ select * from (values
     exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='profiles' and column_name='is_suspended')),
 
+  ('schema-drift-fixes.sql: assignments.assignment_type + require_full_watch',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='assignments' and column_name='assignment_type')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='assignments' and column_name='require_full_watch')),
+
+  ('schema-drift-fixes.sql: attendance.checked_in_at',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='attendance' and column_name='checked_in_at')),
+
+  ('schema-drift-fixes.sql: courses.is_live + class_date',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='courses' and column_name='is_live')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='courses' and column_name='class_date')),
+
+  ('schema-drift-fixes.sql: courses.class_end_time',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='courses' and column_name='class_end_time')),
+
+  ('schema-drift-fixes.sql: schools.applications_open + assignment_routing',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='schools' and column_name='applications_open')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='schools' and column_name='assignment_routing')),
+
+  ('schema-drift-fixes.sql: role_permissions.feature + is_enabled',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='role_permissions' and column_name='feature')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='role_permissions' and column_name='is_enabled')),
+
+  ('schema-drift-fixes.sql: video_sessions.is_active',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='video_sessions' and column_name='is_active')),
+
+  ('schema-drift-fixes.sql: student_applications.updated_at',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='student_applications' and column_name='updated_at')),
+
+  ('schema-drift-fixes.sql: quizzes.attempt_limit + release_scores_immediately',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='quizzes' and column_name='attempt_limit')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='quizzes' and column_name='release_scores_immediately')),
+
+  ('schema-drift-fixes.sql: quiz_questions.order_index + question + type',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='quiz_questions' and column_name='order_index')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='quiz_questions' and column_name='question')),
+
+  ('schema-drift-fixes.sql: quiz_attempts.status/earned_points/answers',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='quiz_attempts' and column_name='status')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='quiz_attempts' and column_name='earned_points')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='quiz_attempts' and column_name='answers')),
+
   ('schools-deleted-at.sql: schools.deleted_at',
     exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='schools' and column_name='deleted_at'))

@@ -100,8 +100,10 @@ interface Grade {
 }
 
 interface VideoSession {
+  room_name?: string;
   jitsi_room?: string;
   room?: string;
+  is_active?: boolean;
   status?: string;
 }
 
@@ -316,8 +318,9 @@ export default function StudentOverview() {
           `/api/video/sessions?course_id=${course.id}`
         );
         const session = Array.isArray(data) ? data[0] : data;
-        if (session && (session.jitsi_room || session.room) && session.status === "active") {
-          const room = session.jitsi_room || session.room!;
+        const room = session?.room_name || session?.jitsi_room || session?.room;
+        const isActive = session?.is_active ?? session?.status === "active";
+        if (room && isActive) {
           setActiveSessions((prev) => ({ ...prev, [course.id]: room }));
         }
       } catch {

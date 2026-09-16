@@ -356,12 +356,12 @@ router.get("/users/:id/detail", requireAuth, async (req: AuthenticatedRequest, r
   if (isTeacher) {
     const { data: perms } = await supabaseAdmin
       .from("role_permissions")
-      .select("feature, enabled")
+      .select("feature, is_enabled")
       .eq("school_id", req.schoolId ?? "")
       .eq("role", "teacher")
       .in("feature", ["student_contact_info", "student_program_info", "student_attendance"]);
 
-    const map = new Map((perms ?? []).map((p) => [p.feature, p.enabled]));
+    const map = new Map((perms ?? []).map((p) => [p.feature, p.is_enabled]));
     allowedFields = {
       contact: map.get("student_contact_info") === true,
       program: map.get("student_program_info") === true,

@@ -176,7 +176,7 @@ router.get("/analytics/admin", requireAuth, async (req: AuthenticatedRequest, re
     // ── Teacher performance ─────────────────────────────────────────────────
     const { data: teacherRows } = await supabaseAdmin
       .from("profiles")
-      .select("id, first_name, last_name, full_name")
+      .select("id, first_name, last_name")
       .eq("school_id", schoolId)
       .eq("role", "teacher");
 

@@ -158,7 +158,7 @@ router.post(
         file_url: fileUrl ?? null,
         external_url: externalUrl ?? null,
         section: section ?? null,
-        created_by: req.userId,
+        uploaded_by: req.userId,
         is_published: publishNow,
       })
       .select()

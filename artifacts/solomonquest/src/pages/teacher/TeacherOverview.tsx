@@ -279,11 +279,11 @@ export default function TeacherOverview() {
   async function startLiveClass(courseId: string) {
     setStartingSession(courseId);
     try {
-      const data = await apiFetch<{ jitsi_room?: string; room?: string }>("/api/video/sessions", {
+      const data = await apiFetch<{ room_name?: string; jitsi_room?: string; room?: string }>("/api/video/sessions", {
         method: "POST",
         body: JSON.stringify({ course_id: courseId }),
       });
-      const room = data.jitsi_room || data.room;
+      const room = data.room_name || data.jitsi_room || data.room;
       if (room) {
         window.open(`https://meet.jit.si/${room}`, "_blank", "noopener,noreferrer");
       } else {

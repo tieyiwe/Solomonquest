@@ -5,6 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { notifyUsers } from "../lib/notifications";
 import { invalidateCachedProfile, invalidateCachedProfilesForSchool } from "../lib/profileCache";
 import { invalidateFeatureCache } from "../lib/featureFlags";
+import { estimateCostCents } from "../lib/usageTracking";
 
 const router: IRouter = Router();
 
@@ -79,8 +80,8 @@ router.get(
           .select("id", { count: "exact", head: true })
           .eq("role", "teacher"),
         supabaseAdmin.from("courses").select("id", { count: "exact", head: true }),
-        supabaseAdmin.from("course_enrollments").select("id", { count: "exact", head: true }),
-        supabaseAdmin.from("applications").select("id", { count: "exact", head: true }),
+        supabaseAdmin.from("course_enrollments").select("student_id", { count: "exact", head: true }),
+        supabaseAdmin.from("student_applications").select("id", { count: "exact", head: true }),
         supabaseAdmin
           .from("schools")
           .select("id", { count: "exact", head: true })
@@ -857,12 +858,12 @@ router.get(
       // Enrollments by month
       const { data: enrollmentsData } = await supabaseAdmin
         .from("course_enrollments")
-        .select("created_at")
-        .gte("created_at", `${months[0]}-01`);
+        .select("enrolled_at")
+        .gte("enrolled_at", `${months[0]}-01`);
 
       const enrollmentsByMonth = months.map((m) => ({
         month: m,
-        count: (enrollmentsData ?? []).filter((e) => e.created_at.startsWith(m)).length,
+        count: (enrollmentsData ?? []).filter((e) => (e.enrolled_at ?? "").startsWith(m)).length,
       }));
 
       // Top 10 schools by enrollment
@@ -895,14 +896,14 @@ router.get(
 
       // Application stats
       const { data: appsData } = await supabaseAdmin
-        .from("applications")
+        .from("student_applications")
         .select("status");
 
       const applicationStats = {
         total: appsData?.length ?? 0,
-        approved: (appsData ?? []).filter((a) => a.status === "approved").length,
+        approved: (appsData ?? []).filter((a) => a.status === "accepted" || a.status === "enrolled").length,
         rejected: (appsData ?? []).filter((a) => a.status === "rejected").length,
-        pending: (appsData ?? []).filter((a) => a.status === "pending").length,
+        pending: (appsData ?? []).filter((a) => a.status === "submitted" || a.status === "under_review").length,
       };
 
       // Same class of bug as the dashboard route: this used to return
@@ -1057,6 +1058,16 @@ router.post(
         .eq("id", request.school_id)
         .single();
 
+      // course_enrollments has no school_id column — it only links a course to
+      // a student — so the enrollment count has to go through the school's
+      // course ids. Filtering enrollments on school_id made this query error
+      // out and the archived stats snapshot record 0 enrollments.
+      const { data: schoolCourseRows } = await supabaseAdmin
+        .from("courses")
+        .select("id")
+        .eq("school_id", request.school_id);
+      const schoolCourseIds = (schoolCourseRows ?? []).map((c) => c.id as string);
+
       // Gather stats snapshot
       const [studentsRes, teachersRes, coursesRes, enrollmentsRes] = await Promise.all([
         supabaseAdmin
@@ -1073,10 +1084,12 @@ router.post(
           .from("courses")
           .select("id", { count: "exact", head: true })
           .eq("school_id", request.school_id),
-        supabaseAdmin
-          .from("course_enrollments")
-          .select("id", { count: "exact", head: true })
-          .eq("school_id", request.school_id),
+        schoolCourseIds.length > 0
+          ? supabaseAdmin
+              .from("course_enrollments")
+              .select("student_id", { count: "exact", head: true })
+              .in("course_id", schoolCourseIds)
+          : Promise.resolve({ count: 0 } as { count: number }),
       ]);
 
       // Create archive record
@@ -1281,7 +1294,7 @@ router.post(
         supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("school_id", id).eq("role", "student"),
         supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("school_id", id).eq("role", "teacher"),
         supabaseAdmin.from("courses").select("id", { count: "exact", head: true }).eq("school_id", id),
-        supabaseAdmin.from("course_enrollments").select("id", { count: "exact", head: true }).eq("school_id", id),
+        supabaseAdmin.from("course_enrollments").select("student_id", { count: "exact", head: true }).eq("school_id", id),
       ]);
 
       const { data: archiveEntry, error: archiveErr } = await supabaseAdmin
@@ -1639,6 +1652,174 @@ router.put(
       res.json({ success: true, key, value });
     } catch (err) {
       console.error("Platform settings update error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// ─── Usage & Costs ──────────────────────────────────────────────────────────
+// Per-school and per-user usage visibility (AI tokens/estimated cost, chat
+// messages, forum posts, video calls) — for spotting where AI cost is
+// coming from, informing a plan-upgrade conversation with a school, or
+// deciding where to cap usage later.
+
+router.get(
+  "/super-admin/usage",
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const days = Math.min(365, Math.max(1, parseInt((req.query.days as string) ?? "30", 10) || 30));
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      const [{ data: events, error }, { data: schools }] = await Promise.all([
+        supabaseAdmin
+          .from("usage_events")
+          .select("school_id, event_type, ai_model, input_tokens, output_tokens")
+          .gte("created_at", since),
+        supabaseAdmin.from("schools").select("id, name"),
+      ]);
+
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+
+      const schoolNameById = new Map((schools ?? []).map((s) => [s.id as string, s.name as string]));
+
+      const bySchool = new Map<
+        string,
+        {
+          aiMessages: number;
+          aiInputTokens: number;
+          aiOutputTokens: number;
+          estimatedCostCents: number;
+          chatMessages: number;
+          forumPosts: number;
+          videoCalls: number;
+        }
+      >();
+
+      for (const e of events ?? []) {
+        const schoolId = e.school_id as string;
+        const row =
+          bySchool.get(schoolId) ??
+          { aiMessages: 0, aiInputTokens: 0, aiOutputTokens: 0, estimatedCostCents: 0, chatMessages: 0, forumPosts: 0, videoCalls: 0 };
+
+        if (e.event_type === "ai_chat") {
+          const inputTokens = (e.input_tokens as number) ?? 0;
+          const outputTokens = (e.output_tokens as number) ?? 0;
+          row.aiMessages += 1;
+          row.aiInputTokens += inputTokens;
+          row.aiOutputTokens += outputTokens;
+          row.estimatedCostCents += estimateCostCents(e.ai_model as string | null, inputTokens, outputTokens);
+        } else if (e.event_type === "chat_message") {
+          row.chatMessages += 1;
+        } else if (e.event_type === "forum_post") {
+          row.forumPosts += 1;
+        } else if (e.event_type === "video_call") {
+          row.videoCalls += 1;
+        }
+
+        bySchool.set(schoolId, row);
+      }
+
+      const result = Array.from(bySchool.entries())
+        .map(([schoolId, stats]) => ({
+          schoolId,
+          schoolName: schoolNameById.get(schoolId) ?? "Unknown school",
+          ...stats,
+        }))
+        .sort((a, b) => b.estimatedCostCents - a.estimatedCostCents);
+
+      res.json({ days, schools: result });
+    } catch (err) {
+      console.error("Usage summary error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+router.get(
+  "/super-admin/usage/schools/:id/users",
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const schoolId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const days = Math.min(365, Math.max(1, parseInt((req.query.days as string) ?? "30", 10) || 30));
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      const { data: events, error } = await supabaseAdmin
+        .from("usage_events")
+        .select("user_id, event_type, ai_model, input_tokens, output_tokens")
+        .eq("school_id", schoolId)
+        .gte("created_at", since);
+
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+
+      const userIds = Array.from(new Set((events ?? []).map((e) => e.user_id).filter((id): id is string => !!id)));
+      const { data: profiles } = userIds.length
+        ? await supabaseAdmin.from("profiles").select("id, first_name, last_name, role").in("id", userIds)
+        : { data: [] as { id: string; first_name: string | null; last_name: string | null; role: string }[] };
+      const profileById = new Map((profiles ?? []).map((p) => [p.id as string, p]));
+
+      const byUser = new Map<
+        string,
+        {
+          aiMessages: number;
+          aiInputTokens: number;
+          aiOutputTokens: number;
+          estimatedCostCents: number;
+          chatMessages: number;
+          forumPosts: number;
+          videoCalls: number;
+        }
+      >();
+
+      for (const e of events ?? []) {
+        if (!e.user_id) continue;
+        const userId = e.user_id as string;
+        const row =
+          byUser.get(userId) ??
+          { aiMessages: 0, aiInputTokens: 0, aiOutputTokens: 0, estimatedCostCents: 0, chatMessages: 0, forumPosts: 0, videoCalls: 0 };
+
+        if (e.event_type === "ai_chat") {
+          const inputTokens = (e.input_tokens as number) ?? 0;
+          const outputTokens = (e.output_tokens as number) ?? 0;
+          row.aiMessages += 1;
+          row.aiInputTokens += inputTokens;
+          row.aiOutputTokens += outputTokens;
+          row.estimatedCostCents += estimateCostCents(e.ai_model as string | null, inputTokens, outputTokens);
+        } else if (e.event_type === "chat_message") {
+          row.chatMessages += 1;
+        } else if (e.event_type === "forum_post") {
+          row.forumPosts += 1;
+        } else if (e.event_type === "video_call") {
+          row.videoCalls += 1;
+        }
+
+        byUser.set(userId, row);
+      }
+
+      const result = Array.from(byUser.entries())
+        .map(([userId, stats]) => {
+          const profile = profileById.get(userId);
+          return {
+            userId,
+            userName: profile ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "Unknown user" : "Unknown user",
+            role: profile?.role ?? null,
+            ...stats,
+          };
+        })
+        .sort((a, b) => b.estimatedCostCents - a.estimatedCostCents);
+
+      res.json({ days, users: result });
+    } catch (err) {
+      console.error("Per-user usage error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   }

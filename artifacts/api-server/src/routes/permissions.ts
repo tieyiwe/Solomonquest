@@ -42,7 +42,7 @@ router.get("/permissions/my", requireAuth, async (req: AuthenticatedRequest, res
 
     const { data: rolePermissions, error: permError } = await supabaseAdmin
       .from("role_permissions")
-      .select("feature, enabled")
+      .select("feature, is_enabled")
       .eq("school_id", school_id)
       .eq("role", role);
 
@@ -59,7 +59,7 @@ router.get("/permissions/my", requireAuth, async (req: AuthenticatedRequest, res
 
     // Override with stored permissions
     for (const perm of rolePermissions ?? []) {
-      permissions[perm.feature] = perm.enabled;
+      permissions[perm.feature] = perm.is_enabled;
     }
 
     return res.json({ permissions });
@@ -101,7 +101,7 @@ router.get("/permissions", requireAuth, async (req: AuthenticatedRequest, res) =
 
     const { data: rolePermissions, error: permError } = await supabaseAdmin
       .from("role_permissions")
-      .select("role, feature, enabled")
+      .select("role, feature, is_enabled")
       .eq("school_id", school_id);
 
     if (permError) {
@@ -115,7 +115,7 @@ router.get("/permissions", requireAuth, async (req: AuthenticatedRequest, res) =
       if (!grouped[perm.role]) {
         grouped[perm.role] = {};
       }
-      grouped[perm.role][perm.feature] = perm.enabled;
+      grouped[perm.role][perm.feature] = perm.is_enabled;
     }
 
     return res.json({ permissions: grouped });
@@ -157,7 +157,7 @@ router.put("/permissions", requireAuth, async (req: AuthenticatedRequest, res) =
     const { data, error: upsertError } = await supabaseAdmin
       .from("role_permissions")
       .upsert(
-        { school_id, role, feature, enabled },
+        { school_id, role, feature, is_enabled: enabled },
         { onConflict: "school_id,role,feature" }
       )
       .select()

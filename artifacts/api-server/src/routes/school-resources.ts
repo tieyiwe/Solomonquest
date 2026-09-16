@@ -69,7 +69,7 @@ router.post(
         external_url: externalUrl ?? null,
         category: category ?? null,
         visible_to: visibleTo ?? null,
-        created_by: req.userId,
+        uploaded_by: req.userId,
       })
       .select()
       .single();

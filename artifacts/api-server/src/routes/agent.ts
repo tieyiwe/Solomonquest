@@ -175,14 +175,14 @@ async function buildSchoolContext(schoolId: string, agentName: string): Promise<
         .eq("role", "teacher"),
       supabaseAdmin
         .from("courses")
-        .select("id, name")
+        .select("id, title")
         .eq("school_id", schoolId)
         .limit(30),
       supabaseAdmin
-        .from("applications")
+        .from("student_applications")
         .select("id", { count: "exact", head: true })
         .eq("school_id", schoolId)
-        .eq("status", "pending"),
+        .in("status", ["submitted", "under_review"]),
       supabaseAdmin
         .from("announcements")
         .select("title, created_at")
@@ -192,7 +192,7 @@ async function buildSchoolContext(schoolId: string, agentName: string): Promise<
     ]);
 
   const schoolName = schoolRes.data?.name ?? "this school";
-  const courseNames = (coursesRes.data ?? []).map((c: any) => c.name).join(", ") || "none yet";
+  const courseNames = (coursesRes.data ?? []).map((c: any) => c.title).join(", ") || "none yet";
   const recentAnnouncements =
     (announcementsRes.data ?? []).map((a: any) => `- ${a.title}`).join("\n") || "None recently";
 

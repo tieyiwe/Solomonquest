@@ -139,7 +139,7 @@ router.post("/attendance/checkin", requireAuth, async (req: AuthenticatedRequest
   // Check if student is enrolled
   const { data: enrollment } = await supabaseAdmin
     .from("course_enrollments")
-    .select("id")
+    .select("student_id")
     .eq("course_id", course_id)
     .eq("student_id", studentId)
     .single();
