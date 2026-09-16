@@ -99,7 +99,7 @@ router.get(
           .is("permanently_deleted_at", null),
         supabaseAdmin
           .from("profiles")
-          .select("first_name, last_name, role, school_id, created_at")
+          .select("id, first_name, last_name, role, school_id, created_at")
           .order("created_at", { ascending: false })
           .limit(10),
       ]);
@@ -126,28 +126,35 @@ router.get(
             schoolName = sc?.name ?? null;
           }
           return {
+            id: p.id,
             name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
             role: p.role,
             school: schoolName,
-            created_at: p.created_at,
+            joined: p.created_at,
           };
         })
       );
 
+      // Field names match what SuperAdminDashboard.tsx's DashboardData
+      // interface actually reads — this endpoint used to return snake_case
+      // (total_schools, recent_signups, ...) while the frontend read
+      // camelCase (totalSchools, recentSignups, ...), so every field came
+      // back undefined and dashboardData.recentSignups.map() threw on
+      // every single visit to the super admin dashboard's default tab.
       res.json({
-        total_schools: schoolsRes.count ?? 0,
-        total_users: usersRes.count ?? 0,
-        total_students: studentsRes.count ?? 0,
-        total_teachers: teachersRes.count ?? 0,
-        total_courses: coursesRes.count ?? 0,
-        total_enrollments: enrollmentsRes.count ?? 0,
-        total_applications: applicationsRes.count ?? 0,
-        new_schools_this_month: newSchoolsRes.count ?? 0,
-        new_users_this_month: newUsersRes.count ?? 0,
-        active_schools: activeSchoolIds.size,
-        pending_deletion_requests: pendingDeletionRes.count ?? 0,
-        schools_in_archive: archiveRes.count ?? 0,
-        recent_signups: recentSignups,
+        totalSchools: schoolsRes.count ?? 0,
+        totalUsers: usersRes.count ?? 0,
+        totalStudents: studentsRes.count ?? 0,
+        totalTeachers: teachersRes.count ?? 0,
+        activeCourses: coursesRes.count ?? 0,
+        totalEnrollments: enrollmentsRes.count ?? 0,
+        totalApplications: applicationsRes.count ?? 0,
+        newSchoolsThisMonth: newSchoolsRes.count ?? 0,
+        newUsersThisMonth: newUsersRes.count ?? 0,
+        activeSchools: activeSchoolIds.size,
+        pendingDeletions: pendingDeletionRes.count ?? 0,
+        archivedSchools: archiveRes.count ?? 0,
+        recentSignups,
       });
     } catch (err) {
       console.error("Dashboard error:", err);
@@ -574,7 +581,7 @@ router.get(
 
       let query = supabaseAdmin
         .from("profiles")
-        .select("id, first_name, last_name, role, school_id, internal_email, email, created_at");
+        .select("id, first_name, last_name, role, school_id, internal_email, email, created_at, is_suspended");
 
       if (role) query = query.eq("role", role);
       if (school_id) query = query.eq("school_id", school_id);
@@ -614,9 +621,9 @@ router.get(
             email: p.email ?? null,
             internal_email: p.internal_email,
             role: p.role,
-            school_name: schoolName,
-            created_at: p.created_at,
-            last_sign_in: null,
+            school: schoolName,
+            joined: p.created_at,
+            suspended: p.is_suspended === true,
           };
         })
       );
@@ -824,9 +831,7 @@ router.get(
           month: m,
           students: monthUsers.filter((u) => u.role === "student").length,
           teachers: monthUsers.filter((u) => u.role === "teacher").length,
-          admins: monthUsers.filter(
-            (u) => u.role === "school_admin" || u.role === "super_admin"
-          ).length,
+          admins: monthUsers.filter((u) => u.role === "admin" || u.role === "super_admin").length,
         };
       });
 
@@ -861,12 +866,12 @@ router.get(
         }
       }
 
-      const topSchoolsByEnrollment = Object.entries(schoolEnrollmentMap)
+      const topSchools = Object.entries(schoolEnrollmentMap)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10)
         .map(([schoolId, count]) => {
           const school = (allSchools ?? []).find((s) => s.id === schoolId);
-          return { name: school?.name ?? schoolId, enrollment_count: count };
+          return { name: school?.name ?? schoolId, students: count };
         });
 
       // Application stats
@@ -881,13 +886,17 @@ router.get(
         pending: (appsData ?? []).filter((a) => a.status === "pending").length,
       };
 
+      // Same class of bug as the dashboard route: this used to return
+      // snake_case while AnalyticsData in SuperAdminDashboard.tsx reads
+      // camelCase, so analyticsData.topSchools was always undefined and
+      // .map() threw the moment anyone opened the Analytics tab.
       res.json({
-        schools_growth: schoolsGrowth,
-        users_growth: usersGrowth,
-        enrollments_by_month: enrollmentsByMonth,
-        top_schools_by_enrollment: topSchoolsByEnrollment,
-        application_stats: applicationStats,
-        geographic_distribution: {},
+        schoolsGrowth,
+        usersGrowth,
+        enrollmentsByMonth,
+        topSchools,
+        applicationStats,
+        geographicDistribution: {},
       });
     } catch (err) {
       console.error("Analytics error:", err);
@@ -942,7 +951,13 @@ router.get(
         })
       );
 
-      res.json({ data: enriched, total: count ?? 0, page: pageNum, limit: limitNum });
+      // SuperAdminDashboard.tsx's fetchAuditLogs does setAuditLogs(await
+      // res.json()) expecting a plain array (AuditLog[]) — this used to send
+      // {data, total, page, limit} instead, so auditLogs.map() threw the
+      // moment anyone opened the Audit Log tab. Pagination metadata goes in
+      // a header instead of changing the body shape.
+      res.set("X-Total-Count", String(count ?? 0));
+      res.json(enriched);
     } catch (err) {
       console.error("Audit log error:", err);
       res.status(500).json({ error: "Internal server error" });
@@ -968,7 +983,23 @@ router.get(
         return;
       }
 
-      res.json(data ?? []);
+      // Raw Supabase rows (with nested schools/profiles joins) were sent
+      // directly — SuperAdminDashboard.tsx's DeletionRequest interface
+      // reads flat camelCase fields (school, requester, requestedAt) that
+      // never existed on this shape, so every row rendered blank names and
+      // "Invalid Date".
+      const mapped = (data ?? []).map((r: any) => ({
+        id: r.id,
+        schoolId: r.school_id,
+        school: r.schools?.name ?? r.school_id,
+        requester: r.profiles ? `${r.profiles.first_name ?? ""} ${r.profiles.last_name ?? ""}`.trim() : null,
+        reason: r.reason,
+        status: r.status,
+        requestedAt: r.created_at,
+        reviewNotes: r.review_notes ?? null,
+      }));
+
+      res.json(mapped);
     } catch (err) {
       console.error("Deletion requests error:", err);
       res.status(500).json({ error: "Internal server error" });
@@ -1330,12 +1361,11 @@ router.get(
         const schoolData = entry.school_data as Record<string, unknown>;
         return {
           id: entry.id,
-          school_id: entry.school_id,
-          school_name: schoolData?.name ?? null,
-          deleted_at: entry.created_at,
-          restore_deadline: entry.restore_deadline,
-          days_remaining: daysRemaining,
-          stats_snapshot: entry.stats_snapshot,
+          schoolId: entry.school_id,
+          schoolName: schoolData?.name ?? null,
+          deletedAt: entry.created_at,
+          daysRemaining: daysRemaining,
+          expired: daysRemaining <= 0,
         };
       });
 
@@ -1436,7 +1466,21 @@ router.get(
         return;
       }
 
-      res.json(data ?? []);
+      // SuperAdminDashboard.tsx's `settings` state is a single
+      // PlatformSettings object read via settings.maxSchoolsPerAdmin, etc. —
+      // this was sending the raw key/value rows as an array instead, so
+      // every setting field silently read as undefined.
+      const byKey = new Map((data ?? []).map((row) => [row.key, row.value]));
+      const maintenance = (byKey.get("maintenanceMode") as { mode?: boolean; message?: string } | undefined) ?? {};
+
+      res.json({
+        maxSchoolsPerAdmin: byKey.get("maxSchoolsPerAdmin") ?? 0,
+        maxStudentsPerSchool: byKey.get("maxStudentsPerSchool") ?? 0,
+        maxCoursesPerSchool: byKey.get("maxCoursesPerSchool") ?? 0,
+        allowSchoolRegistration: byKey.get("allowSchoolRegistration") ?? true,
+        maintenanceMode: maintenance.mode ?? false,
+        maintenanceMessage: maintenance.message ?? "",
+      });
     } catch (err) {
       console.error("Platform settings get error:", err);
       res.status(500).json({ error: "Internal server error" });

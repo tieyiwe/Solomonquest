@@ -749,7 +749,7 @@ export default function SuperAdminDashboard() {
     try {
       const res = await apiFetch("/api/super-admin/platform-settings", {
         method: "PUT",
-        body: JSON.stringify({ [field]: value }),
+        body: JSON.stringify({ key: field, value }),
       });
       if (!res.ok) throw new Error();
       toast.success("Setting saved");
