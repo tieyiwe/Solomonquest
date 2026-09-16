@@ -4,6 +4,7 @@ import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { notifyUsers } from "../lib/notifications";
 import { invalidateCachedProfile, invalidateCachedProfilesForSchool } from "../lib/profileCache";
+import { invalidateFeatureCache } from "../lib/featureFlags";
 
 const router: IRouter = Router();
 
@@ -569,6 +570,8 @@ router.patch(
         res.status(500).json({ error: error.message });
         return;
       }
+
+      invalidateFeatureCache(id);
 
       await auditLog({
         actorId: req.userId,

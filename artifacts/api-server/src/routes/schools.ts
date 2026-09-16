@@ -5,6 +5,7 @@ import { supabaseAdmin } from "../lib/supabase";
 import { logger } from "../lib/logger";
 import { invalidateCachedProfile } from "../lib/profileCache";
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { requireSchoolFeature } from "../lib/featureFlags";
 import { notifyUsers } from "../lib/notifications";
 
 const router: IRouter = Router();
@@ -332,6 +333,7 @@ function dnsRecordsFor(domain: string, token: string) {
 router.post(
   "/schools/:id/custom-domain/request",
   requireAuth,
+  requireSchoolFeature("custom_domain"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 

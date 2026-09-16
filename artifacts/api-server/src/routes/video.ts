@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { requireSchoolFeature } from "../lib/featureFlags";
 
 const router: IRouter = Router();
 
 // POST /video/sessions - start a session (teacher only)
-router.post("/video/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/video/sessions", requireAuth, requireSchoolFeature("video_calls"), async (req: AuthenticatedRequest, res) => {
   try {
     const { course_id } = req.body;
     const userId = req.user!.id;
@@ -77,7 +78,7 @@ router.post("/video/sessions", requireAuth, async (req: AuthenticatedRequest, re
 });
 
 // GET /video/sessions?course_id=X - get active session for a course (any enrolled user)
-router.get("/video/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/video/sessions", requireAuth, requireSchoolFeature("video_calls"), async (req: AuthenticatedRequest, res) => {
   try {
     const { course_id } = req.query;
     const userId = req.user!.id;
@@ -131,7 +132,7 @@ router.get("/video/sessions", requireAuth, async (req: AuthenticatedRequest, res
 });
 
 // PUT /video/sessions/:id/end - end session (teacher only)
-router.put("/video/sessions/:id/end", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/video/sessions/:id/end", requireAuth, requireSchoolFeature("video_calls"), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
@@ -169,7 +170,7 @@ router.put("/video/sessions/:id/end", requireAuth, async (req: AuthenticatedRequ
 });
 
 // POST /video/chat-calls - start (or join) the group call for a chat channel
-router.post("/video/chat-calls", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/video/chat-calls", requireAuth, requireSchoolFeature("video_calls"), async (req: AuthenticatedRequest, res) => {
   try {
     const { channel_id } = req.body;
 
@@ -221,7 +222,7 @@ router.post("/video/chat-calls", requireAuth, async (req: AuthenticatedRequest, 
 });
 
 // PUT /video/chat-calls/:id/end - end chat call
-router.put("/video/chat-calls/:id/end", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/video/chat-calls/:id/end", requireAuth, requireSchoolFeature("video_calls"), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
 

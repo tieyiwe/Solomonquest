@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { requireSchoolFeature } from "../lib/featureFlags";
 
 const router: IRouter = Router();
 
@@ -391,7 +392,7 @@ async function enrichComments(comments: Record<string, unknown>[], viewerId?: st
 // ---------------------------------------------------------------------------
 router.get(
   "/forum/topics",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     let query = supabaseAdmin
       .from("forum_topics")
@@ -438,7 +439,7 @@ router.get(
 // ---------------------------------------------------------------------------
 router.post(
   "/forum/topics",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     // Role check: only teachers and admins (including super_admin) may create topics
     if (
@@ -526,7 +527,7 @@ router.post(
 // ---------------------------------------------------------------------------
 router.get(
   "/forum/topics/:topicId",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { topicId } = req.params;
 
@@ -588,7 +589,7 @@ router.get(
 // ---------------------------------------------------------------------------
 router.post(
   "/forum/topics/:topicId/comments",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { topicId } = req.params;
 
@@ -695,7 +696,7 @@ router.post(
 // ---------------------------------------------------------------------------
 router.post(
   "/forum/topics/:topicId/react",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { topicId } = req.params;
     const { reaction } = req.body;
@@ -789,7 +790,7 @@ router.post(
 // ---------------------------------------------------------------------------
 router.post(
   "/forum/comments/:commentId/react",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { commentId } = req.params;
     const { reaction } = req.body;
@@ -880,7 +881,7 @@ router.post(
 // ---------------------------------------------------------------------------
 router.delete(
   "/forum/topics/:topicId",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { topicId } = req.params;
 
@@ -928,7 +929,7 @@ router.delete(
 // ---------------------------------------------------------------------------
 router.delete(
   "/forum/comments/:commentId",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { commentId } = req.params;
 
@@ -978,7 +979,7 @@ router.delete(
 // ---------------------------------------------------------------------------
 router.get(
   "/forum/mentionable-users",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
 

@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import multer from "multer";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { requireSchoolFeature } from "../lib/featureFlags";
 import { scanFile } from "../lib/fileScan";
 import { logger } from "../lib/logger";
 import { notifyUsers } from "../lib/notifications";
@@ -56,7 +57,7 @@ function isUUID(value: unknown): value is string {
 
 router.get(
   "/chat/channels",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const includeArchived = req.query.archived === "true";
 
@@ -141,7 +142,7 @@ router.get(
 
 router.post(
   "/chat/channels/:channelId/read",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
 
@@ -170,7 +171,7 @@ router.post(
 
 router.put(
   "/chat/channels/:channelId/archive",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
     const { archived } = req.body as { archived?: boolean };
@@ -201,7 +202,7 @@ router.put(
 
 router.delete(
   "/chat/channels/:channelId",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
 
@@ -246,7 +247,7 @@ router.delete(
 
 router.post(
   "/chat/channels",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { name, type, memberIds } = req.body as {
       name?: string;
@@ -407,7 +408,7 @@ router.post(
 
 router.get(
   "/chat/channels/:channelId/messages",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { channelId } = req.params;
 
@@ -556,7 +557,7 @@ async function fetchReactions(
 
 router.post(
   "/chat/channels/:channelId/messages",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { channelId } = req.params;
 
@@ -674,7 +675,7 @@ async function notifyOtherChannelMembers(
 
 router.post(
   "/chat/channels/:channelId/attachments",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   upload.single("file"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { channelId } = req.params;
@@ -790,7 +791,7 @@ router.post(
 
 router.get(
   "/chat/channels/:channelId/messages/:messageId/thread",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { channelId, messageId } = req.params;
 
@@ -868,7 +869,7 @@ router.get(
 
 router.get(
   "/chat/messages/:messageId/reactions",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { messageId } = req.params;
     const reactionsByMessage = await fetchReactions([messageId as string]);
@@ -881,7 +882,7 @@ router.get(
 
 router.post(
   "/chat/messages/:messageId/reactions",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { messageId } = req.params;
     const { emoji } = req.body as { emoji?: string };
@@ -939,7 +940,7 @@ const EDIT_WINDOW_MS = 3 * 60 * 1000;
 
 router.patch(
   "/chat/messages/:messageId",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { messageId } = req.params;
     const { content } = req.body as { content?: string };
@@ -1011,7 +1012,7 @@ router.patch(
 
 router.get(
   "/chat/messages/:messageId/edits",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { messageId } = req.params;
 
@@ -1056,7 +1057,7 @@ router.get(
 
 router.post(
   "/chat/channels/setup-school",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     if (req.userRole !== "admin" && req.userRole !== "super_admin") {
       res.status(403).json({ error: "Admin access required" });
@@ -1129,7 +1130,7 @@ router.post(
 
 router.get(
   "/chat/users",
-  requireAuth,
+  requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const schoolId = req.schoolId;
     if (!schoolId) {
