@@ -34,11 +34,22 @@ export async function requireAuth(
     if (!cached) {
       const { data: profile } = await supabaseAdmin
         .from("profiles")
-        .select("role, school_id")
+        .select("role, school_id, schools(is_active)")
         .eq("id", verified.id)
         .single();
-      setCachedProfile(verified.id, profile?.role ?? null, profile?.school_id ?? null);
+      const school = profile?.schools as { is_active: boolean } | { is_active: boolean }[] | null | undefined;
+      const schoolActive = profile?.school_id
+        ? ((Array.isArray(school) ? school[0]?.is_active : school?.is_active) ?? true)
+        : null;
+      setCachedProfile(verified.id, profile?.role ?? null, profile?.school_id ?? null, schoolActive);
       cached = getCachedProfile(verified.id);
+    }
+
+    // A suspended school locks out everyone in it except super_admin (who
+    // isn't scoped to any school and needs access to lift the suspension).
+    if (cached?.role !== "super_admin" && cached?.schoolActive === false) {
+      res.status(403).json({ error: "This school has been suspended. Contact the platform administrator." });
+      return;
     }
 
     // Set typed user object

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -104,9 +104,12 @@ interface School {
   id: string;
   name: string;
   owner: string;
+  ownerEmail: string | null;
   students: number;
   teachers: number;
   courses: number;
+  totalUsers: number;
+  roleCounts: Record<string, number>;
   status: "active" | "inactive";
   created: string;
   details?: Record<string, unknown>;
@@ -332,7 +335,8 @@ export default function SuperAdminDashboard() {
     try {
       const res = await apiFetch("/api/super-admin/schools");
       if (!res.ok) throw new Error();
-      setSchools(await res.json());
+      const raw = (await res.json()) as Array<School & { owner_email?: string | null }>;
+      setSchools(raw.map((s) => ({ ...s, ownerEmail: s.owner_email ?? null })));
     } catch {
       toast.error("Failed to load schools");
     } finally {
@@ -987,8 +991,8 @@ export default function SuperAdminDashboard() {
                     <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
                       <th className="text-left px-4 py-3">School Name</th>
                       <th className="text-left px-4 py-3">Owner</th>
-                      <th className="text-left px-4 py-3">Students</th>
-                      <th className="text-left px-4 py-3">Teachers</th>
+                      <th className="text-left px-4 py-3">Owner Email</th>
+                      <th className="text-left px-4 py-3">Users</th>
                       <th className="text-left px-4 py-3">Courses</th>
                       <th className="text-left px-4 py-3">Status</th>
                       <th className="text-left px-4 py-3">Created</th>
@@ -997,19 +1001,37 @@ export default function SuperAdminDashboard() {
                   </thead>
                   <tbody>
                     {filteredSchools.map((school) => (
-                      <>
-                        <tr key={school.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                      <Fragment key={school.id}>
+                        <tr className="border-b border-gray-700/50 hover:bg-gray-700/30">
                           <td className="px-4 py-3 text-white font-medium">{school.name}</td>
                           <td className="px-4 py-3 text-gray-300">{school.owner}</td>
-                          <td className="px-4 py-3 text-gray-300">{school.students}</td>
-                          <td className="px-4 py-3 text-gray-300">{school.teachers}</td>
+                          <td className="px-4 py-3 text-gray-300">
+                            {school.ownerEmail ? (
+                              <a href={`mailto:${school.ownerEmail}`} className="text-blue-300 hover:underline font-mono text-xs">
+                                {school.ownerEmail}
+                              </a>
+                            ) : (
+                              <span className="text-gray-500">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-gray-300">
+                            <p className="text-white font-medium">{school.totalUsers ?? 0} total</p>
+                            <p className="text-gray-500 text-xs">
+                              {Object.entries(school.roleCounts ?? {})
+                                .map(([role, count]) => `${count} ${role}`)
+                                .join(", ") || "no users yet"}
+                            </p>
+                          </td>
                           <td className="px-4 py-3 text-gray-300">{school.courses}</td>
                           <td className="px-4 py-3">
                             <span className={`text-xs px-2 py-0.5 rounded-full ${school.status === "active" ? "bg-green-900 text-green-300" : "bg-gray-700 text-gray-400"}`}>
                               {school.status === "active" ? "Active" : "Inactive"}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-gray-400">{new Date(school.created).toLocaleDateString()}</td>
+                          <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
+                            {new Date(school.created).toLocaleDateString()}{" "}
+                            <span className="text-gray-500">{new Date(school.created).toLocaleTimeString()}</span>
+                          </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <Button
@@ -1051,7 +1073,7 @@ export default function SuperAdminDashboard() {
                           </td>
                         </tr>
                         {expandedSchool === school.id && (
-                          <tr key={`${school.id}-detail`} className="bg-gray-900/60">
+                          <tr className="bg-gray-900/60">
                             <td colSpan={8} className="px-6 py-4">
                               <div className="grid grid-cols-2 gap-4 text-sm">
                                 <div>
@@ -1061,6 +1083,33 @@ export default function SuperAdminDashboard() {
                                 <div>
                                   <p className="text-gray-400 text-xs mb-1">Owner</p>
                                   <p className="text-white">{school.owner}</p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-400 text-xs mb-1">Owner Email</p>
+                                  {school.ownerEmail ? (
+                                    <a href={`mailto:${school.ownerEmail}`} className="text-blue-300 hover:underline">
+                                      {school.ownerEmail}
+                                    </a>
+                                  ) : (
+                                    <p className="text-gray-500">Not available</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="text-gray-400 text-xs mb-1">Created</p>
+                                  <p className="text-white">{new Date(school.created).toLocaleString()}</p>
+                                </div>
+                                <div className="col-span-2">
+                                  <p className="text-gray-400 text-xs mb-1">Users ({school.totalUsers ?? 0} total)</p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {Object.entries(school.roleCounts ?? {}).length === 0 && (
+                                      <span className="text-gray-500 text-xs">No users yet</span>
+                                    )}
+                                    {Object.entries(school.roleCounts ?? {}).map(([role, count]) => (
+                                      <span key={role} className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-200">
+                                        {count} {role}
+                                      </span>
+                                    ))}
+                                  </div>
                                 </div>
                                 {school.details && Object.entries(school.details).map(([k, v]) => (
                                   <div key={k}>
@@ -1072,7 +1121,7 @@ export default function SuperAdminDashboard() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>

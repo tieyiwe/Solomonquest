@@ -10,6 +10,11 @@
 interface CachedProfile {
   role: string | null;
   schoolId: string | null;
+  // Whether this user's school is currently active (super-admin suspension
+  // toggle). null means "no school" (e.g. super_admin) — always treated as
+  // allowed. requireAuth uses this to lock out every user of a suspended
+  // school without touching each route individually.
+  schoolActive: boolean | null;
   expiresAt: number;
 }
 
@@ -25,10 +30,24 @@ export function getCachedProfile(userId: string): CachedProfile | null {
   return entry;
 }
 
-export function setCachedProfile(userId: string, role: string | null, schoolId: string | null): void {
-  cache.set(userId, { role, schoolId, expiresAt: Date.now() + TTL_MS });
+export function setCachedProfile(
+  userId: string,
+  role: string | null,
+  schoolId: string | null,
+  schoolActive: boolean | null = null
+): void {
+  cache.set(userId, { role, schoolId, schoolActive, expiresAt: Date.now() + TTL_MS });
 }
 
 export function invalidateCachedProfile(userId: string): void {
   cache.delete(userId);
+}
+
+/** Forces every currently-cached user of a school to re-fetch on their next
+ *  request — used when a school is suspended/reactivated so the lockout
+ *  (or its lift) takes effect immediately instead of waiting out the TTL. */
+export function invalidateCachedProfilesForSchool(schoolId: string): void {
+  for (const [userId, entry] of cache.entries()) {
+    if (entry.schoolId === schoolId) cache.delete(userId);
+  }
 }

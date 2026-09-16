@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { notifyUsers } from "../lib/notifications";
-import { invalidateCachedProfile } from "../lib/profileCache";
+import { invalidateCachedProfile, invalidateCachedProfilesForSchool } from "../lib/profileCache";
 
 const router: IRouter = Router();
 
@@ -187,7 +187,7 @@ router.get(
 
       const enriched = await Promise.all(
         (schools ?? []).map(async (school) => {
-          const [ownerRes, studentsRes, teachersRes, coursesRes] = await Promise.all([
+          const [ownerRes, roleRowsRes, coursesRes] = await Promise.all([
             school.owner_id
               ? supabaseAdmin
                   .from("profiles")
@@ -195,16 +195,9 @@ router.get(
                   .eq("id", school.owner_id)
                   .single()
               : Promise.resolve({ data: null }),
-            supabaseAdmin
-              .from("profiles")
-              .select("id", { count: "exact", head: true })
-              .eq("school_id", school.id)
-              .eq("role", "student"),
-            supabaseAdmin
-              .from("profiles")
-              .select("id", { count: "exact", head: true })
-              .eq("school_id", school.id)
-              .eq("role", "teacher"),
+            // A single grouped query for the role breakdown — only role
+            // counts leave this route, never any per-user identity.
+            supabaseAdmin.from("profiles").select("role").eq("school_id", school.id),
             supabaseAdmin
               .from("courses")
               .select("id", { count: "exact", head: true })
@@ -214,6 +207,12 @@ router.get(
           const owner = ownerRes.data as { first_name?: string; last_name?: string; email?: string } | null;
           const ownerEmail = owner?.email ?? null;
           const ownerName = owner ? `${owner.first_name ?? ""} ${owner.last_name ?? ""}`.trim() : null;
+
+          const roleCounts: Record<string, number> = {};
+          for (const row of (roleRowsRes.data as { role: string }[] | null) ?? []) {
+            roleCounts[row.role] = (roleCounts[row.role] ?? 0) + 1;
+          }
+          const totalUsers = Object.values(roleCounts).reduce((sum, n) => sum + n, 0);
 
           return {
             id: school.id,
@@ -226,9 +225,12 @@ router.get(
             // Kept for any other consumer relying on the older shape
             owner_name: ownerName,
             owner_email: ownerEmail,
-            students: studentsRes.count ?? 0,
-            teachers: teachersRes.count ?? 0,
+            students: roleCounts.student ?? 0,
+            teachers: roleCounts.teacher ?? 0,
             courses: coursesRes.count ?? 0,
+            // Aggregate role breakdown only — no per-user data included.
+            totalUsers,
+            roleCounts,
             is_active: school.is_active,
             created_at: school.created_at,
             details: {
@@ -367,7 +369,7 @@ router.patch(
   requireSuperAdmin,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
       const { data: school, error: fetchErr } = await supabaseAdmin
         .from("schools")
@@ -399,6 +401,11 @@ router.patch(
         targetName: school.name,
         ipAddress: req.ip,
       });
+
+      // Suspension/reactivation must take effect immediately, not after the
+      // profile cache's TTL expires — every cached user of this school is
+      // forced to re-check on their very next request.
+      invalidateCachedProfilesForSchool(id);
 
       res.json({ id, is_active: newActive });
     } catch (err) {

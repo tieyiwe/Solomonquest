@@ -13,6 +13,10 @@ interface AuthContextType {
   session: Session | null;
   isLoading: boolean;
   signOut: () => Promise<void>;
+  /** Set when the profile fetch failed because the user's school was
+   *  suspended by a super admin (403 from requireAuth) — surfaced on the
+   *  login page instead of a silent, unexplained redirect there. */
+  suspendedSchoolMessage: string | null;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -20,6 +24,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   isLoading: true,
   signOut: async () => {},
+  suspendedSchoolMessage: null,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -75,13 +80,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setAuthTokenGetter(null);
   }, []);
 
-  const { data: profile, isLoading: isLoadingProfile } = useGetMe({
+  const { data: profile, isLoading: isLoadingProfile, error: profileError } = useGetMe({
     query: {
       enabled: !!session,
       retry: 2,
       retryDelay: 1000,
     },
   });
+
+  const suspendedSchoolMessage = (() => {
+    const message = (profileError as { message?: string } | null | undefined)?.message;
+    return message && /suspended/i.test(message) ? message : null;
+  })();
 
   const signOut = async () => {
     try { await logActivity({ action: "logout" }); } catch { /* non-blocking */ }
@@ -100,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: profile ?? null,
         isLoading,
         signOut,
+        suspendedSchoolMessage,
       }}
     >
       {children}

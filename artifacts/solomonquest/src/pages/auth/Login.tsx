@@ -29,7 +29,19 @@ export default function Login() {
   const [showReset, setShowReset] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [_, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, signOut, suspendedSchoolMessage } = useAuth();
+  const [suspensionNotice, setSuspensionNotice] = useState<string | null>(null);
+
+  // The user is still technically signed in to Supabase (a stale, still-valid
+  // session) but their profile fetch keeps 403ing because their school was
+  // suspended — sign them out cleanly so they land on a normal login form
+  // instead of bouncing here forever, while still showing them why.
+  useEffect(() => {
+    if (suspendedSchoolMessage) {
+      setSuspensionNotice(suspendedSchoolMessage);
+      signOut();
+    }
+  }, [suspendedSchoolMessage, signOut]);
 
   useEffect(() => {
     if (!user) return;
@@ -211,6 +223,12 @@ export default function Login() {
               <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome back</h1>
               <p className="text-muted-foreground">Sign in to your account to continue</p>
             </div>
+
+            {suspensionNotice && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {suspensionNotice}
+              </div>
+            )}
 
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
