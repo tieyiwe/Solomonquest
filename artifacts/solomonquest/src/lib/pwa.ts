@@ -72,7 +72,7 @@ function notifyUpdateReady(registration: ServiceWorkerRegistration) {
   if (updateToastShown) return;
   updateToastShown = true;
 
-  toast("A new version of SolomonQuest is available", {
+  toast("New updates are available", {
     duration: Infinity,
     action: {
       label: "Refresh",
