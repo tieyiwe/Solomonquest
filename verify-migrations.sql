@@ -66,7 +66,11 @@ select * from (values
       where table_schema='public' and table_name='video_watch_progress')),
 
   ('video-watch-progress-atomic-upsert.sql: upsert_video_watch_progress() function',
-    exists (select 1 from pg_proc where proname='upsert_video_watch_progress'))
+    exists (select 1 from pg_proc where proname='upsert_video_watch_progress')),
+
+  ('school-creation-requests.sql: school_creation_requests table',
+    exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='school_creation_requests'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;
