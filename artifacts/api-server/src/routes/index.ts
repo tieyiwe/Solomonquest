@@ -36,6 +36,7 @@ import calendarRouter from "./calendar";
 import parentsRouter from "./parents";
 import termsRouter from "./terms";
 import searchRouter from "./search";
+import schoolRequestsRouter from "./school-requests";
 
 const router: IRouter = Router();
 
@@ -76,5 +77,6 @@ router.use(calendarRouter);
 router.use(parentsRouter);
 router.use(termsRouter);
 router.use(searchRouter);
+router.use(schoolRequestsRouter);
 
 export default router;

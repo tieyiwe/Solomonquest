@@ -61,6 +61,7 @@ type Section =
   | "dashboard"
   | "analytics"
   | "schools"
+  | "school-requests"
   | "users"
   | "deletion-requests"
   | "domain-requests"
@@ -134,6 +135,19 @@ interface DeletionRequest {
   status: "pending" | "approved" | "rejected";
   requestedAt: string;
   reviewNotes?: string;
+}
+
+interface SchoolRequest {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  requesterEmail: string | null;
+  requesterPhone: string | null;
+  suggestedSchoolName: string;
+  reason: string | null;
+  status: "pending" | "approved" | "rejected";
+  reviewNotes: string | null;
+  createdAt: string;
 }
 
 interface SubscriptionSchool {
@@ -226,6 +240,70 @@ export default function SuperAdminDashboard() {
   const [schoolStatusFilter, setSchoolStatusFilter] = useState("all");
   const [expandedSchool, setExpandedSchool] = useState<string | null>(null);
   const [toggleSchoolDialog, setToggleSchoolDialog] = useState<School | null>(null);
+
+  // School Requests
+  const [schoolRequests, setSchoolRequests] = useState<SchoolRequest[]>([]);
+  const [schoolRequestsLoading, setSchoolRequestsLoading] = useState(false);
+  const [approveSchoolRequestDialog, setApproveSchoolRequestDialog] = useState<SchoolRequest | null>(null);
+  const [approvingSchoolRequest, setApprovingSchoolRequest] = useState(false);
+  const [rejectSchoolRequestDialog, setRejectSchoolRequestDialog] = useState<SchoolRequest | null>(null);
+  const [rejectSchoolRequestNotes, setRejectSchoolRequestNotes] = useState("");
+  const [rejectingSchoolRequest, setRejectingSchoolRequest] = useState(false);
+
+  const fetchSchoolRequests = useCallback(async () => {
+    setSchoolRequestsLoading(true);
+    try {
+      const res = await apiFetch("/api/school-requests");
+      if (!res.ok) throw new Error();
+      setSchoolRequests(await res.json());
+    } catch {
+      toast.error("Failed to load school requests");
+    } finally {
+      setSchoolRequestsLoading(false);
+    }
+  }, []);
+
+  const handleApproveSchoolRequest = async () => {
+    if (!approveSchoolRequestDialog) return;
+    setApprovingSchoolRequest(true);
+    try {
+      const res = await apiFetch(`/api/school-requests/${approveSchoolRequestDialog.id}/approve`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to approve");
+      }
+      toast.success(`"${approveSchoolRequestDialog.suggestedSchoolName}" was created.`);
+      setApproveSchoolRequestDialog(null);
+      fetchSchoolRequests();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to approve request");
+    } finally {
+      setApprovingSchoolRequest(false);
+    }
+  };
+
+  const handleRejectSchoolRequest = async () => {
+    if (!rejectSchoolRequestDialog) return;
+    setRejectingSchoolRequest(true);
+    try {
+      const res = await apiFetch(`/api/school-requests/${rejectSchoolRequestDialog.id}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ notes: rejectSchoolRequestNotes }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to reject");
+      }
+      toast.success("Request rejected.");
+      setRejectSchoolRequestDialog(null);
+      setRejectSchoolRequestNotes("");
+      fetchSchoolRequests();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to reject request");
+    } finally {
+      setRejectingSchoolRequest(false);
+    }
+  };
 
   // Users
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -533,6 +611,7 @@ export default function SuperAdminDashboard() {
     if (activeSection === "dashboard") fetchDashboard();
     if (activeSection === "analytics") fetchAnalytics();
     if (activeSection === "schools") fetchSchools();
+    if (activeSection === "school-requests") fetchSchoolRequests();
     if (activeSection === "users") fetchUsers();
     if (activeSection === "deletion-requests") fetchDeletionRequests();
     if (activeSection === "domain-requests") fetchDomainRequests();
@@ -686,6 +765,7 @@ export default function SuperAdminDashboard() {
     { section: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={16} />, group: "OVERVIEW" },
     { section: "analytics", label: "Analytics", icon: <TrendingUp size={16} />, group: "OVERVIEW" },
     { section: "schools", label: "Schools", icon: <Building2 size={16} />, group: "MANAGEMENT" },
+    { section: "school-requests", label: "School Requests", icon: <Clock size={16} />, group: "MANAGEMENT" },
     { section: "users", label: "All Users", icon: <Users size={16} />, group: "MANAGEMENT" },
     { section: "deletion-requests", label: "Deletion Requests", icon: <AlertTriangle size={16} />, group: "MANAGEMENT" },
     { section: "domain-requests", label: "Domain Requests", icon: <Globe size={16} />, group: "MANAGEMENT" },
@@ -700,6 +780,7 @@ export default function SuperAdminDashboard() {
 
   const pendingCount = deletionRequests.filter((r) => r.status === "pending").length;
   const pendingDomainCount = domainRequests.filter((r) => r.status === "requested").length;
+  const pendingSchoolRequestCount = schoolRequests.filter((r) => r.status === "pending").length;
 
   // Filtered data
   const filteredSchools = schools.filter((s) => {
@@ -757,6 +838,11 @@ export default function SuperAdminDashboard() {
                         {pendingDomainCount}
                       </span>
                     )}
+                    {item.section === "school-requests" && pendingSchoolRequestCount > 0 && (
+                      <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold">
+                        {pendingSchoolRequestCount}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -786,6 +872,7 @@ export default function SuperAdminDashboard() {
               if (activeSection === "dashboard") fetchDashboard();
               if (activeSection === "analytics") fetchAnalytics();
               if (activeSection === "schools") fetchSchools();
+              if (activeSection === "school-requests") fetchSchoolRequests();
               if (activeSection === "users") fetchUsers();
               if (activeSection === "deletion-requests") fetchDeletionRequests();
               if (activeSection === "domain-requests") fetchDomainRequests();
@@ -1127,6 +1214,74 @@ export default function SuperAdminDashboard() {
                 </table>
                 {filteredSchools.length === 0 && !schoolsLoading && (
                   <p className="text-gray-500 text-sm text-center py-8">No schools found.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* SCHOOL REQUESTS */}
+          {activeSection === "school-requests" && (
+            <div>
+              {schoolRequestsLoading && <p className="text-gray-400">Loading...</p>}
+              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                      <th className="text-left px-4 py-3">Suggested School Name</th>
+                      <th className="text-left px-4 py-3">Requester</th>
+                      <th className="text-left px-4 py-3">Contact</th>
+                      <th className="text-left px-4 py-3">Reason &amp; Goal</th>
+                      <th className="text-left px-4 py-3">Status</th>
+                      <th className="text-left px-4 py-3">Requested At</th>
+                      <th className="text-left px-4 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schoolRequests.map((r) => (
+                      <tr key={r.id} className="border-b border-gray-700/50 hover:bg-gray-700/30 align-top">
+                        <td className="px-4 py-3 text-white font-medium">{r.suggestedSchoolName}</td>
+                        <td className="px-4 py-3 text-gray-300">{r.requesterName}</td>
+                        <td className="px-4 py-3 text-gray-300">
+                          <div className="flex flex-col gap-0.5">
+                            {r.requesterEmail && (
+                              <a href={`mailto:${r.requesterEmail}`} className="text-blue-300 hover:underline text-xs font-mono">
+                                {r.requesterEmail}
+                              </a>
+                            )}
+                            {r.requesterPhone && <span className="text-xs text-gray-400">{r.requesterPhone}</span>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-400 max-w-xs">{r.reason || "—"}</td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={r.status} />
+                        </td>
+                        <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{new Date(r.createdAt).toLocaleString()}</td>
+                        <td className="px-4 py-3">
+                          {r.status === "pending" && (
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs bg-green-800 hover:bg-green-700 text-white"
+                                onClick={() => setApproveSchoolRequestDialog(r)}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs bg-red-900/50 hover:bg-red-800 text-red-300 border border-red-800"
+                                onClick={() => setRejectSchoolRequestDialog(r)}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {schoolRequests.length === 0 && !schoolRequestsLoading && (
+                  <p className="text-gray-500 text-sm text-center py-8">No school requests.</p>
                 )}
               </div>
             </div>
@@ -1868,6 +2023,61 @@ export default function SuperAdminDashboard() {
             </Button>
             <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleReject} disabled={!rejectNotes.trim()}>
               Reject
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Approve School Request */}
+      <Dialog open={!!approveSchoolRequestDialog} onOpenChange={() => setApproveSchoolRequestDialog(null)}>
+        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Approve School Request</DialogTitle>
+          </DialogHeader>
+          <p className="text-gray-300 text-sm">
+            Create <strong>"{approveSchoolRequestDialog?.suggestedSchoolName}"</strong> and make{" "}
+            <strong>{approveSchoolRequestDialog?.requesterName}</strong> its admin? They'll be notified by email.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setApproveSchoolRequestDialog(null)}>
+              Cancel
+            </Button>
+            <Button className="bg-green-700 hover:bg-green-600 text-white" onClick={handleApproveSchoolRequest} disabled={approvingSchoolRequest}>
+              {approvingSchoolRequest ? "Creating…" : "Approve & Create School"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject School Request */}
+      <Dialog
+        open={!!rejectSchoolRequestDialog}
+        onOpenChange={() => { setRejectSchoolRequestDialog(null); setRejectSchoolRequestNotes(""); }}
+      >
+        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Reject School Request</DialogTitle>
+          </DialogHeader>
+          <p className="text-gray-300 text-sm mb-3">
+            Reject the request for <strong>"{rejectSchoolRequestDialog?.suggestedSchoolName}"</strong>?
+          </p>
+          <textarea
+            value={rejectSchoolRequestNotes}
+            onChange={(e) => setRejectSchoolRequestNotes(e.target.value)}
+            placeholder="Reason for the requester (optional)..."
+            rows={3}
+            className="w-full bg-gray-700 border border-gray-600 rounded text-white text-sm p-2 resize-none"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="border-gray-600 text-gray-300"
+              onClick={() => { setRejectSchoolRequestDialog(null); setRejectSchoolRequestNotes(""); }}
+            >
+              Cancel
+            </Button>
+            <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleRejectSchoolRequest} disabled={rejectingSchoolRequest}>
+              {rejectingSchoolRequest ? "Rejecting…" : "Reject"}
             </Button>
           </DialogFooter>
         </DialogContent>
