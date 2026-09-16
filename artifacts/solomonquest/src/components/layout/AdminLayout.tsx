@@ -25,6 +25,7 @@ import {
   CalendarDays,
   CalendarRange,
   History,
+  DollarSign,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter } from "@/components/help/HelpCenter";
@@ -40,6 +41,7 @@ const adminLinks = [
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/dashboard/admin/users", label: "Users", icon: Users },
   { href: "/dashboard/admin/courses", label: "Courses", icon: BookOpen },
+  { href: "/dashboard/admin/tuition", label: "Tuition", icon: DollarSign },
   { href: "/dashboard/admin/programs", label: "Programs", icon: Layers },
   { href: "/dashboard/admin/terms", label: "Terms & Scheduling", icon: CalendarRange },
   { href: "/dashboard/admin/admissions", label: "Admissions", icon: CheckSquare },
