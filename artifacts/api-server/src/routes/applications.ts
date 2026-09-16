@@ -60,6 +60,27 @@ router.post(
       return;
     }
 
+    // Every selected course must actually belong to the school being
+    // applied to — otherwise a caller could attach another school's course
+    // ids to this application, corrupting that school's admissions data
+    // and course-selection reporting cross-tenant.
+    const { data: validCourses, error: courseCheckError } = await supabaseAdmin
+      .from("courses")
+      .select("id")
+      .eq("school_id", schoolId)
+      .in("id", courseIds);
+
+    if (courseCheckError) {
+      res.status(500).json({ error: courseCheckError.message });
+      return;
+    }
+
+    const validCourseIds = new Set((validCourses ?? []).map((c) => c.id as string));
+    if (courseIds.some((id) => !validCourseIds.has(id))) {
+      res.status(400).json({ error: "One or more selected courses do not belong to this school" });
+      return;
+    }
+
     // 1. Create the application record
     const { data: application, error: appError } = await supabaseAdmin
       .from("student_applications")

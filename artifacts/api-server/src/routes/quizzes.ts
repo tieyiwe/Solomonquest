@@ -53,6 +53,57 @@ async function assertCanManageQuiz(
     : { ok: false, status: 403, error: "You do not teach this course" };
 }
 
+/**
+ * Course-level access check for the two GET routes below (list quizzes for
+ * a course, fetch a single quiz to take/edit) — neither previously checked
+ * that the caller has any relationship to the course at all, so any
+ * authenticated user in any school could list or fetch any other school's
+ * quizzes, including the raw correct_answer on every question, just by
+ * supplying/guessing a course_id or quiz id.
+ */
+async function assertCourseAccess(
+  courseId: string,
+  userId: string | undefined,
+  role: string | undefined
+): Promise<{ ok: true; isManager: boolean } | { ok: false; status: number; error: string }> {
+  const { data: course } = await supabaseAdmin
+    .from("courses")
+    .select("teacher_id, school_id")
+    .eq("id", courseId)
+    .single();
+  if (!course) return { ok: false, status: 404, error: "Course not found" };
+
+  if (role === "super_admin") return { ok: true, isManager: true };
+
+  if (role === "admin") {
+    const { data: caller } = await supabaseAdmin.from("profiles").select("school_id").eq("id", userId ?? "").single();
+    if (caller?.school_id === course.school_id) return { ok: true, isManager: true };
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  if (role === "teacher") {
+    if (course.teacher_id === userId) return { ok: true, isManager: true };
+    return { ok: false, status: 403, error: "You do not teach this course" };
+  }
+
+  // Student/staff: must be actively enrolled in the course.
+  const { data: enrollment } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("course_id")
+    .eq("course_id", courseId)
+    .eq("student_id", userId ?? "")
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (!enrollment) return { ok: false, status: 403, error: "You are not enrolled in this course" };
+  return { ok: true, isManager: false };
+}
+
+/** Strips answer keys from questions for non-managers (students taking the quiz). */
+function sanitizeQuestionsForStudent(questions: Record<string, unknown>[]): Record<string, unknown>[] {
+  return questions.map(({ correct_answer, ...rest }) => rest);
+}
+
 // ---------------------------------------------------------------------------
 // GET /quizzes?course_id=X - list quizzes for a course
 // ---------------------------------------------------------------------------
@@ -65,11 +116,22 @@ router.get("/quizzes", requireAuth, async (req: AuthenticatedRequest, res): Prom
   }
 
   try {
-    const { data, error } = await supabaseAdmin
+    const access = await assertCourseAccess(course_id as string, req.userId, req.userRole);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
+
+    let query = supabaseAdmin
       .from("quizzes")
       .select("*")
       .eq("course_id", course_id as string)
       .order("created_at", { ascending: true });
+
+    // Students/staff only ever see published quizzes in the list.
+    if (!access.isManager) query = query.eq("is_published", true);
+
+    const { data, error } = await query;
 
     if (error) {
       res.status(500).json({ error: error.message });
@@ -150,6 +212,20 @@ router.get("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): 
       return;
     }
 
+    const access = await assertCourseAccess(quiz.course_id as string, req.userId, req.userRole);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
+
+    // A student/staff caller may only ever fetch a published quiz — an
+    // unpublished one isn't meant to be visible to them at all, let alone
+    // its questions.
+    if (!access.isManager && quiz.is_published !== true) {
+      res.status(404).json({ error: "Quiz not found" });
+      return;
+    }
+
     const { data: questions, error: qError } = await supabaseAdmin
       .from("quiz_questions")
       .select("*")
@@ -161,7 +237,11 @@ router.get("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): 
       return;
     }
 
-    res.json({ ...quiz, questions: questions ?? [] });
+    const safeQuestions = access.isManager
+      ? questions ?? []
+      : sanitizeQuestionsForStudent(questions ?? []);
+
+    res.json({ ...quiz, questions: safeQuestions });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

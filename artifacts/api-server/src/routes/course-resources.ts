@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { sendResourceNotification } from "../lib/email";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router({ mergeParams: true });
 
@@ -51,8 +52,33 @@ router.get(
   "/courses/:courseId/resources",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { courseId } = req.params;
+    const courseId = Array.isArray(req.params.courseId) ? req.params.courseId[0] : req.params.courseId;
     const { section } = req.query;
+
+    // Previously unscoped: a teacher/admin from any school could view
+    // another school's draft resources, and a student from any school could
+    // view another school's published resources, just by knowing/guessing a
+    // courseId. Teachers/admins must manage this specific course; students
+    // must be actively enrolled in it.
+    if (isTeacherOrAdmin(req.userRole)) {
+      const access = await assertCanManageCourseResources(courseId, req.userId!, req.userRole);
+      if (!access.ok) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+    } else {
+      const { data: enrollment } = await supabaseAdmin
+        .from("course_enrollments")
+        .select("course_id")
+        .eq("course_id", courseId)
+        .eq("student_id", req.userId ?? "")
+        .eq("status", "active")
+        .maybeSingle();
+      if (!enrollment) {
+        res.status(403).json({ error: "You are not enrolled in this course" });
+        return;
+      }
+    }
 
     let query = supabaseAdmin
       .from("course_resources")
@@ -234,7 +260,7 @@ async function notifyStudentsOfResource(
     .eq("status", "active");
 
   if (enrollError) {
-    console.error("[course-resources] Failed to fetch enrollments:", enrollError.message);
+    logger.error({ err: enrollError }, "[course-resources] Failed to fetch enrollments");
     return;
   }
 
@@ -250,7 +276,7 @@ async function notifyStudentsOfResource(
 
   const { error: notifError } = await supabaseAdmin.from("notifications").insert(notifications);
   if (notifError) {
-    console.error("[course-resources] Failed to insert notifications:", notifError.message);
+    logger.error({ err: notifError }, "[course-resources] Failed to insert notifications");
   }
 
   try {
@@ -286,7 +312,7 @@ async function notifyStudentsOfResource(
       })
     );
   } catch (err) {
-    console.error("[course-resources] Email notification error:", err);
+    logger.error({ err }, "[course-resources] Email notification error");
   }
 }
 

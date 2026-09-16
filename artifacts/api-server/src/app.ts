@@ -30,6 +30,15 @@ const authLimiter = rateLimit({
   message: { error: "Too many requests, please try again later" },
 });
 const apiLimiter = rateLimit({ windowMs: 1 * 60 * 1000, max: 300 });
+// The public transcript-verify endpoint (email + unique_student_id, no auth)
+// is otherwise an enumeration surface — unique_student_id formats tend to be
+// low-entropy/sequential, so a generous per-minute limit still blocks brute
+// forcing a student's transcript given a known school email.
+const transcriptVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Too many verification attempts, please try again later" },
+});
 
 app.use(
   pinoHttp({
@@ -60,6 +69,7 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api/auth", authLimiter);
+app.use("/api/transcripts/verify", transcriptVerifyLimiter);
 app.use("/api", apiLimiter);
 app.use("/api", router);
 

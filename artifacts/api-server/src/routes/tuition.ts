@@ -196,6 +196,14 @@ router.post("/tuition-payments", requireAuth, async (req: AuthenticatedRequest, 
     res.status(404).json({ error: "Tuition plan not found" });
     return;
   }
+  // A student could otherwise pass another school's plan id and create a
+  // tuition_payments row scoped to that school with themselves as the
+  // student — cross-tenant data pollution (and, once Stripe is wired up,
+  // a real charge tied to someone else's tuition plan).
+  if (plan.school_id !== req.schoolId) {
+    res.status(403).json({ error: "This tuition plan does not belong to your school" });
+    return;
+  }
   if (paymentMethod === "full" && !plan.allow_full_payment) {
     res.status(400).json({ error: "Full payment is not offered for this plan" });
     return;
@@ -267,6 +275,14 @@ router.post(
   "/tuition-payments/:id/simulate-pay",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
+    // A stand-in for real payment while Stripe isn't connected — once it is,
+    // this must never be reachable, or any student could mark their own
+    // tuition "paid" for free. See isStripeConfigured()'s doc comment.
+    if (isStripeConfigured()) {
+      res.status(403).json({ error: "Simulated payments are disabled — Stripe is connected." });
+      return;
+    }
+
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
     const { data: payment, error: paymentError } = await supabaseAdmin
