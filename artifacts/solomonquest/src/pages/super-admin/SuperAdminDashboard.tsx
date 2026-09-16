@@ -44,6 +44,7 @@ import {
   Globe,
   DollarSign,
   ToggleLeft,
+  Activity,
 } from "lucide-react";
 
 async function apiFetch(url: string, options: RequestInit = {}) {
@@ -68,6 +69,7 @@ type Section =
   | "deletion-requests"
   | "domain-requests"
   | "subscriptions"
+  | "usage"
   | "archive"
   | "audit-log"
   | "platform-settings"
@@ -150,6 +152,31 @@ interface SchoolRequest {
   status: "pending" | "approved" | "rejected";
   reviewNotes: string | null;
   createdAt: string;
+}
+
+interface SchoolUsage {
+  schoolId: string;
+  schoolName: string;
+  aiMessages: number;
+  aiInputTokens: number;
+  aiOutputTokens: number;
+  estimatedCostCents: number;
+  chatMessages: number;
+  forumPosts: number;
+  videoCalls: number;
+}
+
+interface UserUsage {
+  userId: string;
+  userName: string;
+  role: string | null;
+  aiMessages: number;
+  aiInputTokens: number;
+  aiOutputTokens: number;
+  estimatedCostCents: number;
+  chatMessages: number;
+  forumPosts: number;
+  videoCalls: number;
 }
 
 interface SubscriptionSchool {
@@ -336,6 +363,44 @@ export default function SuperAdminDashboard() {
   const [editSubscription, setEditSubscription] = useState<SubscriptionSchool | null>(null);
   const [subscriptionForm, setSubscriptionForm] = useState({ plan: "free", subscription_status: "active", amount: "0", trialEndsAt: "" });
   const [savingSubscription, setSavingSubscription] = useState(false);
+
+  // Usage & Costs
+  const [usageSchools, setUsageSchools] = useState<SchoolUsage[]>([]);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageDays, setUsageDays] = useState("30");
+  const [usageDrilldown, setUsageDrilldown] = useState<{ schoolId: string; schoolName: string } | null>(null);
+  const [usageDrilldownUsers, setUsageDrilldownUsers] = useState<UserUsage[] | null>(null);
+  const [usageDrilldownLoading, setUsageDrilldownLoading] = useState(false);
+
+  const fetchUsage = useCallback(async (days: string) => {
+    setUsageLoading(true);
+    try {
+      const res = await apiFetch(`/api/super-admin/usage?days=${days}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setUsageSchools(data.schools ?? []);
+    } catch {
+      toast.error("Failed to load usage data");
+    } finally {
+      setUsageLoading(false);
+    }
+  }, []);
+
+  const openUsageDrilldown = async (schoolId: string, schoolName: string) => {
+    setUsageDrilldown({ schoolId, schoolName });
+    setUsageDrilldownLoading(true);
+    try {
+      const res = await apiFetch(`/api/super-admin/usage/schools/${schoolId}/users?days=${usageDays}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setUsageDrilldownUsers(data.users ?? []);
+    } catch {
+      toast.error("Failed to load per-user usage");
+      setUsageDrilldownUsers([]);
+    } finally {
+      setUsageDrilldownLoading(false);
+    }
+  };
 
   // Feature flags
   const [featureFlagsDialog, setFeatureFlagsDialog] = useState<{ id: string; name: string; features: Record<string, boolean> } | null>(null);
@@ -646,9 +711,11 @@ export default function SuperAdminDashboard() {
     if (activeSection === "deletion-requests") fetchDeletionRequests();
     if (activeSection === "domain-requests") fetchDomainRequests();
     if (activeSection === "subscriptions") fetchSubscriptions();
+    if (activeSection === "usage") fetchUsage(usageDays);
     if (activeSection === "archive") fetchArchive();
     if (activeSection === "audit-log") fetchAuditLogs();
     if (activeSection === "platform-settings") fetchSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection]);
 
   // Actions
@@ -800,6 +867,7 @@ export default function SuperAdminDashboard() {
     { section: "deletion-requests", label: "Deletion Requests", icon: <AlertTriangle size={16} />, group: "MANAGEMENT" },
     { section: "domain-requests", label: "Domain Requests", icon: <Globe size={16} />, group: "MANAGEMENT" },
     { section: "subscriptions", label: "Subscriptions", icon: <DollarSign size={16} />, group: "MANAGEMENT" },
+    { section: "usage", label: "Usage & Costs", icon: <Activity size={16} />, group: "MANAGEMENT" },
     { section: "archive", label: "Archive", icon: <Archive size={16} />, group: "MANAGEMENT" },
     { section: "audit-log", label: "Audit Log", icon: <FileText size={16} />, group: "SYSTEM" },
     { section: "platform-settings", label: "Platform Settings", icon: <Settings size={16} />, group: "SYSTEM" },
@@ -918,6 +986,7 @@ export default function SuperAdminDashboard() {
               if (activeSection === "deletion-requests") fetchDeletionRequests();
               if (activeSection === "domain-requests") fetchDomainRequests();
               if (activeSection === "subscriptions") fetchSubscriptions();
+              if (activeSection === "usage") fetchUsage(usageDays);
               if (activeSection === "archive") fetchArchive();
               if (activeSection === "audit-log") fetchAuditLogs();
               if (activeSection === "platform-settings") fetchSettings();
@@ -1635,6 +1704,74 @@ export default function SuperAdminDashboard() {
             </div>
           )}
 
+          {/* USAGE & COSTS */}
+          {activeSection === "usage" && (
+            <div>
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <p className="text-gray-400 text-sm">
+                  AI message counts are exact; dollar figures are a rough estimate from published per-token
+                  pricing, not a billing record.
+                </p>
+                <select
+                  value={usageDays}
+                  onChange={(e) => { setUsageDays(e.target.value); fetchUsage(e.target.value); }}
+                  className="ml-auto bg-gray-800 border border-gray-700 text-white rounded px-3 py-2 text-sm"
+                >
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                </select>
+              </div>
+
+              {usageLoading && <p className="text-gray-400">Loading...</p>}
+
+              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                      <th className="text-left px-4 py-3">School</th>
+                      <th className="text-left px-4 py-3">AI Messages</th>
+                      <th className="text-left px-4 py-3">AI Tokens (in/out)</th>
+                      <th className="text-left px-4 py-3">Est. AI Cost</th>
+                      <th className="text-left px-4 py-3">Chat Msgs</th>
+                      <th className="text-left px-4 py-3">Forum Posts</th>
+                      <th className="text-left px-4 py-3">Video Calls</th>
+                      <th className="text-left px-4 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usageSchools.map((s) => (
+                      <tr key={s.schoolId} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                        <td className="px-4 py-3 text-white font-medium">{s.schoolName}</td>
+                        <td className="px-4 py-3 text-gray-300">{s.aiMessages}</td>
+                        <td className="px-4 py-3 text-gray-400 text-xs">
+                          {s.aiInputTokens.toLocaleString()} / {s.aiOutputTokens.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-white font-medium">${(s.estimatedCostCents / 100).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-gray-300">{s.chatMessages}</td>
+                        <td className="px-4 py-3 text-gray-300">{s.forumPosts}</td>
+                        <td className="px-4 py-3 text-gray-300">{s.videoCalls}</td>
+                        <td className="px-4 py-3">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-gray-600 text-gray-300 hover:bg-gray-700"
+                            onClick={() => openUsageDrilldown(s.schoolId, s.schoolName)}
+                          >
+                            By User
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {usageSchools.length === 0 && !usageLoading && (
+                  <p className="text-gray-500 text-sm text-center py-8">No usage recorded in this period.</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ARCHIVE */}
           {activeSection === "archive" && (
             <div>
@@ -2188,6 +2325,54 @@ export default function SuperAdminDashboard() {
             </Button>
             <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleRejectSchoolRequest} disabled={rejectingSchoolRequest}>
               {rejectingSchoolRequest ? "Rejecting…" : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Usage drill-down: per-user breakdown for one school */}
+      <Dialog open={!!usageDrilldown} onOpenChange={() => { setUsageDrilldown(null); setUsageDrilldownUsers(null); }}>
+        <DialogContent className="bg-gray-800 border-gray-700 text-white max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Usage by User — {usageDrilldown?.schoolName}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto">
+            {usageDrilldownLoading && <p className="text-gray-400 text-sm">Loading...</p>}
+            {!usageDrilldownLoading && (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-700">
+                    <th className="text-left px-2 py-2">User</th>
+                    <th className="text-left px-2 py-2">Role</th>
+                    <th className="text-left px-2 py-2">AI Msgs</th>
+                    <th className="text-left px-2 py-2">Est. AI Cost</th>
+                    <th className="text-left px-2 py-2">Chat</th>
+                    <th className="text-left px-2 py-2">Forum</th>
+                    <th className="text-left px-2 py-2">Video</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(usageDrilldownUsers ?? []).map((u) => (
+                    <tr key={u.userId} className="border-b border-gray-700/50">
+                      <td className="px-2 py-2 text-white">{u.userName}</td>
+                      <td className="px-2 py-2 text-gray-400 capitalize">{u.role ?? "—"}</td>
+                      <td className="px-2 py-2 text-gray-300">{u.aiMessages}</td>
+                      <td className="px-2 py-2 text-gray-300">${(u.estimatedCostCents / 100).toFixed(2)}</td>
+                      <td className="px-2 py-2 text-gray-300">{u.chatMessages}</td>
+                      <td className="px-2 py-2 text-gray-300">{u.forumPosts}</td>
+                      <td className="px-2 py-2 text-gray-300">{u.videoCalls}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {!usageDrilldownLoading && (usageDrilldownUsers ?? []).length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-6">No usage recorded for this school in this period.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => { setUsageDrilldown(null); setUsageDrilldownUsers(null); }}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { requireSchoolFeature } from "../lib/featureFlags";
+import { logUsageEvent } from "../lib/usageTracking";
 
 const router: IRouter = Router();
 
@@ -508,6 +509,8 @@ router.post(
       res.status(400).json({ error: error.message });
       return;
     }
+
+    logUsageEvent({ schoolId: req.schoolId!, userId: req.userId, eventType: "forum_post" });
 
     const validMentionIds = await filterValidMentionIds(mentionedUserIds, req.schoolId);
     await recordMentions(

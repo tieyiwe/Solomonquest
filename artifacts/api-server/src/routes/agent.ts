@@ -4,6 +4,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { getAnthropicClient, AGENT_MODEL, AGENT_MODEL_FAST } from "../lib/anthropic";
 import { sendBroadcastEmail } from "../lib/email";
 import { isFeatureEnabled } from "../lib/featureFlags";
+import { logUsageEvent } from "../lib/usageTracking";
 import type Anthropic from "@anthropic-ai/sdk";
 
 const router: IRouter = Router();
@@ -413,12 +414,22 @@ router.post(
           : TOOLS.filter((t) => t.name !== "send_broadcast")
         : undefined;
 
+      const modelUsed = needsTools ? AGENT_MODEL : AGENT_MODEL_FAST;
       const response = await anthropic.messages.create({
-        model: needsTools ? AGENT_MODEL : AGENT_MODEL_FAST,
+        model: modelUsed,
         max_tokens: 500,
         system: systemPrompt,
         ...(availableTools ? { tools: availableTools } : {}),
         messages: anthropicMessages,
+      });
+
+      logUsageEvent({
+        schoolId,
+        userId,
+        eventType: "ai_chat",
+        aiModel: modelUsed,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
       });
 
       const textBlock = response.content.find((b) => b.type === "text") as

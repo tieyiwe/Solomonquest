@@ -138,7 +138,11 @@ select * from (values
 
   ('schools-deleted-at.sql: schools.deleted_at',
     exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='schools' and column_name='deleted_at'))
+      where table_schema='public' and table_name='schools' and column_name='deleted_at')),
+
+  ('usage-tracking.sql: usage_events table',
+    exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='usage_events'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;
