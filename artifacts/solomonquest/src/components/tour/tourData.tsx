@@ -2,7 +2,7 @@ import React from "react";
 import {
   LayoutDashboard, Users, BookOpen, CheckSquare, Settings,
   GraduationCap, ClipboardList, FileText, FolderOpen, BarChart2,
-  MessageSquare, Bell, Star, Sparkles, School,
+  MessageSquare, Bell, Star, Sparkles, School, Receipt, CalendarCheck,
 } from "lucide-react";
 
 export interface TourStep {
@@ -523,6 +523,85 @@ export const studentTourSteps: TourStep[] = [
 
 // ─── STAFF TOUR ───────────────────────────────────────────────────────────────
 
+// ─── PARENT TOUR ──────────────────────────────────────────────────────────────
+
+export const parentTourSteps: TourStep[] = [
+  {
+    title: "Welcome to SolomonQuest! 👋",
+    description: "Your account is linked to your child's records. This quick tour shows you where to check their grades, attendance, and tuition.",
+    illustration: (
+      <div className="flex items-center justify-center h-full">
+        <div className="relative">
+          <div className="h-20 w-20 rounded-2xl bg-purple-50 flex items-center justify-center">
+            <Users className="h-10 w-10 text-purple-500" />
+          </div>
+          <div className="absolute -top-2 -right-2 h-8 w-8 bg-purple-400 rounded-full flex items-center justify-center">
+            <Sparkles className="h-4 w-4 text-white" />
+          </div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    title: "My Children",
+    description: "Every child linked to your account appears here as its own card — if you have more than one, you'll see each one's info side by side.",
+    tip: "Don't see your child listed? Contact your school's admin office to get them linked to your account.",
+    illustration: (
+      <div className="flex flex-col gap-2 h-full justify-center">
+        <MiniUser name="Jordan M." role="student" avatar="JM" />
+        <MiniUser name="Casey M." role="student" avatar="CM" />
+      </div>
+    ),
+  },
+  {
+    title: "Grades & Attendance",
+    description: "Each child's card shows their most recent grades and a 30-day attendance summary (present, absent, late) at a glance.",
+    illustration: (
+      <div className="flex h-full gap-2">
+        <div className="flex-1 bg-gray-50 rounded-lg p-3 flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-700">
+            <GraduationCap className="h-3 w-3" /> Recent Grades
+          </div>
+          <MiniTable rows={[["Assignment", "Grade"], ["Algebra Quiz", "92"], ["Essay Draft", "88"]]} />
+        </div>
+        <div className="flex-1 bg-gray-50 rounded-lg p-3 flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-700">
+            <CalendarCheck className="h-3 w-3" /> Attendance
+          </div>
+          <MiniCard title="Present" value="18" color="text-green-600" />
+        </div>
+      </div>
+    ),
+  },
+  {
+    title: "Tuition at a Glance",
+    description: "See tuition amounts and payment status for each child right on their card — no need to dig through a separate billing page.",
+    illustration: (
+      <div className="flex items-center h-full gap-3">
+        <div className="h-14 w-14 rounded-xl bg-purple-50 flex items-center justify-center shrink-0">
+          <Receipt className="h-7 w-7 text-purple-500" />
+        </div>
+        <MiniTable rows={[["Tuition", "Status"], ["$450.00", "Paid"], ["$450.00", "Pending"]]} />
+      </div>
+    ),
+  },
+  {
+    title: "You're all set! 🎯",
+    description: "That's the essentials. Click the ? button anytime to open the Help Center for more detailed guides.",
+    illustration: (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <div className="h-16 w-16 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-3">
+            <Star className="h-8 w-8 text-purple-500 fill-purple-500" />
+          </div>
+          <p className="text-sm font-semibold text-gray-700">Welcome to SolomonQuest!</p>
+          <p className="text-[10px] text-gray-400 mt-1">Click the <strong>?</strong> button anytime for help</p>
+        </div>
+      </div>
+    ),
+  },
+];
+
 export const staffTourSteps: TourStep[] = [
   {
     title: "Welcome, Staff Member! 👋",
@@ -596,12 +675,13 @@ export const staffTourSteps: TourStep[] = [
   },
 ];
 
-export type UserRole = "admin" | "super_admin" | "teacher" | "student" | "staff";
+export type UserRole = "admin" | "super_admin" | "teacher" | "student" | "staff" | "parent";
 
 export function getTourSteps(role?: UserRole | null): TourStep[] {
   if (role === "admin" || role === "super_admin") return adminTourSteps;
   if (role === "teacher") return teacherTourSteps;
   if (role === "staff") return staffTourSteps;
+  if (role === "parent") return parentTourSteps;
   return studentTourSteps;
 }
 
@@ -609,5 +689,6 @@ export function getTourKey(role?: UserRole | null): string {
   if (role === "admin" || role === "super_admin") return "tour_done_admin";
   if (role === "teacher") return "tour_done_teacher";
   if (role === "staff") return "tour_done_staff";
+  if (role === "parent") return "tour_done_parent";
   return "tour_done_student";
 }

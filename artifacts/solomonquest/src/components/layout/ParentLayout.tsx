@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { Link } from "wouter";
@@ -5,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { GraduationCap, LogOut } from "lucide-react";
+import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
+import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 
 interface ParentLayoutProps {
   children: React.ReactNode;
@@ -12,6 +15,8 @@ interface ParentLayoutProps {
 
 export function ParentLayout({ children }: ParentLayoutProps) {
   const { user, signOut } = useAuth();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const { showTour, launchTour, closeTour } = useTour("parent");
 
   const getInitials = (firstName?: string | null, lastName?: string | null) => {
     return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "P";
@@ -56,6 +61,12 @@ export function ParentLayout({ children }: ParentLayoutProps) {
       <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background max-w-5xl w-full mx-auto">
         {children}
       </main>
+
+      <HelpButton onClick={() => setHelpOpen(true)} />
+      {helpOpen && (
+        <HelpCenter role="parent" onClose={() => setHelpOpen(false)} onStartTour={launchTour} />
+      )}
+      {showTour && <TourOverlay role="parent" onClose={closeTour} />}
     </div>
   );
 }

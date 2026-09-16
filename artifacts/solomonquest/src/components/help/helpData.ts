@@ -691,14 +691,54 @@ export const superAdminHelp: HelpCategory[] = [
   },
 ];
 
+// ─── PARENT HELP ──────────────────────────────────────────────────────────────
+
+export const parentHelp: HelpCategory[] = [
+  {
+    id: "getting-started",
+    title: "Getting Started",
+    icon: "🚀",
+    articles: [
+      {
+        id: "view-children",
+        title: "View your children's grades, attendance & tuition",
+        icon: "👨‍👩‍👧",
+        summary: "See a snapshot for each linked child right on My Children.",
+        steps: [
+          { text: "Log in and go to My Children — this is your home page." },
+          { text: "Each linked child appears as their own card." },
+          { text: "Recent Grades shows their latest graded assignments." },
+          { text: "Attendance (30d) shows a present/absent/late summary for the last month." },
+          { text: "Tuition shows amounts and payment status for that child." },
+        ],
+        troubleshoot: [
+          { problem: "I don't see my child listed", solution: "Contact your school's admin office — they need to link your account to your child's student record before anything appears here." },
+        ],
+      },
+      {
+        id: "update-profile",
+        title: "Update your profile",
+        icon: "👤",
+        summary: "Keep your contact information current.",
+        steps: [
+          { text: "Click your name or avatar in the top right corner." },
+          { text: "Select Profile Settings." },
+          { text: "Update your name, phone number, or photo, then click Save Changes." },
+        ],
+      },
+    ],
+  },
+];
+
 // ─── Role selector ────────────────────────────────────────────────────────────
 
-export type HelpRole = "admin" | "super_admin" | "teacher" | "student" | "staff";
+export type HelpRole = "admin" | "super_admin" | "teacher" | "student" | "staff" | "parent";
 
 export function getHelpData(role?: HelpRole | null): HelpCategory[] {
   if (role === "super_admin") return [...superAdminHelp, ...adminHelp];
   if (role === "admin") return adminHelp;
   if (role === "teacher") return teacherHelp;
   if (role === "staff") return staffHelp;
+  if (role === "parent") return parentHelp;
   return studentHelp;
 }

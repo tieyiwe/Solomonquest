@@ -9,6 +9,8 @@ import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { AgentWidget } from "@/components/agent/AgentWidget";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
+import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
+import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import {
   LayoutDashboard,
   BookOpen,
@@ -273,6 +275,8 @@ export default function StudentOverview() {
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const { showTour, launchTour, closeTour } = useTour(user?.role as "student" | "staff" | null);
 
   const [stats, setStats] = useState<StudentStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -828,6 +832,15 @@ export default function StudentOverview() {
       <AgentWidget />
       <NotesWidget />
       <StickyNotesLayer />
+      <HelpButton onClick={() => setHelpOpen(true)} />
+      {helpOpen && (
+        <HelpCenter
+          role={user?.role as "student" | "staff"}
+          onClose={() => setHelpOpen(false)}
+          onStartTour={launchTour}
+        />
+      )}
+      {showTour && <TourOverlay role={user?.role as "student" | "staff"} onClose={closeTour} />}
     </div>
   );
 }
