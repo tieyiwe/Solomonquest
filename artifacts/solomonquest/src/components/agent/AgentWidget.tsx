@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -43,11 +44,16 @@ function actionLabel(action: PendingAction): string {
     const via = input.method === "email" ? "email" : "in-app chat";
     return `Send via ${via} to all ${input.target_role ?? "recipients"}s — "${input.subject ?? ""}": ${input.message ?? ""}`;
   }
+  if (action.name === "post_forum_note") {
+    const input = action.input as { title?: string; content?: string };
+    return `Post to the forum: "${input.title ?? ""}" — ${input.content ?? ""}`;
+  }
   return `Perform action: ${action.name}`;
 }
 
 export function AgentWidget() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const [open, setOpen] = useState(false);
   const [agentName, setAgentName] = useState("Solomon");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -102,6 +108,10 @@ export function AgentWidget() {
       }
       if (data.type === "tool_use" && data.tool) {
         setPendingAction({ name: data.tool.name, input: data.tool.input });
+      }
+      if (data.type === "navigate" && data.path) {
+        setOpen(false);
+        setLocation(data.path);
       }
     } catch (err: any) {
       toast.error(err.message || "Something went wrong talking to the agent");
@@ -165,8 +175,8 @@ export function AgentWidget() {
               <div className="text-center text-sm text-muted-foreground mt-8">
                 <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-30" />
                 <p>
-                  Hi, I'm {agentName}. Ask me anything about your school, or ask me to draft a reminder or
-                  announcement.
+                  Hi, I'm {agentName}. Ask me anything about your school, or ask me to draft a reminder,
+                  announcement, or forum note — or just say "open analytics" to jump straight to a page.
                 </p>
               </div>
             )}
