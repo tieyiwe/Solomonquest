@@ -150,7 +150,11 @@ select * from (values
     and exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='schools' and column_name='stripe_connect_status')
     and exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='schools' and column_name='stripe_connect_charges_enabled'))
+      where table_schema='public' and table_name='schools' and column_name='stripe_connect_charges_enabled')),
+
+  ('accounting-suite.sql: expenses table',
+    exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='expenses'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

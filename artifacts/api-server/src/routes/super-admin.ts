@@ -1674,7 +1674,7 @@ router.get(
       const days = Math.min(365, Math.max(1, parseInt((req.query.days as string) ?? "30", 10) || 30));
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-      const [{ data: events, error }, { data: schools }, { data: tuitionPayments }] = await Promise.all([
+      const [{ data: events, error }, { data: schools }, { data: tuitionPayments }, { data: expenseRows }] = await Promise.all([
         supabaseAdmin
           .from("usage_events")
           .select("school_id, event_type, ai_model, input_tokens, output_tokens")
@@ -1685,6 +1685,10 @@ router.get(
           .select("school_id, amount_cents, status")
           .eq("status", "paid")
           .gte("created_at", since),
+        supabaseAdmin
+          .from("expenses")
+          .select("school_id, amount_cents")
+          .gte("expense_date", since.slice(0, 10)),
       ]);
 
       if (error) {
@@ -1705,6 +1709,7 @@ router.get(
           forumPosts: number;
           videoCalls: number;
           tuitionRevenueCents: number;
+          expensesCents: number;
         }
       >();
 
@@ -1717,6 +1722,7 @@ router.get(
         forumPosts: 0,
         videoCalls: 0,
         tuitionRevenueCents: 0,
+        expensesCents: 0,
       });
 
       for (const e of events ?? []) {
@@ -1748,11 +1754,19 @@ router.get(
         bySchool.set(schoolId, row);
       }
 
+      for (const e of expenseRows ?? []) {
+        const schoolId = e.school_id as string;
+        const row = bySchool.get(schoolId) ?? emptyRow();
+        row.expensesCents += (e.amount_cents as number) ?? 0;
+        bySchool.set(schoolId, row);
+      }
+
       const result = Array.from(bySchool.entries())
         .map(([schoolId, stats]) => ({
           schoolId,
           schoolName: schoolNameById.get(schoolId) ?? "Unknown school",
           ...stats,
+          netCents: stats.tuitionRevenueCents - stats.expensesCents,
         }))
         .sort((a, b) => b.estimatedCostCents - a.estimatedCostCents);
 

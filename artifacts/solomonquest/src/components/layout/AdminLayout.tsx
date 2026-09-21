@@ -26,6 +26,7 @@ import {
   CalendarRange,
   History,
   DollarSign,
+  Wallet,
   Shield,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
@@ -43,6 +44,7 @@ const adminLinks = [
   { href: "/dashboard/admin/users", label: "Users", icon: Users },
   { href: "/dashboard/admin/courses", label: "Courses", icon: BookOpen },
   { href: "/dashboard/admin/tuition", label: "Tuition", icon: DollarSign },
+  { href: "/dashboard/admin/accounting", label: "Accounting", icon: Wallet },
   { href: "/dashboard/admin/programs", label: "Programs", icon: Layers },
   { href: "/dashboard/admin/terms", label: "Terms & Scheduling", icon: CalendarRange },
   { href: "/dashboard/admin/admissions", label: "Admissions", icon: CheckSquare },

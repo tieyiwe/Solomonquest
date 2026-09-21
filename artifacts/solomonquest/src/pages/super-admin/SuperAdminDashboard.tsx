@@ -167,6 +167,8 @@ interface SchoolUsage {
   forumPosts: number;
   videoCalls: number;
   tuitionRevenueCents: number;
+  expensesCents: number;
+  netCents: number;
 }
 
 interface UserUsage {
@@ -1760,6 +1762,8 @@ export default function SuperAdminDashboard() {
                       <th className="text-left px-4 py-3">Forum Posts</th>
                       <th className="text-left px-4 py-3">Video Calls</th>
                       <th className="text-left px-4 py-3">Tuition Revenue</th>
+                      <th className="text-left px-4 py-3">Expenses</th>
+                      <th className="text-left px-4 py-3">Net</th>
                       <th className="text-left px-4 py-3">Actions</th>
                     </tr>
                   </thead>
@@ -1776,6 +1780,8 @@ export default function SuperAdminDashboard() {
                         <td className="px-4 py-3 text-gray-300">{s.forumPosts}</td>
                         <td className="px-4 py-3 text-gray-300">{s.videoCalls}</td>
                         <td className="px-4 py-3 text-green-400 font-medium">${(s.tuitionRevenueCents / 100).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-red-400">${(s.expensesCents / 100).toFixed(2)}</td>
+                        <td className={`px-4 py-3 font-medium ${s.netCents >= 0 ? "text-green-400" : "text-red-400"}`}>${(s.netCents / 100).toFixed(2)}</td>
                         <td className="px-4 py-3">
                           <Button
                             size="sm"
