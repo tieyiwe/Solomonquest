@@ -96,6 +96,26 @@ async function send(to: string, subject: string, html: string): Promise<void> {
   }
 }
 
+export function isSmtpConfigured(): boolean {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+
+// Used by Super Admin -> Platform Settings' "Send test email" button so an
+// admin can confirm SMTP creds actually work without digging through
+// server logs. Throws (rather than swallowing, like `send` does) so the
+// route can report the real error back to the UI.
+export async function sendTestEmail(to: string): Promise<void> {
+  const t = getTransporter();
+  if (!t) {
+    throw new Error("SMTP is not configured (missing SMTP_HOST/SMTP_USER/SMTP_PASS)");
+  }
+  const body = `
+    ${heading("Test email")}
+    ${paragraph("This is a test email sent from SolomonQuest's Super Admin → Platform Settings page to confirm your SMTP configuration is working.")}
+  `;
+  await t.sendMail({ from: FROM, to, subject: "SolomonQuest: SMTP test email", html: baseLayout("Test email", body) });
+}
+
 // ─── 1. Teacher Invite ───────────────────────────────────────────────────────
 
 export interface TeacherInviteParams {

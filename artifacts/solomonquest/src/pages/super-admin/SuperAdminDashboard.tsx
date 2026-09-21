@@ -45,6 +45,11 @@ import {
   DollarSign,
   ToggleLeft,
   Activity,
+  SlidersHorizontal,
+  Mail,
+  Lock,
+  UploadCloud,
+  Bot,
 } from "lucide-react";
 
 async function apiFetch(url: string, options: RequestInit = {}) {
@@ -73,6 +78,7 @@ type Section =
   | "archive"
   | "audit-log"
   | "platform-settings"
+  | "advanced-settings"
   | "profile";
 
 interface DashboardData {
@@ -237,6 +243,31 @@ interface PlatformSettings {
   maintenanceMode: boolean;
   maintenanceMessage: string;
 }
+
+interface AdvancedSettings {
+  sessionTimeoutMinutes: number;
+  passwordMinLength: number;
+  requireEmailVerification: boolean;
+  maxUploadSizeMb: number;
+  aiMessagesPer10Min: number;
+  defaultEnabledFeatures: Record<string, boolean>;
+  supportEmail: string;
+  platformName: string;
+  integrations: {
+    smtpConfigured: boolean;
+    stripeConfigured: boolean;
+  };
+}
+
+const ADVANCED_FEATURE_LABELS: Record<string, string> = {
+  chat: "Chat",
+  video_calls: "Video Calls",
+  forum: "Forum",
+  ai_agent: "AI Assistant",
+  custom_domain: "Custom Domain",
+  notes: "Notes",
+  tuition: "Tuition & Payments",
+};
 
 const ROLE_COLORS: Record<string, string> = {
   super_admin: "bg-red-700 text-red-100",
@@ -480,6 +511,13 @@ export default function SuperAdminDashboard() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [savingField, setSavingField] = useState<string | null>(null);
 
+  // Advanced Settings
+  const [advSettings, setAdvSettings] = useState<AdvancedSettings | null>(null);
+  const [advSettingsLoading, setAdvSettingsLoading] = useState(false);
+  const [savingAdvField, setSavingAdvField] = useState<string | null>(null);
+  const [testEmailTo, setTestEmailTo] = useState("");
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
+
   // Fetch helpers
   const fetchDashboard = useCallback(async () => {
     setDashboardLoading(true);
@@ -707,6 +745,56 @@ export default function SuperAdminDashboard() {
     }
   }, []);
 
+  const fetchAdvSettings = useCallback(async () => {
+    setAdvSettingsLoading(true);
+    try {
+      const res = await apiFetch("/api/super-admin/advanced-settings");
+      if (!res.ok) throw new Error();
+      setAdvSettings(await res.json());
+    } catch {
+      toast.error("Failed to load advanced settings");
+    } finally {
+      setAdvSettingsLoading(false);
+    }
+  }, []);
+
+  const handleSaveAdvSetting = async (field: string, value: unknown) => {
+    setSavingAdvField(field);
+    try {
+      const res = await apiFetch("/api/super-admin/advanced-settings", {
+        method: "PUT",
+        body: JSON.stringify({ key: field, value }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Setting saved");
+    } catch {
+      toast.error("Failed to save setting");
+    } finally {
+      setSavingAdvField(null);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!testEmailTo.trim()) {
+      toast.error("Enter an email address");
+      return;
+    }
+    setSendingTestEmail(true);
+    try {
+      const res = await apiFetch("/api/super-admin/advanced-settings/test-email", {
+        method: "POST",
+        body: JSON.stringify({ to: testEmailTo.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to send");
+      toast.success(`Test email sent to ${testEmailTo.trim()}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send test email");
+    } finally {
+      setSendingTestEmail(false);
+    }
+  };
+
   useEffect(() => {
     if (activeSection === "dashboard") fetchDashboard();
     if (activeSection === "analytics") fetchAnalytics();
@@ -715,6 +803,7 @@ export default function SuperAdminDashboard() {
     if (activeSection === "users") fetchUsers();
     if (activeSection === "deletion-requests") fetchDeletionRequests();
     if (activeSection === "domain-requests") fetchDomainRequests();
+    if (activeSection === "advanced-settings") fetchAdvSettings();
     if (activeSection === "subscriptions") fetchSubscriptions();
     if (activeSection === "usage") fetchUsage(usageDays);
     if (activeSection === "archive") fetchArchive();
@@ -876,6 +965,7 @@ export default function SuperAdminDashboard() {
     { section: "archive", label: "Archive", icon: <Archive size={16} />, group: "MANAGEMENT" },
     { section: "audit-log", label: "Audit Log", icon: <FileText size={16} />, group: "SYSTEM" },
     { section: "platform-settings", label: "Platform Settings", icon: <Settings size={16} />, group: "SYSTEM" },
+    { section: "advanced-settings", label: "Advanced Settings", icon: <SlidersHorizontal size={16} />, group: "SYSTEM" },
     { section: "profile", label: "My Profile", icon: <Shield size={16} />, group: "ACCOUNT" },
   ];
 
@@ -2011,6 +2101,184 @@ export default function SuperAdminDashboard() {
                     >
                       {savingField === "maintenanceMode" ? "Saving..." : "Save"}
                     </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ADVANCED SETTINGS */}
+          {activeSection === "advanced-settings" && (
+            <div>
+              {advSettingsLoading && <p className="text-gray-400">Loading...</p>}
+              {advSettings && (
+                <div className="space-y-6 max-w-2xl">
+                  {/* Integrations status */}
+                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                    <p className="text-white font-medium mb-3 flex items-center gap-2">
+                      <Bot size={16} /> Integrations
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      <span className={`text-xs px-3 py-1.5 rounded-full border ${advSettings.integrations.smtpConfigured ? "bg-green-500/15 text-green-400 border-green-500/30" : "bg-gray-700 text-gray-400 border-gray-600"}`}>
+                        SMTP {advSettings.integrations.smtpConfigured ? "connected" : "not configured"}
+                      </span>
+                      <span className={`text-xs px-3 py-1.5 rounded-full border ${advSettings.integrations.stripeConfigured ? "bg-green-500/15 text-green-400 border-green-500/30" : "bg-gray-700 text-gray-400 border-gray-600"}`}>
+                        Stripe {advSettings.integrations.stripeConfigured ? "connected" : "not configured"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* General */}
+                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3">
+                    <p className="text-white font-medium flex items-center gap-2">
+                      <SlidersHorizontal size={16} /> General
+                    </p>
+                    <div>
+                      <label className="text-xs text-gray-400">Platform Name</label>
+                      <div className="flex gap-2 mt-1">
+                        <Input
+                          value={advSettings.platformName}
+                          onChange={(e) => setAdvSettings({ ...advSettings, platformName: e.target.value })}
+                          className="bg-gray-700 border-gray-600 text-white"
+                        />
+                        <Button
+                          size="sm"
+                          className="bg-blue-700 hover:bg-blue-600 text-white shrink-0"
+                          onClick={() => handleSaveAdvSetting("platformName", advSettings.platformName)}
+                          disabled={savingAdvField === "platformName"}
+                        >
+                          {savingAdvField === "platformName" ? "Saving..." : "Save"}
+                        </Button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400">Support Email</label>
+                      <div className="flex gap-2 mt-1">
+                        <Input
+                          value={advSettings.supportEmail}
+                          onChange={(e) => setAdvSettings({ ...advSettings, supportEmail: e.target.value })}
+                          placeholder="support@yourdomain.com"
+                          className="bg-gray-700 border-gray-600 text-white"
+                        />
+                        <Button
+                          size="sm"
+                          className="bg-blue-700 hover:bg-blue-600 text-white shrink-0"
+                          onClick={() => handleSaveAdvSetting("supportEmail", advSettings.supportEmail)}
+                          disabled={savingAdvField === "supportEmail"}
+                        >
+                          {savingAdvField === "supportEmail" ? "Saving..." : "Save"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Security */}
+                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3">
+                    <p className="text-white font-medium flex items-center gap-2">
+                      <Lock size={16} /> Security
+                    </p>
+                    <SettingNumberCard
+                      label="Session Timeout (minutes, 0 = none)"
+                      value={advSettings.sessionTimeoutMinutes}
+                      onChange={(v) => setAdvSettings({ ...advSettings, sessionTimeoutMinutes: v })}
+                      onSave={() => handleSaveAdvSetting("sessionTimeoutMinutes", advSettings.sessionTimeoutMinutes)}
+                      saving={savingAdvField === "sessionTimeoutMinutes"}
+                    />
+                    <SettingNumberCard
+                      label="Minimum Password Length"
+                      value={advSettings.passwordMinLength}
+                      onChange={(v) => setAdvSettings({ ...advSettings, passwordMinLength: v })}
+                      onSave={() => handleSaveAdvSetting("passwordMinLength", advSettings.passwordMinLength)}
+                      saving={savingAdvField === "passwordMinLength"}
+                    />
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <p className="text-white text-sm">Require Email Verification</p>
+                        <p className="text-xs text-gray-400 mt-0.5">New accounts must verify email before accessing the platform</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={advSettings.requireEmailVerification}
+                          onCheckedChange={(v) => {
+                            setAdvSettings({ ...advSettings, requireEmailVerification: v });
+                            handleSaveAdvSetting("requireEmailVerification", v);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Limits */}
+                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3">
+                    <p className="text-white font-medium flex items-center gap-2">
+                      <UploadCloud size={16} /> Limits
+                    </p>
+                    <SettingNumberCard
+                      label="Max File Upload Size (MB)"
+                      value={advSettings.maxUploadSizeMb}
+                      onChange={(v) => setAdvSettings({ ...advSettings, maxUploadSizeMb: v })}
+                      onSave={() => handleSaveAdvSetting("maxUploadSizeMb", advSettings.maxUploadSizeMb)}
+                      saving={savingAdvField === "maxUploadSizeMb"}
+                    />
+                    <SettingNumberCard
+                      label="AI Assistant Messages per 10 Minutes"
+                      value={advSettings.aiMessagesPer10Min}
+                      onChange={(v) => setAdvSettings({ ...advSettings, aiMessagesPer10Min: v })}
+                      onSave={() => handleSaveAdvSetting("aiMessagesPer10Min", advSettings.aiMessagesPer10Min)}
+                      saving={savingAdvField === "aiMessagesPer10Min"}
+                    />
+                  </div>
+
+                  {/* Default features for new schools */}
+                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3">
+                    <p className="text-white font-medium flex items-center gap-2">
+                      <ToggleLeft size={16} /> Default Features for New Schools
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      Applied to newly created schools. Doesn't affect existing schools (edit those from Schools -&gt; Feature Flags).
+                    </p>
+                    <div className="space-y-2">
+                      {Object.entries(ADVANCED_FEATURE_LABELS).map(([key, label]) => (
+                        <div key={key} className="flex items-center justify-between">
+                          <span className="text-sm text-gray-300">{label}</span>
+                          <Switch
+                            checked={advSettings.defaultEnabledFeatures[key] !== false}
+                            onCheckedChange={(v) => {
+                              const next = { ...advSettings.defaultEnabledFeatures, [key]: v };
+                              setAdvSettings({ ...advSettings, defaultEnabledFeatures: next });
+                              handleSaveAdvSetting("defaultEnabledFeatures", next);
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Email test */}
+                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3">
+                    <p className="text-white font-medium flex items-center gap-2">
+                      <Mail size={16} /> Send Test Email
+                    </p>
+                    <p className="text-xs text-gray-400">Confirm SMTP is actually working without digging through server logs.</p>
+                    <div className="flex gap-2">
+                      <Input
+                        value={testEmailTo}
+                        onChange={(e) => setTestEmailTo(e.target.value)}
+                        placeholder="you@example.com"
+                        className="bg-gray-700 border-gray-600 text-white"
+                      />
+                      <Button
+                        size="sm"
+                        className="bg-blue-700 hover:bg-blue-600 text-white shrink-0"
+                        onClick={handleSendTestEmail}
+                        disabled={sendingTestEmail || !advSettings.integrations.smtpConfigured}
+                      >
+                        {sendingTestEmail ? "Sending..." : "Send"}
+                      </Button>
+                    </div>
+                    {!advSettings.integrations.smtpConfigured && (
+                      <p className="text-xs text-amber-400">SMTP isn't configured on the server, so this will fail.</p>
+                    )}
                   </div>
                 </div>
               )}
