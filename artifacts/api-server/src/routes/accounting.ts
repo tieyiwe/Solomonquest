@@ -385,6 +385,26 @@ router.post("/accounting/students/:studentId/remind", requireAuth, async (req: A
     return;
   }
 
+  // A reminders row alone never actually reaches the student: the calendar
+  // feed only shows non-admins reminders matched on target_role + an
+  // enrolled course_id, and this one has neither. Raise a real notification
+  // so the nudge lands in the student's bell, which is what this button
+  // promises.
+  const { error: notifyError } = await supabaseAdmin.from("notifications").insert({
+    user_id: studentId,
+    type: "tuition_reminder",
+    title: "Tuition balance due",
+    body: data.message as string,
+    is_read: false,
+    metadata: {},
+  });
+  if (notifyError) {
+    // The reminder itself was recorded; a failed bell notification should
+    // not turn the whole request into an error.
+    // eslint-disable-next-line no-console
+    console.error("[accounting] Failed to create tuition reminder notification:", notifyError.message);
+  }
+
   res.status(201).json({ id: data.id, sentAt: data.send_at });
 });
 

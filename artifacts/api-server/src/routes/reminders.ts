@@ -25,6 +25,40 @@ router.post("/reminders", requireAuth, async (req: AuthenticatedRequest, res): P
 
   const role = req.userRole;
 
+  // target_user_id / course_id are raw client input. Without these checks a
+  // caller could address a reminder at a user in a *different* school, or
+  // attach another school's course id to it — the row is stored with their
+  // own school_id, so nothing downstream would catch the mismatch. Mirrors
+  // the checks the agent's create_reminder tool already performs.
+  if (target_user_id) {
+    const { data: targetProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("school_id")
+      .eq("id", target_user_id)
+      .maybeSingle();
+    if (!targetProfile || targetProfile.school_id !== req.schoolId) {
+      res.status(404).json({ error: "Target user not found in your school" });
+      return;
+    }
+  }
+
+  if (course_id) {
+    const { data: targetCourse } = await supabaseAdmin
+      .from("courses")
+      .select("school_id, teacher_id")
+      .eq("id", course_id)
+      .maybeSingle();
+    if (!targetCourse || targetCourse.school_id !== req.schoolId) {
+      res.status(404).json({ error: "Course not found in your school" });
+      return;
+    }
+    // A teacher may only remind about a course they actually teach.
+    if (req.userRole === "teacher" && targetCourse.teacher_id !== req.userId) {
+      res.status(403).json({ error: "You do not teach this course" });
+      return;
+    }
+  }
+
   if (role === "admin" || role === "super_admin") {
     if (!target_user_id && target_role !== "teacher") {
       res.status(400).json({ error: "Admin reminders require target_user_id or target_role='teacher'" });

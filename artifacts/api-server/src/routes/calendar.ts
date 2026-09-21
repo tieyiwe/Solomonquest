@@ -111,9 +111,15 @@ router.get("/calendar", requireAuth, async (req: AuthenticatedRequest, res): Pro
     }
   }
 
-  // Reminders: a teacher sees ones they created; a student/staff sees ones
-  // targeted at their role for a course they're enrolled in; an admin sees
-  // every reminder in the school.
+  // Reminders: an admin sees every reminder in the school. Everyone else
+  // sees reminders they created, reminders addressed to them personally, and
+  // role-targeted reminders for a course they're in.
+  //
+  // The personal branch was missing: POST /reminders' main admin path
+  // requires target_user_id, but neither the teacher filter (created_by only)
+  // nor the student filter (target_role + course_id) ever matched a row with
+  // target_user_id set, so a reminder addressed to a specific person was
+  // invisible to that person.
   let reminderQuery = supabaseAdmin
     .from("reminders")
     .select("id, message, send_at, target_role, course_id, created_by")
@@ -123,10 +129,13 @@ router.get("/calendar", requireAuth, async (req: AuthenticatedRequest, res): Pro
 
   if (role === "admin" || role === "super_admin") {
     if (schoolId) reminderQuery = reminderQuery.eq("school_id", schoolId);
-  } else if (role === "teacher") {
-    reminderQuery = reminderQuery.eq("created_by", userId ?? "");
   } else {
-    reminderQuery = reminderQuery.eq("target_role", role ?? "").in("course_id", courseIds.length > 0 ? courseIds : [""]);
+    if (schoolId) reminderQuery = reminderQuery.eq("school_id", schoolId);
+    const clauses = [`created_by.eq.${userId ?? ""}`, `target_user_id.eq.${userId ?? ""}`];
+    if (courseIds.length > 0) {
+      clauses.push(`and(target_role.eq.${role ?? ""},course_id.in.(${courseIds.join(",")}))`);
+    }
+    reminderQuery = reminderQuery.or(clauses.join(","));
   }
 
   const { data: reminders } = await reminderQuery;

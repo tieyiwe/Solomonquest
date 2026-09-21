@@ -1296,7 +1296,14 @@ router.post(
         supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("school_id", id).eq("role", "student"),
         supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("school_id", id).eq("role", "teacher"),
         supabaseAdmin.from("courses").select("id", { count: "exact", head: true }).eq("school_id", id),
-        supabaseAdmin.from("course_enrollments").select("student_id", { count: "exact", head: true }).eq("school_id", id),
+        // course_enrollments has no school_id column (it's keyed only by
+        // course_id + student_id), so filtering on one made this query error
+        // out and the archived snapshot always recorded 0 enrollments.
+        // Scope through the joined course instead.
+        supabaseAdmin
+          .from("course_enrollments")
+          .select("student_id, courses!inner(school_id)", { count: "exact", head: true })
+          .eq("courses.school_id", id),
       ]);
 
       const { data: archiveEntry, error: archiveErr } = await supabaseAdmin

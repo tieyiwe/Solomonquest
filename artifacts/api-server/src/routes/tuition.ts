@@ -412,7 +412,7 @@ router.post(
     // connecting can't take real payments yet.
     const { data: school } = await supabaseAdmin
       .from("schools")
-      .select("stripe_connect_account_id, stripe_connect_charges_enabled")
+      .select("slug, stripe_connect_account_id, stripe_connect_charges_enabled")
       .eq("id", payment.school_id)
       .single();
 
@@ -424,6 +424,11 @@ router.post(
     }
 
     const appUrl = process.env.APP_URL ?? "";
+    // Tuition checkout is only ever started from the school's public apply
+    // page (SchoolApply). The previous return target, /dashboard/student/
+    // tuition, is not a route in the frontend router at all, so every
+    // student who completed a real Stripe payment landed on the 404 page.
+    const returnPath = school.slug ? `/schools/${school.slug}/apply` : "/";
 
     try {
       const stripe = getStripe();
@@ -450,8 +455,8 @@ router.post(
             tuition_payment_id: payment.id as string,
             tuition_installment_id: nextUnpaid.id as string,
           },
-          success_url: `${appUrl}/dashboard/student/tuition?checkout=success`,
-          cancel_url: `${appUrl}/dashboard/student/tuition?checkout=cancelled`,
+          success_url: `${appUrl}${returnPath}?checkout=success`,
+          cancel_url: `${appUrl}${returnPath}?checkout=cancelled`,
         },
         { stripeAccount: school.stripe_connect_account_id as string }
       );

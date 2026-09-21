@@ -277,8 +277,12 @@ router.get(
       return;
     }
 
-    // Admins can only view applications for their own school
-    if (isAdmin && req.schoolId && data.school_id !== req.schoolId) {
+    // Admins can only view applications for their own school. The school
+    // match used to be skipped entirely when req.schoolId was falsy, so an
+    // admin whose profile has no school_id could read any school's
+    // application (including every form response on it) by id. Only a
+    // super_admin is school-less by design.
+    if (isAdmin && req.userRole !== "super_admin" && data.school_id !== req.schoolId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -327,7 +331,10 @@ router.patch(
       return;
     }
 
-    if (req.schoolId && existing.school_id !== req.schoolId) {
+    // Same bypass as GET /applications/:id above, but worse here: a
+    // school-less admin could approve another school's application, which
+    // auto-enrolls the applicant and rewrites their profile's school_id.
+    if (req.userRole !== "super_admin" && existing.school_id !== req.schoolId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
