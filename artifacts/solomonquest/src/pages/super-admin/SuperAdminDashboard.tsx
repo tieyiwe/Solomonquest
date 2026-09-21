@@ -117,6 +117,8 @@ interface School {
   roleCounts: Record<string, number>;
   status: "active" | "inactive";
   created: string;
+  stripeConnectStatus?: "not_connected" | "pending" | "connected" | "restricted";
+  stripeChargesEnabled?: boolean;
   details?: Record<string, unknown>;
 }
 
@@ -164,6 +166,7 @@ interface SchoolUsage {
   chatMessages: number;
   forumPosts: number;
   videoCalls: number;
+  tuitionRevenueCents: number;
 }
 
 interface UserUsage {
@@ -1191,6 +1194,7 @@ export default function SuperAdminDashboard() {
                       <th className="text-left px-4 py-3">Creator Email</th>
                       <th className="text-left px-4 py-3">Users</th>
                       <th className="text-left px-4 py-3">Courses</th>
+                      <th className="text-left px-4 py-3">Payments</th>
                       <th className="text-left px-4 py-3">Status</th>
                       <th className="text-left px-4 py-3">Created</th>
                       <th className="text-left px-4 py-3">Actions</th>
@@ -1220,6 +1224,25 @@ export default function SuperAdminDashboard() {
                             </p>
                           </td>
                           <td className="px-4 py-3 text-gray-300">{school.courses}</td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full ${
+                                school.stripeConnectStatus === "connected"
+                                  ? "bg-green-900 text-green-300"
+                                  : school.stripeConnectStatus === "pending" || school.stripeConnectStatus === "restricted"
+                                  ? "bg-yellow-900 text-yellow-300"
+                                  : "bg-gray-700 text-gray-400"
+                              }`}
+                            >
+                              {school.stripeConnectStatus === "connected"
+                                ? "Connected"
+                                : school.stripeConnectStatus === "pending"
+                                ? "Pending"
+                                : school.stripeConnectStatus === "restricted"
+                                ? "Restricted"
+                                : "Not connected"}
+                            </span>
+                          </td>
                           <td className="px-4 py-3">
                             <span className={`text-xs px-2 py-0.5 rounded-full ${school.status === "active" ? "bg-green-900 text-green-300" : "bg-gray-700 text-gray-400"}`}>
                               {school.status === "active" ? "Active" : "Inactive"}
@@ -1280,7 +1303,7 @@ export default function SuperAdminDashboard() {
                         </tr>
                         {expandedSchool === school.id && (
                           <tr className="bg-gray-900/60">
-                            <td colSpan={8} className="px-6 py-4">
+                            <td colSpan={9} className="px-6 py-4">
                               <div className="grid grid-cols-2 gap-4 text-sm">
                                 <div>
                                   <p className="text-gray-400 text-xs mb-1">School ID</p>
@@ -1736,6 +1759,7 @@ export default function SuperAdminDashboard() {
                       <th className="text-left px-4 py-3">Chat Msgs</th>
                       <th className="text-left px-4 py-3">Forum Posts</th>
                       <th className="text-left px-4 py-3">Video Calls</th>
+                      <th className="text-left px-4 py-3">Tuition Revenue</th>
                       <th className="text-left px-4 py-3">Actions</th>
                     </tr>
                   </thead>
@@ -1751,6 +1775,7 @@ export default function SuperAdminDashboard() {
                         <td className="px-4 py-3 text-gray-300">{s.chatMessages}</td>
                         <td className="px-4 py-3 text-gray-300">{s.forumPosts}</td>
                         <td className="px-4 py-3 text-gray-300">{s.videoCalls}</td>
+                        <td className="px-4 py-3 text-green-400 font-medium">${(s.tuitionRevenueCents / 100).toFixed(2)}</td>
                         <td className="px-4 py-3">
                           <Button
                             size="sm"
@@ -2109,6 +2134,7 @@ export default function SuperAdminDashboard() {
               { key: "ai_agent", label: "AI Assistant (Solomon)" },
               { key: "custom_domain", label: "Custom Domain" },
               { key: "notes", label: "Notes" },
+              { key: "tuition", label: "Tuition & Payments" },
             ].map((f) => (
               <div key={f.key} className="flex items-center justify-between py-1">
                 <span className="text-sm text-gray-300">{f.label}</span>

@@ -177,7 +177,7 @@ router.get(
       let query = supabaseAdmin
         .from("schools")
         .select(
-          "id, name, slug, owner_id, is_active, created_at, deleted_at, plan, subscription_status, billing_amount_cents, trial_ends_at, enabled_features, custom_domain, custom_domain_status"
+          "id, name, slug, owner_id, is_active, created_at, deleted_at, plan, subscription_status, billing_amount_cents, trial_ends_at, enabled_features, custom_domain, custom_domain_status, stripe_connect_status, stripe_connect_charges_enabled"
         );
 
       if (status === "active") query = query.eq("is_active", true).is("deleted_at", null);
@@ -261,6 +261,8 @@ router.get(
           roleCounts,
           is_active: school.is_active,
           created_at: school.created_at,
+          stripeConnectStatus: school.stripe_connect_status ?? "not_connected",
+          stripeChargesEnabled: school.stripe_connect_charges_enabled ?? false,
           details: {
             plan: school.plan ?? "free",
             subscription_status: school.subscription_status ?? "active",
@@ -1672,12 +1674,17 @@ router.get(
       const days = Math.min(365, Math.max(1, parseInt((req.query.days as string) ?? "30", 10) || 30));
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-      const [{ data: events, error }, { data: schools }] = await Promise.all([
+      const [{ data: events, error }, { data: schools }, { data: tuitionPayments }] = await Promise.all([
         supabaseAdmin
           .from("usage_events")
           .select("school_id, event_type, ai_model, input_tokens, output_tokens")
           .gte("created_at", since),
         supabaseAdmin.from("schools").select("id, name"),
+        supabaseAdmin
+          .from("tuition_payments")
+          .select("school_id, amount_cents, status")
+          .eq("status", "paid")
+          .gte("created_at", since),
       ]);
 
       if (error) {
@@ -1697,14 +1704,24 @@ router.get(
           chatMessages: number;
           forumPosts: number;
           videoCalls: number;
+          tuitionRevenueCents: number;
         }
       >();
 
+      const emptyRow = () => ({
+        aiMessages: 0,
+        aiInputTokens: 0,
+        aiOutputTokens: 0,
+        estimatedCostCents: 0,
+        chatMessages: 0,
+        forumPosts: 0,
+        videoCalls: 0,
+        tuitionRevenueCents: 0,
+      });
+
       for (const e of events ?? []) {
         const schoolId = e.school_id as string;
-        const row =
-          bySchool.get(schoolId) ??
-          { aiMessages: 0, aiInputTokens: 0, aiOutputTokens: 0, estimatedCostCents: 0, chatMessages: 0, forumPosts: 0, videoCalls: 0 };
+        const row = bySchool.get(schoolId) ?? emptyRow();
 
         if (e.event_type === "ai_chat") {
           const inputTokens = (e.input_tokens as number) ?? 0;
@@ -1721,6 +1738,13 @@ router.get(
           row.videoCalls += 1;
         }
 
+        bySchool.set(schoolId, row);
+      }
+
+      for (const p of tuitionPayments ?? []) {
+        const schoolId = p.school_id as string;
+        const row = bySchool.get(schoolId) ?? emptyRow();
+        row.tuitionRevenueCents += (p.amount_cents as number) ?? 0;
         bySchool.set(schoolId, row);
       }
 

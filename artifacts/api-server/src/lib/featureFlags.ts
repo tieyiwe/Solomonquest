@@ -9,7 +9,7 @@ import type { AuthenticatedRequest } from "../middlewares/auth";
  * enabled — only an explicit `false` turns a module off, matching the
  * frontend's `checked={features[f.key] !== false}`.
  */
-export type FeatureKey = "chat" | "video_calls" | "forum" | "ai_agent" | "custom_domain" | "notes";
+export type FeatureKey = "chat" | "video_calls" | "forum" | "ai_agent" | "custom_domain" | "notes" | "tuition";
 
 /** Short TTL cache so gating a high-traffic route (chat, forum) doesn't add
  *  a DB round-trip to every request — schools rarely toggle a feature, and

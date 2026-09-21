@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { getStripe, isStripeConfigured } from "../lib/stripe";
+import { requireSchoolFeature } from "../lib/featureFlags";
 
 const router: IRouter = Router();
 
@@ -42,7 +43,7 @@ router.get("/tuition-plans", requireAuth, async (req: AuthenticatedRequest, res)
 });
 
 // ─── POST /tuition-plans — create or update the plan for a course/program ───
-router.post("/tuition-plans", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+router.post("/tuition-plans", requireAuth, requireSchoolFeature("tuition"), async (req: AuthenticatedRequest, res): Promise<void> => {
   if (!canManageTuition(req.userRole)) {
     res.status(403).json({ error: "Forbidden" });
     return;
@@ -178,7 +179,7 @@ function mapPayment(p: Record<string, unknown>, installments: Record<string, unk
 // Not enforced anywhere yet (doesn't gate enrollment/applications) -- this
 // only records intent so the flow can be tested end-to-end before a real
 // payment processor and the "must pay to enroll" condition are turned on.
-router.post("/tuition-payments", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+router.post("/tuition-payments", requireAuth, requireSchoolFeature("tuition"), async (req: AuthenticatedRequest, res): Promise<void> => {
   const { tuitionPlanId, paymentMethod } = req.body as { tuitionPlanId?: string; paymentMethod?: "full" | "installments" };
 
   if (!tuitionPlanId || (paymentMethod !== "full" && paymentMethod !== "installments")) {
@@ -405,35 +406,55 @@ router.post(
       return;
     }
 
+    // Payments run directly on the school's own connected Stripe account
+    // (Stripe Connect), not the platform's — funds land in the school's
+    // account, never the platform's balance. A school that hasn't finished
+    // connecting can't take real payments yet.
+    const { data: school } = await supabaseAdmin
+      .from("schools")
+      .select("stripe_connect_account_id, stripe_connect_charges_enabled")
+      .eq("id", payment.school_id)
+      .single();
+
+    if (!school?.stripe_connect_account_id || !school.stripe_connect_charges_enabled) {
+      res.status(503).json({
+        error: "This school hasn't finished connecting its Stripe account yet. Contact your school administrator.",
+      });
+      return;
+    }
+
     const appUrl = process.env.APP_URL ?? "";
 
     try {
       const stripe = getStripe();
-      const session = await stripe.checkout.sessions.create({
-        mode: "payment",
-        line_items: [
-          {
-            price_data: {
-              currency: (payment.currency as string) ?? "usd",
-              product_data: {
-                name:
-                  payment.payment_method === "installments"
-                    ? `Tuition installment ${nextUnpaid.installment_number} of ${payment.installment_count}`
-                    : "Tuition payment",
+      const session = await stripe.checkout.sessions.create(
+        {
+          mode: "payment",
+          line_items: [
+            {
+              price_data: {
+                currency: (payment.currency as string) ?? "usd",
+                product_data: {
+                  name:
+                    payment.payment_method === "installments"
+                      ? `Tuition installment ${nextUnpaid.installment_number} of ${payment.installment_count}`
+                      : "Tuition payment",
+                },
+                unit_amount: nextUnpaid.amount_cents as number,
               },
-              unit_amount: nextUnpaid.amount_cents as number,
+              quantity: 1,
             },
-            quantity: 1,
+          ],
+          client_reference_id: nextUnpaid.id as string,
+          metadata: {
+            tuition_payment_id: payment.id as string,
+            tuition_installment_id: nextUnpaid.id as string,
           },
-        ],
-        client_reference_id: nextUnpaid.id as string,
-        metadata: {
-          tuition_payment_id: payment.id as string,
-          tuition_installment_id: nextUnpaid.id as string,
+          success_url: `${appUrl}/dashboard/student/tuition?checkout=success`,
+          cancel_url: `${appUrl}/dashboard/student/tuition?checkout=cancelled`,
         },
-        success_url: `${appUrl}/dashboard/student/tuition?checkout=success`,
-        cancel_url: `${appUrl}/dashboard/student/tuition?checkout=cancelled`,
-      });
+        { stripeAccount: school.stripe_connect_account_id as string }
+      );
 
       await supabaseAdmin
         .from("tuition_installments")

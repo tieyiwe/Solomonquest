@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "wouter";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -15,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { CheckCircle2, DollarSign } from "lucide-react";
+import { CheckCircle2, DollarSign, CreditCard, ExternalLink, Loader2 } from "lucide-react";
 
 async function apiFetch(path: string, options: RequestInit = {}) {
   const {
@@ -64,10 +65,30 @@ function formatCents(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+type ConnectStatus = "not_connected" | "pending" | "connected" | "restricted";
+
+const CONNECT_STATUS_LABEL: Record<ConnectStatus, string> = {
+  not_connected: "Not connected",
+  pending: "Setup incomplete",
+  connected: "Connected",
+  restricted: "Action needed",
+};
+
+const CONNECT_STATUS_STYLE: Record<ConnectStatus, string> = {
+  not_connected: "bg-gray-100 text-gray-600",
+  pending: "bg-yellow-100 text-yellow-700",
+  connected: "bg-green-100 text-green-700",
+  restricted: "bg-red-100 text-red-700",
+};
+
 export default function AdminTuition() {
+  const { user } = useAuth();
+  const schoolId = (user?.schoolId ?? (user as any)?.school_id) || "";
   const [plans, setPlans] = useState<TuitionPlan[] | null>(null);
   const [payments, setPayments] = useState<TuitionPayment[] | null>(null);
   const [markingId, setMarkingId] = useState<string | null>(null);
+  const [connectStatus, setConnectStatus] = useState<ConnectStatus | null>(null);
+  const [connectLoading, setConnectLoading] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -83,9 +104,52 @@ export default function AdminTuition() {
     }
   }, []);
 
+  const fetchConnectStatus = useCallback(async () => {
+    if (!schoolId) return;
+    try {
+      const res = await apiFetch(`/api/schools/${schoolId}/stripe/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setConnectStatus(data.status);
+      }
+    } catch {
+      // Non-fatal — the connect card just shows "Not connected" until this succeeds
+    }
+  }, [schoolId]);
+
   useEffect(() => {
     fetchAll();
-  }, [fetchAll]);
+    fetchConnectStatus();
+  }, [fetchAll, fetchConnectStatus]);
+
+  const handleConnectStripe = async () => {
+    if (!schoolId) return;
+    setConnectLoading(true);
+    try {
+      const res = await apiFetch(`/api/schools/${schoolId}/stripe/connect`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to start Stripe setup");
+      window.location.href = data.url;
+    } catch (err: any) {
+      toast.error(err.message || "Failed to start Stripe setup");
+      setConnectLoading(false);
+    }
+  };
+
+  const handleOpenDashboard = async () => {
+    if (!schoolId) return;
+    setConnectLoading(true);
+    try {
+      const res = await apiFetch(`/api/schools/${schoolId}/stripe/dashboard-link`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to open Stripe dashboard");
+      window.open(data.url, "_blank");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to open Stripe dashboard");
+    } finally {
+      setConnectLoading(false);
+    }
+  };
 
   const handleMarkPaid = async (paymentId: string) => {
     setMarkingId(paymentId);
@@ -117,10 +181,45 @@ export default function AdminTuition() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Tuition</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Track tuition plans and payments across your school. Online payment isn't connected yet — record
-            payments received outside the platform (cash, check, bank transfer) using "Mark Paid" below.
+            Track tuition plans and payments across your school.{" "}
+            {connectStatus === "connected"
+              ? "Online payments go directly to your school's own Stripe account."
+              : "Connect Stripe below to take online payments, or record payments received outside the platform (cash, check, bank transfer) using \"Mark Paid\"."}
           </p>
         </div>
+
+        <Card>
+          <CardContent className="p-4 flex flex-wrap items-center gap-4">
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <CreditCard className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold">Online Payments (Stripe)</p>
+                {connectStatus && (
+                  <Badge className={CONNECT_STATUS_STYLE[connectStatus]} variant="secondary">
+                    {CONNECT_STATUS_LABEL[connectStatus]}
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Your school connects its own Stripe account — payments go straight to you, independent of the
+                SolomonQuest platform. We never see or hold your funds.
+              </p>
+            </div>
+            {connectStatus === "connected" ? (
+              <Button size="sm" variant="outline" onClick={handleOpenDashboard} disabled={connectLoading}>
+                {connectLoading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5 mr-1.5" />}
+                Open Stripe Dashboard
+              </Button>
+            ) : (
+              <Button size="sm" onClick={handleConnectStripe} disabled={connectLoading || !schoolId}>
+                {connectLoading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <CreditCard className="h-3.5 w-3.5 mr-1.5" />}
+                {connectStatus === "pending" ? "Finish Connecting Stripe" : "Connect Stripe Account"}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Card>

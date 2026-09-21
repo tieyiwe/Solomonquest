@@ -142,7 +142,15 @@ select * from (values
 
   ('usage-tracking.sql: usage_events table',
     exists (select 1 from information_schema.tables
-      where table_schema='public' and table_name='usage_events'))
+      where table_schema='public' and table_name='usage_events')),
+
+  ('stripe-connect.sql: schools.stripe_connect_account_id',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='schools' and column_name='stripe_connect_account_id')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='schools' and column_name='stripe_connect_status')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='schools' and column_name='stripe_connect_charges_enabled'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;
