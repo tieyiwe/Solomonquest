@@ -68,13 +68,17 @@ router.get("/submissions", requireAuth, async (req: AuthenticatedRequest, res) =
           last_name,
           email
         ),
-        assignments:assignment_id (
+        assignments:assignment_id!inner (
           id,
           title,
           course_id
         )
       `);
 
+    // `!inner` is load-bearing: filtering on an embedded resource without
+    // it doesn't drop non-matching parent rows in PostgREST — it just nulls
+    // the embed. So this returned EVERY submission on the platform (with
+    // student names and emails) to any teacher/admin, for any course_id.
     if (course_id) {
       query = query.eq("assignments.course_id", course_id as string);
     }

@@ -167,6 +167,19 @@ router.post("/quizzes", requireAuth, async (req: AuthenticatedRequest, res): Pro
     return;
   }
 
+  // Every other write route here checks the caller manages the quiz's
+  // course; creation only checked the caller's role, so a teacher/admin
+  // in any school could plant a quiz on any other school's course_id.
+  const access = await assertCourseAccess(String(course_id), req.userId, req.userRole);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+  if (!access.isManager) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   try {
     const { data, error } = await supabaseAdmin
       .from("quizzes")
@@ -652,6 +665,15 @@ router.put(
         return;
       }
 
+      // An attempt can only be submitted once. Without this a student could
+      // re-PUT the same attempt id with new answers indefinitely — the
+      // auto-grader re-ran every time and overwrote the score, which made
+      // attempt_limit meaningless (one "attempt" = unlimited retries).
+      if (attempt.status !== "in_progress") {
+        res.status(409).json({ error: "This attempt has already been submitted" });
+        return;
+      }
+
       // Fetch all questions for this quiz
       const { data: questions, error: qError } = await supabaseAdmin
         .from("quiz_questions")
@@ -721,11 +743,18 @@ router.put(
           status: "submitted",
         })
         .eq("id", aid)
+        // Guards the race between two concurrent submits of the same
+        // attempt — only the first one to flip in_progress -> submitted wins.
+        .eq("status", "in_progress")
         .select()
-        .single();
+        .maybeSingle();
 
       if (updateError) {
         res.status(500).json({ error: updateError.message });
+        return;
+      }
+      if (!updatedAttempt) {
+        res.status(409).json({ error: "This attempt has already been submitted" });
         return;
       }
 

@@ -20,7 +20,11 @@ function requireAccountingAccess(req: AuthenticatedRequest, res: import("express
 function parseRange(req: AuthenticatedRequest): { from: string; to: string } {
   const { from, to } = req.query as { from?: string; to?: string };
   const now = new Date();
-  const defaultFrom = new Date(now.getFullYear(), now.getMonth() - 11, 1).toISOString().slice(0, 10);
+  // Both ends in UTC. `new Date(y, m, 1)` is LOCAL midnight of the 1st;
+  // `.toISOString()` converts to UTC, which on a server ahead of UTC is the
+  // last day of the previous month — so the default range silently started
+  // one day early while `defaultTo` (already UTC) did not.
+  const defaultFrom = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1)).toISOString().slice(0, 10);
   const defaultTo = now.toISOString().slice(0, 10);
   return { from: from || defaultFrom, to: to || defaultTo };
 }
@@ -280,6 +284,10 @@ router.get("/accounting/students", requireAuth, async (req: AuthenticatedRequest
         .from("tuition_installments")
         .select("payment_id, amount_cents, status, due_date, paid_at")
         .in("payment_id", paymentIds)
+        // nextDueByPayment below takes the FIRST unpaid row it sees per
+        // payment, so rows must arrive in due-date order — unordered, the
+        // "next due" shown to admins could be a later installment.
+        .order("due_date", { ascending: true })
     : { data: [] as Record<string, unknown>[] };
 
   const paidByPayment = new Map<string, number>();

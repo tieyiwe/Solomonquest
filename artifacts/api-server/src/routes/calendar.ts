@@ -135,6 +135,11 @@ router.get("/calendar", requireAuth, async (req: AuthenticatedRequest, res): Pro
     if (courseIds.length > 0) {
       clauses.push(`and(target_role.eq.${role ?? ""},course_id.in.(${courseIds.join(",")}))`);
     }
+    // A role-targeted reminder with no course (the main admin -> "all
+    // teachers" path in POST /reminders and the agent's create_reminder
+    // tool both write target_role='teacher', course_id=null) never matched
+    // the course-scoped clause above, so it reached no teacher's calendar.
+    clauses.push(`and(target_role.eq.${role ?? ""},course_id.is.null)`);
     reminderQuery = reminderQuery.or(clauses.join(","));
   }
 

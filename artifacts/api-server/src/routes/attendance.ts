@@ -84,6 +84,21 @@ router.post("/courses/:courseId/attendance", requireAuth, async (req: Authentica
     return;
   }
 
+  // studentId was raw client input — attendance could be recorded for any
+  // profile id on the platform (another school's user, a teacher, anyone)
+  // against this course. That row then feeds computeCourseGrade's
+  // attendance weighting for that user.
+  const { data: enrollment } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("student_id")
+    .eq("course_id", courseId)
+    .eq("student_id", studentId)
+    .maybeSingle();
+  if (!enrollment) {
+    res.status(400).json({ error: "That student is not enrolled in this course" });
+    return;
+  }
+
   const { data, error } = await supabaseAdmin
     .from("attendance")
     .upsert(

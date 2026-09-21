@@ -4,6 +4,20 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
+/**
+ * Every admin write route below keyed its row scoping on the raw
+ * :schoolId path param and only checked the caller's ROLE — an admin of
+ * school A could add, edit, delete, or reorder the application form fields
+ * of any school B just by putting B's id in the URL. A non-super_admin
+ * caller's :schoolId must be their own school.
+ */
+function assertOwnSchool(req: AuthenticatedRequest, schoolIdParam: string | string[]): string | null {
+  const schoolId = Array.isArray(schoolIdParam) ? schoolIdParam[0] : schoolIdParam;
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") return null;
+  if (req.userRole !== "super_admin" && req.schoolId !== schoolId) return null;
+  return schoolId;
+}
+
 // ─── GET /schools/:schoolId/application-form ─────────────────────────────────
 // Public: get form fields for a school ordered by sort_order
 router.get(
@@ -43,9 +57,8 @@ router.post(
   "/schools/:schoolId/application-form/fields",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const schoolId = req.params.schoolId;
-
-    if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    const schoolId = assertOwnSchool(req, req.params.schoolId);
+    if (!schoolId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -104,9 +117,9 @@ router.patch(
   "/schools/:schoolId/application-form/fields/:fieldId",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { schoolId, fieldId } = req.params;
-
-    if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    const { fieldId } = req.params;
+    const schoolId = assertOwnSchool(req, req.params.schoolId);
+    if (!schoolId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -157,9 +170,9 @@ router.delete(
   "/schools/:schoolId/application-form/fields/:fieldId",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { schoolId, fieldId } = req.params;
-
-    if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    const { fieldId } = req.params;
+    const schoolId = assertOwnSchool(req, req.params.schoolId);
+    if (!schoolId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -185,9 +198,8 @@ router.patch(
   "/schools/:schoolId/application-form/reorder",
   requireAuth,
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const schoolId = req.params.schoolId;
-
-    if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    const schoolId = assertOwnSchool(req, req.params.schoolId);
+    if (!schoolId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }

@@ -137,10 +137,25 @@ router.get("/analytics/admin", requireAuth, async (req: AuthenticatedRequest, re
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-    const { count: active_this_week } = await supabaseAdmin
-      .from("submissions")
-      .select("student_id", { count: "exact", head: true })
-      .gte("submitted_at", oneWeekAgo.toISOString());
+    // Scoped to this school's assignments — previously counted every
+    // submission on the platform, so the number leaked (and was wrong for)
+    // every other school's activity.
+    let active_this_week: number | null = 0;
+    if (courseIds.length > 0) {
+      const { data: weekAssigns } = await supabaseAdmin
+        .from("assignments")
+        .select("id")
+        .in("course_id", courseIds);
+      const weekAssignIds = (weekAssigns ?? []).map((a: any) => a.id as string);
+      if (weekAssignIds.length > 0) {
+        const { count } = await supabaseAdmin
+          .from("submissions")
+          .select("student_id", { count: "exact", head: true })
+          .in("assignment_id", weekAssignIds)
+          .gte("submitted_at", oneWeekAgo.toISOString());
+        active_this_week = count;
+      }
+    }
 
     // Avg assignments submitted per student
     let avg_assignments_submitted = 0;
@@ -477,14 +492,16 @@ router.get("/analytics/teacher", requireAuth, async (req: AuthenticatedRequest, 
       if (rAssignIds.length > 0) {
         const { data: rSubs } = await supabaseAdmin
           .from("submissions")
-          .select("assignment_id, student_id, submitted_at, grade, profiles:student_id(full_name, first_name, last_name)")
+          // profiles has no full_name column — selecting it made PostgREST
+          // reject the whole query, so recent_submissions was always [].
+          .select("assignment_id, student_id, submitted_at, grade, profiles:student_id(first_name, last_name)")
           .in("assignment_id", rAssignIds)
           .order("submitted_at", { ascending: false })
           .limit(10);
 
         recent_submissions = (rSubs ?? []).map((s: any) => {
           const profile = Array.isArray(s.profiles) ? s.profiles[0] : s.profiles;
-          const name = profile?.full_name ?? (`${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "Unknown");
+          const name = `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "Unknown";
           return {
             student_name: name,
             assignment_title: assignIdToTitle[s.assignment_id] ?? "Unknown",
@@ -552,14 +569,17 @@ router.get(
       const countByTeacher = () => new Map(teacherIds.map((id) => [id, 0]));
 
       // Forum posts (topics) — attributable directly to the author, school-wide.
+      // forum.ts writes the author to `posted_by`; `author_id` is a legacy
+      // column from the original schema that nothing populates, so counting
+      // on it reported 0 forum activity for every teacher.
       const forumPosts = countByTeacher();
       const { data: topicRows } = await supabaseAdmin
         .from("forum_topics")
-        .select("author_id")
+        .select("posted_by")
         .eq("school_id", schoolId)
-        .in("author_id", teacherIds);
+        .in("posted_by", teacherIds);
       for (const t of topicRows ?? []) {
-        const id = t.author_id as string;
+        const id = t.posted_by as string;
         forumPosts.set(id, (forumPosts.get(id) ?? 0) + 1);
       }
 
@@ -568,10 +588,10 @@ router.get(
       const forumReplies = countByTeacher();
       const { data: commentRows } = await supabaseAdmin
         .from("forum_comments")
-        .select("author_id")
-        .in("author_id", teacherIds);
+        .select("posted_by")
+        .in("posted_by", teacherIds);
       for (const c of commentRows ?? []) {
-        const id = c.author_id as string;
+        const id = c.posted_by as string;
         forumReplies.set(id, (forumReplies.get(id) ?? 0) + 1);
       }
 

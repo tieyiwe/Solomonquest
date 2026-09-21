@@ -46,6 +46,28 @@ async function assertCanManageCourse(
   return { ok: false, status: 403, error: "Forbidden" };
 }
 
+/**
+ * teacherId is raw client input on create/update. Nothing checked that the
+ * profile belonged to the course's school, so an admin could assign any
+ * profile id on the platform (another school's teacher, a student) as the
+ * teacher of record — which then grants that account full teacher access
+ * to the course (roster, grades, attendance) via every teacher_id check.
+ */
+async function assertTeacherInSchool(
+  teacherId: string,
+  schoolId: string | null | undefined
+): Promise<string | null> {
+  const { data: teacher } = await supabaseAdmin
+    .from("profiles")
+    .select("school_id, role")
+    .eq("id", teacherId)
+    .maybeSingle();
+  if (!teacher) return "Teacher not found";
+  if (teacher.school_id !== schoolId) return "That teacher is not in this school";
+  if (teacher.role === "student" || teacher.role === "parent") return "Only staff can be assigned as a course teacher";
+  return null;
+}
+
 const router: IRouter = Router();
 
 // Public: list a school's published courses for its public homepage —
@@ -177,6 +199,14 @@ router.post("/courses", requireAuth, async (req: AuthenticatedRequest, res): Pro
     }
   }
 
+  if (teacherId) {
+    const teacherError = await assertTeacherInSchool(teacherId, req.schoolId);
+    if (teacherError) {
+      res.status(400).json({ error: teacherError });
+      return;
+    }
+  }
+
   const { data, error } = await supabaseAdmin
     .from("courses")
     .insert({
@@ -272,6 +302,14 @@ router.patch("/courses/:id", requireAuth, async (req: AuthenticatedRequest, res)
   ) {
     res.status(400).json({ error: "attendanceWeightPercent must be a number between 0 and 100" });
     return;
+  }
+
+  if (teacherId) {
+    const teacherError = await assertTeacherInSchool(teacherId, access.schoolId);
+    if (teacherError) {
+      res.status(400).json({ error: teacherError });
+      return;
+    }
   }
 
   const updates: Record<string, unknown> = {};

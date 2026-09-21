@@ -791,9 +791,15 @@ router.post("/schools/:id/request-deletion", requireAuth, async (req: Authentica
       title: "School Deletion Request",
       message: `School "${school.name}" has submitted a deletion request.`,
       metadata: { school_id: id, request_id: deletionRequest.id },
-      read: false,
+      // The column is is_read — `read` doesn't exist on notifications, so
+      // this insert failed (unchecked) and no super admin was ever told a
+      // school had asked to be deleted.
+      is_read: false,
     }));
-    await supabaseAdmin.from("notifications").insert(notifications);
+    const { error: notifyError } = await supabaseAdmin.from("notifications").insert(notifications);
+    if (notifyError) {
+      logger.error({ error: notifyError }, "Failed to notify super admins of school deletion request");
+    }
   }
 
   res.status(201).json({

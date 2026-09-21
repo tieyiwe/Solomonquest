@@ -1687,11 +1687,18 @@ router.get(
           .select("school_id, event_type, ai_model, input_tokens, output_tokens")
           .gte("created_at", since),
         supabaseAdmin.from("schools").select("id, name"),
+        // Revenue = installments actually paid in the window, by paid_at —
+        // the same definition the school-facing accounting P&L uses.
+        // Previously this summed whole tuition_payments with status='paid'
+        // by created_at, so a plan on installments contributed nothing until
+        // its final installment cleared, and then its entire amount landed in
+        // whichever window its *creation* fell into — a different revenue
+        // number than the school's own accounting page for the same period.
         supabaseAdmin
-          .from("tuition_payments")
-          .select("school_id, amount_cents, status")
+          .from("tuition_installments")
+          .select("amount_cents, tuition_payments!inner(school_id)")
           .eq("status", "paid")
-          .gte("created_at", since),
+          .gte("paid_at", since),
         supabaseAdmin
           .from("expenses")
           .select("school_id, amount_cents")
@@ -1755,7 +1762,9 @@ router.get(
       }
 
       for (const p of tuitionPayments ?? []) {
-        const schoolId = p.school_id as string;
+        const parent = (p as Record<string, any>).tuition_payments as { school_id?: string } | null;
+        const schoolId = parent?.school_id;
+        if (!schoolId) continue;
         const row = bySchool.get(schoolId) ?? emptyRow();
         row.tuitionRevenueCents += (p.amount_cents as number) ?? 0;
         bySchool.set(schoolId, row);

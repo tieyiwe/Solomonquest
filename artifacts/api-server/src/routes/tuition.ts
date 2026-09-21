@@ -216,6 +216,33 @@ router.post("/tuition-payments", requireAuth, requireSchoolFeature("tuition"), a
 
   const installmentCount = paymentMethod === "installments" ? plan.installment_count : 1;
 
+  // Idempotent per (student, plan): the apply page only remembers the
+  // payment it created in React state, so a reload (which is exactly what
+  // a Stripe redirect back to the page is) followed by clicking Pay again
+  // created a brand-new tuition_payments row + installments for the same
+  // plan. The student could then be charged twice for one course, and the
+  // accounting/balances view double-counted what they owed. Hand back the
+  // existing payment instead — the caller already handles "next unpaid
+  // installment" / "already fully paid" from there.
+  const { data: existingPayment } = await supabaseAdmin
+    .from("tuition_payments")
+    .select("*")
+    .eq("student_id", req.userId ?? "")
+    .eq("tuition_plan_id", plan.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingPayment) {
+    const { data: existingInstallments } = await supabaseAdmin
+      .from("tuition_installments")
+      .select("*")
+      .eq("payment_id", existingPayment.id)
+      .order("installment_number", { ascending: true });
+    res.status(200).json(mapPayment(existingPayment, existingInstallments ?? []));
+    return;
+  }
+
   const { data: payment, error: paymentError } = await supabaseAdmin
     .from("tuition_payments")
     .insert({
@@ -241,11 +268,22 @@ router.post("/tuition-payments", requireAuth, requireSchoolFeature("tuition"), a
 
   // Split the total evenly across installments (remainder goes on the last
   // one so cents always add up), due monthly starting today.
+  //
+  // Dates are built in UTC: `new Date(y, m, d)` is LOCAL midnight, and
+  // `.toISOString()` then converts to UTC — on any server ahead of UTC
+  // that lands on the previous calendar day, so every due_date was one day
+  // early. The day-of-month is also clamped so "Jan 31 + 1 month" is Feb 28,
+  // not Mar 3 (JS Date overflow), keeping installments exactly one calendar
+  // month apart.
   const base = Math.floor(plan.amount_cents / installmentCount);
   const remainder = plan.amount_cents - base * installmentCount;
   const now = new Date();
   const installmentRows = Array.from({ length: installmentCount }, (_, i) => {
-    const dueDate = new Date(now.getFullYear(), now.getMonth() + i, now.getDate());
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth() + i;
+    const lastDayOfTargetMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const day = Math.min(now.getUTCDate(), lastDayOfTargetMonth);
+    const dueDate = new Date(Date.UTC(year, month, day));
     return {
       payment_id: payment.id,
       installment_number: i + 1,
@@ -261,6 +299,12 @@ router.post("/tuition-payments", requireAuth, requireSchoolFeature("tuition"), a
     .select();
 
   if (installmentsError) {
+    // No transaction spans the two inserts, so a failed installments insert
+    // left an orphan tuition_payments row with zero installments — which
+    // then read as "Already fully paid" on checkout (no unpaid installment
+    // to find) and, with the idempotency check above, would be returned
+    // forever. Compensate by removing the payment row.
+    await supabaseAdmin.from("tuition_payments").delete().eq("id", payment.id);
     res.status(400).json({ error: installmentsError.message });
     return;
   }

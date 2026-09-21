@@ -280,11 +280,15 @@ router.post(
     }
 
     // Validate that all provided memberIds correspond to existing profiles
+    // IN THE CALLER'S SCHOOL. This only checked existence before, so any
+    // user could add any profile id on the platform to a channel or DM —
+    // a cross-tenant conversation with someone in a different school.
     if (memberIds.length > 0) {
-      const { data: existingProfiles, error: profilesError } = await supabaseAdmin
-        .from("profiles")
-        .select("id")
-        .in("id", memberIds);
+      let profilesQuery = supabaseAdmin.from("profiles").select("id").in("id", memberIds);
+      if (req.userRole !== "super_admin") {
+        profilesQuery = profilesQuery.eq("school_id", req.schoolId ?? "");
+      }
+      const { data: existingProfiles, error: profilesError } = await profilesQuery;
 
       if (profilesError) {
         res.status(500).json({ error: profilesError.message });
@@ -294,7 +298,7 @@ router.post(
       const foundIds = new Set((existingProfiles ?? []).map((p: { id: string }) => p.id));
       const missingId = memberIds.find((mid) => !foundIds.has(mid));
       if (missingId) {
-        res.status(400).json({ error: `Member not found: ${missingId}` });
+        res.status(400).json({ error: `Member not found in your school: ${missingId}` });
         return;
       }
     }

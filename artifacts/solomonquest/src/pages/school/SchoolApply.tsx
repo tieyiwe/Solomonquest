@@ -158,6 +158,16 @@ function TuitionSummary({ courseIds, accessToken }: { courseIds: string[]; acces
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to start payment");
         const data = await res.json();
         paymentId = data.id;
+
+        // The server now returns the student's existing payment for this
+        // plan (e.g. after a reload following a Stripe redirect) instead of
+        // creating a second one. If that payment is already settled there's
+        // nothing to check out — show it instead of erroring.
+        if (data.status === "paid") {
+          setPaymentByPlan((prev) => ({ ...prev, [plan.id]: { id: paymentId as string, result: data } }));
+          toast.success("This tuition is already paid in full");
+          return;
+        }
       }
 
       // Try real Stripe checkout first — once STRIPE_SECRET_KEY is set on
