@@ -483,8 +483,8 @@ export default function SchoolApply() {
     return (
       <PublicLayout>
         <div className="container mx-auto px-4 py-32 text-center max-w-lg">
-          <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto mb-6">
-            <AlertCircle className="h-8 w-8 text-amber-500" />
+          <div className="w-16 h-16 rounded-full bg-warning/10 border border-warning/30 flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="h-8 w-8 text-warning" />
           </div>
           <h1 className="text-2xl font-bold mb-3">Applications Are Currently Closed</h1>
           <p className="text-muted-foreground mb-8">

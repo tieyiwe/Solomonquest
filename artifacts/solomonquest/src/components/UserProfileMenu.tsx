@@ -33,7 +33,7 @@ export default function UserProfileMenu() {
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
             aria-label="User menu"
           >
             <Avatar user={avatarUser} size="md" />
@@ -76,7 +76,7 @@ export default function UserProfileMenu() {
 
           <DropdownMenuItem
             onClick={() => signOut()}
-            className="cursor-pointer text-red-600 focus:text-red-600"
+            className="cursor-pointer text-destructive focus:text-destructive"
           >
             Sign Out
           </DropdownMenuItem>

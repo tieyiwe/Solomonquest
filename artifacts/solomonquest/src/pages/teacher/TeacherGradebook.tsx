@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/common/States";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -86,10 +87,10 @@ function getInitials(firstName?: string | null, lastName?: string | null) {
 
 function gradeColor(pct: number | null) {
   if (pct == null) return "text-muted-foreground";
-  if (pct >= 90) return "text-green-600 font-semibold";
-  if (pct >= 70) return "text-blue-600 font-semibold";
-  if (pct >= 60) return "text-amber-600 font-semibold";
-  return "text-red-600 font-semibold";
+  if (pct >= 90) return "text-success font-semibold";
+  if (pct >= 70) return "text-primary font-semibold";
+  if (pct >= 60) return "text-warning font-semibold";
+  return "text-destructive font-semibold";
 }
 
 function calcAverage(grades: (number | null)[], maxPoints: (number | null)[]): number | null {
@@ -303,7 +304,7 @@ function GradingPanel({
                   href={selection.fileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
                 >
                   <FileText className="h-3.5 w-3.5" /> View PDF
                 </a>
@@ -544,7 +545,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
         {studentList.length === 0 ? (
           <div className="text-center py-10 border border-dashed rounded-lg">
             <Users className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
-            <p className="text-sm text-muted-foreground">No students enrolled yet.</p>
+            <EmptyState compact icon={Users} title="No students enrolled yet" description="Grades appear once students join this course." />
           </div>
         ) : (
           <div className="rounded-lg border overflow-x-auto">
@@ -652,7 +653,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span>Click any grade cell to open the grading panel.</span>
           <div className="flex items-center gap-1">
-            <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> Graded
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-success" /> Graded
           </div>
           <div className="flex items-center gap-1">
             <span className="inline-block w-2.5 h-2.5 rounded-full bg-muted-foreground/40" /> Pending

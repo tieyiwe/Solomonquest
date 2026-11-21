@@ -133,7 +133,7 @@ function ProfileForm() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900">My Profile</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">My Profile</h1>
         <p className="text-muted-foreground mt-0.5">Manage your personal information and profile picture.</p>
       </div>
 
@@ -170,7 +170,7 @@ function ProfileForm() {
             />
           </div>
           <div>
-            <p className="font-semibold text-gray-900">{fullName}</p>
+            <p className="font-semibold text-foreground">{fullName}</p>
             <p className="text-sm text-muted-foreground">{email}</p>
             {user?.role && (
               <Badge variant="outline" className="mt-1 capitalize">{roleLabel(user.role)}</Badge>
@@ -186,21 +186,21 @@ function ProfileForm() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>First Name</Label>
-              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+              <Label htmlFor="myprofilepage-first-name">First Name</Label>
+              <Input id="myprofilepage-first-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Last Name</Label>
-              <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+              <Label htmlFor="myprofilepage-last-name">Last Name</Label>
+              <Input id="myprofilepage-last-name" value={lastName} onChange={(e) => setLastName(e.target.value)} />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Email</Label>
-            <Input value={email} readOnly disabled className="bg-muted" />
+            <Label htmlFor="myprofilepage-email">Email</Label>
+            <Input id="myprofilepage-email" value={email} readOnly disabled className="bg-muted" />
           </div>
           <div className="space-y-1.5">
-            <Label>Bio</Label>
-            <Textarea
+            <Label htmlFor="myprofilepage-bio">Bio</Label>
+            <Textarea id="myprofilepage-bio"
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               rows={3}

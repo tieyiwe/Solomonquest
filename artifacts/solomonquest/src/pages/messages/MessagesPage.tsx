@@ -337,7 +337,7 @@ export default function MessagesPage() {
         flexDirection: isMobile ? "column" : "row",
         height: "calc(100vh - 64px)",
         fontFamily: "inherit",
-        background: "#f8fafc",
+        background: "hsl(var(--muted) / 0.6)",
         overflow: isMobile ? "auto" : "hidden",
       }}
     >
@@ -348,9 +348,9 @@ export default function MessagesPage() {
       <div
         style={{
           width: isMobile ? "100%" : 200,
-          background: "#fff",
-          borderRight: isMobile ? "none" : "1px solid #e2e8f0",
-          borderBottom: isMobile ? "1px solid #e2e8f0" : "none",
+          background: "hsl(var(--card))",
+          borderRight: isMobile ? "none" : "1px solid hsl(var(--border))",
+          borderBottom: isMobile ? "1px solid hsl(var(--border))" : "none",
           display: "flex",
           flexDirection: "column",
           padding: "16px 8px",
@@ -363,8 +363,8 @@ export default function MessagesPage() {
           style={{
             width: "100%",
             marginBottom: 12,
-            background: "#6366f1",
-            color: "#fff",
+            background: "hsl(var(--primary))",
+            color: "hsl(var(--primary-foreground))",
             fontWeight: 600,
             borderRadius: 8,
             display: "flex",
@@ -391,8 +391,8 @@ export default function MessagesPage() {
             padding: "8px 12px",
             borderRadius: 8,
             border: "none",
-            background: folder === "inbox" ? "#eef2ff" : "transparent",
-            color: folder === "inbox" ? "#6366f1" : "#374151",
+            background: folder === "inbox" ? "hsl(var(--primary) / 0.1)" : "transparent",
+            color: folder === "inbox" ? "hsl(var(--primary))" : "hsl(var(--foreground) / 0.85)",
             fontWeight: folder === "inbox" ? 700 : 400,
             cursor: "pointer",
             width: "100%",
@@ -405,8 +405,8 @@ export default function MessagesPage() {
           {unreadCount > 0 && (
             <span
               style={{
-                background: "#f97316",
-                color: "#fff",
+                background: "hsl(var(--gold))",
+                color: "hsl(var(--gold-foreground))",
                 borderRadius: "50%",
                 width: 20,
                 height: 20,
@@ -436,8 +436,8 @@ export default function MessagesPage() {
             padding: "8px 12px",
             borderRadius: 8,
             border: "none",
-            background: folder === "sent" ? "#eef2ff" : "transparent",
-            color: folder === "sent" ? "#6366f1" : "#374151",
+            background: folder === "sent" ? "hsl(var(--primary) / 0.1)" : "transparent",
+            color: folder === "sent" ? "hsl(var(--primary))" : "hsl(var(--foreground) / 0.85)",
             fontWeight: folder === "sent" ? 700 : 400,
             cursor: "pointer",
             width: "100%",
@@ -463,8 +463,8 @@ export default function MessagesPage() {
             padding: "8px 12px",
             borderRadius: 8,
             border: "none",
-            background: folder === "search" ? "#eef2ff" : "transparent",
-            color: folder === "search" ? "#6366f1" : "#374151",
+            background: folder === "search" ? "hsl(var(--primary) / 0.1)" : "transparent",
+            color: folder === "search" ? "hsl(var(--primary))" : "hsl(var(--foreground) / 0.85)",
             fontWeight: folder === "search" ? 700 : 400,
             cursor: "pointer",
             width: "100%",
@@ -482,7 +482,7 @@ export default function MessagesPage() {
             <p
               style={{
                 fontSize: 11,
-                color: "#9ca3af",
+                color: "hsl(var(--muted-foreground))",
                 fontWeight: 600,
                 textTransform: "uppercase",
                 letterSpacing: "0.08em",
@@ -511,7 +511,7 @@ export default function MessagesPage() {
                   width: "100%",
                   textAlign: "left",
                   fontSize: 13,
-                  color: "#374151",
+                  color: "hsl(var(--foreground) / 0.85)",
                 }}
               >
                 <AvatarCircle name={c.name} size={24} />
@@ -536,8 +536,8 @@ export default function MessagesPage() {
       <div
         style={{
           width: isMobile ? "100%" : 360,
-          background: "#fff",
-          borderRight: isMobile ? "none" : "1px solid #e2e8f0",
+          background: "hsl(var(--card))",
+          borderRight: isMobile ? "none" : "1px solid hsl(var(--border))",
           display: "flex",
           flexDirection: "column",
           flexShrink: 0,
@@ -549,7 +549,7 @@ export default function MessagesPage() {
           <div
             style={{
               padding: "12px",
-              borderBottom: "1px solid #e2e8f0",
+              borderBottom: "1px solid hsl(var(--border))",
               display: "flex",
               gap: 8,
             }}
@@ -571,10 +571,10 @@ export default function MessagesPage() {
         <div
           style={{
             padding: "12px 16px",
-            borderBottom: "1px solid #f1f5f9",
+            borderBottom: "1px solid hsl(var(--border))",
             fontWeight: 600,
             fontSize: 15,
-            color: "#1e293b",
+            color: "hsl(var(--foreground))",
           }}
         >
           {folder === "inbox"
@@ -593,7 +593,7 @@ export default function MessagesPage() {
                 alignItems: "center",
                 justifyContent: "center",
                 height: 120,
-                color: "#9ca3af",
+                color: "hsl(var(--muted-foreground))",
                 fontSize: 14,
               }}
             >
@@ -607,7 +607,7 @@ export default function MessagesPage() {
                 alignItems: "center",
                 justifyContent: "center",
                 height: 200,
-                color: "#9ca3af",
+                color: "hsl(var(--muted-foreground))",
                 gap: 8,
               }}
             >
@@ -632,12 +632,12 @@ export default function MessagesPage() {
                     gap: 10,
                     padding: "12px 16px",
                     background: isSelected
-                      ? "#eef2ff"
+                      ? "hsl(var(--primary) / 0.1)"
                       : isUnread
-                      ? "#fafafa"
-                      : "#fff",
+                      ? "hsl(var(--primary) / 0.04)"
+                      : "hsl(var(--card))",
                     border: "none",
-                    borderBottom: "1px solid #f1f5f9",
+                    borderBottom: "1px solid hsl(var(--border))",
                     cursor: "pointer",
                     width: "100%",
                     textAlign: "left",
@@ -646,12 +646,12 @@ export default function MessagesPage() {
                   onMouseEnter={(e) => {
                     if (!isSelected)
                       (e.currentTarget as HTMLElement).style.background =
-                        "#f8fafc";
+                        "hsl(var(--muted) / 0.6)";
                   }}
                   onMouseLeave={(e) => {
                     if (!isSelected)
                       (e.currentTarget as HTMLElement).style.background =
-                        isUnread ? "#fafafa" : "#fff";
+                        isUnread ? "hsl(var(--primary) / 0.04)" : "hsl(var(--card))";
                   }}
                 >
                   <AvatarCircle name={displayName} />
@@ -668,7 +668,7 @@ export default function MessagesPage() {
                         style={{
                           fontWeight: isUnread ? 700 : 500,
                           fontSize: 14,
-                          color: "#1e293b",
+                          color: "hsl(var(--foreground))",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
@@ -677,7 +677,7 @@ export default function MessagesPage() {
                       >
                         {displayName}
                       </span>
-                      <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", flexShrink: 0 }}>
                         {formatDate(msg.created_at)}
                       </span>
                     </div>
@@ -685,7 +685,7 @@ export default function MessagesPage() {
                       style={{
                         fontSize: 13,
                         fontWeight: isUnread ? 600 : 400,
-                        color: "#374151",
+                        color: "hsl(var(--foreground) / 0.85)",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
@@ -697,7 +697,7 @@ export default function MessagesPage() {
                     <div
                       style={{
                         fontSize: 12,
-                        color: "#6b7280",
+                        color: "hsl(var(--muted-foreground))",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
@@ -712,7 +712,7 @@ export default function MessagesPage() {
                         width: 8,
                         height: 8,
                         borderRadius: "50%",
-                        background: "#f97316",
+                        background: "hsl(var(--gold))",
                         flexShrink: 0,
                         marginTop: 6,
                       }}
@@ -740,7 +740,7 @@ export default function MessagesPage() {
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              color: "#9ca3af",
+              color: "hsl(var(--muted-foreground))",
               gap: 12,
             }}
           >
@@ -753,7 +753,7 @@ export default function MessagesPage() {
               <button
                 onClick={() => openCompose()}
                 style={{
-                  color: "#6366f1",
+                  color: "hsl(var(--primary))",
                   background: "none",
                   border: "none",
                   cursor: "pointer",
@@ -774,7 +774,7 @@ export default function MessagesPage() {
               flex: 1,
               overflowY: "auto",
               padding: "32px 40px",
-              background: "#fff",
+              background: "hsl(var(--card))",
             }}
           >
             <div
@@ -789,7 +789,7 @@ export default function MessagesPage() {
                 style={{
                   fontSize: 22,
                   fontWeight: 700,
-                  color: "#1e293b",
+                  color: "hsl(var(--foreground))",
                   lineHeight: 1.3,
                   flex: 1,
                   marginRight: 16,
@@ -822,17 +822,17 @@ export default function MessagesPage() {
 
             <div
               style={{
-                background: "#f8fafc",
+                background: "hsl(var(--muted) / 0.6)",
                 borderRadius: 10,
                 padding: "16px 20px",
                 marginBottom: 24,
                 fontSize: 14,
-                color: "#374151",
+                color: "hsl(var(--foreground) / 0.85)",
                 lineHeight: 1.7,
               }}
             >
               <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                <span style={{ color: "#9ca3af", width: 40 }}>From:</span>
+                <span style={{ color: "hsl(var(--muted-foreground))", width: 40 }}>From:</span>
                 <span style={{ fontWeight: 500 }}>
                   {selectedMessage.from_name ?? selectedMessage.from_user_id}
                   {selectedMessage.from_email
@@ -841,7 +841,7 @@ export default function MessagesPage() {
                 </span>
               </div>
               <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                <span style={{ color: "#9ca3af", width: 40 }}>To:</span>
+                <span style={{ color: "hsl(var(--muted-foreground))", width: 40 }}>To:</span>
                 <span style={{ fontWeight: 500 }}>
                   {selectedMessage.to_name ?? selectedMessage.to_user_id}
                   {selectedMessage.to_email
@@ -850,7 +850,7 @@ export default function MessagesPage() {
                 </span>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <span style={{ color: "#9ca3af", width: 40 }}>Date:</span>
+                <span style={{ color: "hsl(var(--muted-foreground))", width: 40 }}>Date:</span>
                 <span>
                   {new Date(selectedMessage.created_at).toLocaleString()}
                 </span>
@@ -860,7 +860,7 @@ export default function MessagesPage() {
             <div
               style={{
                 fontSize: 15,
-                color: "#1e293b",
+                color: "hsl(var(--foreground))",
                 lineHeight: 1.8,
                 whiteSpace: "pre-wrap",
               }}
@@ -876,7 +876,7 @@ export default function MessagesPage() {
               flex: 1,
               overflowY: "auto",
               padding: "32px 40px",
-              background: "#fff",
+              background: "hsl(var(--card))",
             }}
           >
             <div
@@ -888,7 +888,7 @@ export default function MessagesPage() {
               }}
             >
               <h2
-                style={{ fontSize: 20, fontWeight: 700, color: "#1e293b" }}
+                style={{ fontSize: 20, fontWeight: 700, color: "hsl(var(--foreground))" }}
               >
                 {replyContext ? "Reply" : "New Message"}
               </h2>
@@ -908,16 +908,16 @@ export default function MessagesPage() {
             {replyContext && (
               <div
                 style={{
-                  background: "#f8fafc",
-                  borderLeft: "3px solid #6366f1",
+                  background: "hsl(var(--muted) / 0.6)",
+                  borderLeft: "3px solid hsl(var(--primary))",
                   padding: "10px 16px",
                   marginBottom: 20,
                   borderRadius: "0 6px 6px 0",
                   fontSize: 13,
-                  color: "#6b7280",
+                  color: "hsl(var(--muted-foreground))",
                 }}
               >
-                <p style={{ fontWeight: 600, color: "#374151", marginBottom: 2 }}>
+                <p style={{ fontWeight: 600, color: "hsl(var(--foreground) / 0.85)", marginBottom: 2 }}>
                   Replying to: {replyContext.subject}
                 </p>
                 <p>
@@ -934,7 +934,7 @@ export default function MessagesPage() {
                   style={{
                     fontSize: 13,
                     fontWeight: 500,
-                    color: "#374151",
+                    color: "hsl(var(--foreground) / 0.85)",
                     display: "block",
                     marginBottom: 6,
                   }}
@@ -960,8 +960,8 @@ export default function MessagesPage() {
                       top: "100%",
                       left: 0,
                       right: 0,
-                      background: "#fff",
-                      border: "1px solid #e2e8f0",
+                      background: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
                       borderRadius: 8,
                       boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
                       zIndex: 100,
@@ -985,11 +985,11 @@ export default function MessagesPage() {
                           textAlign: "left",
                           cursor: "pointer",
                           fontSize: 14,
-                          color: "#1e293b",
+                          color: "hsl(var(--foreground))",
                         }}
                         onMouseEnter={(e) => {
                           (e.currentTarget as HTMLElement).style.background =
-                            "#f8fafc";
+                            "hsl(var(--muted) / 0.6)";
                         }}
                         onMouseLeave={(e) => {
                           (e.currentTarget as HTMLElement).style.background =
@@ -999,7 +999,7 @@ export default function MessagesPage() {
                         <AvatarCircle name={u.name} size={28} />
                         <div>
                           <div style={{ fontWeight: 500 }}>{u.name}</div>
-                          <div style={{ fontSize: 12, color: "#6b7280" }}>
+                          <div style={{ fontSize: 12, color: "hsl(var(--muted-foreground))" }}>
                             {u.internal_email}
                           </div>
                         </div>
@@ -1014,11 +1014,11 @@ export default function MessagesPage() {
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 6,
-                      background: "#eef2ff",
+                      background: "hsl(var(--primary) / 0.1)",
                       borderRadius: 20,
                       padding: "4px 10px",
                       fontSize: 13,
-                      color: "#6366f1",
+                      color: "hsl(var(--primary))",
                       fontWeight: 500,
                     }}
                   >
@@ -1033,7 +1033,7 @@ export default function MessagesPage() {
                         background: "none",
                         border: "none",
                         cursor: "pointer",
-                        color: "#6366f1",
+                        color: "hsl(var(--primary))",
                         padding: 0,
                         lineHeight: 1,
                         fontSize: 16,
@@ -1051,7 +1051,7 @@ export default function MessagesPage() {
                   style={{
                     fontSize: 13,
                     fontWeight: 500,
-                    color: "#374151",
+                    color: "hsl(var(--foreground) / 0.85)",
                     display: "block",
                     marginBottom: 6,
                   }}
@@ -1071,7 +1071,7 @@ export default function MessagesPage() {
                   style={{
                     fontSize: 13,
                     fontWeight: 500,
-                    color: "#374151",
+                    color: "hsl(var(--foreground) / 0.85)",
                     display: "block",
                     marginBottom: 6,
                   }}
@@ -1092,8 +1092,8 @@ export default function MessagesPage() {
                   onClick={handleSend}
                   disabled={sending}
                   style={{
-                    background: "#6366f1",
-                    color: "#fff",
+                    background: "hsl(var(--primary))",
+                    color: "hsl(var(--primary-foreground))",
                     fontWeight: 600,
                     display: "flex",
                     alignItems: "center",

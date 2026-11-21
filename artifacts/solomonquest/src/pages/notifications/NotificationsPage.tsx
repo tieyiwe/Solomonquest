@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Bell, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
+import PageHeader from "@/components/layout/PageHeader";
 
 interface NotificationItem {
   id: string;
@@ -74,16 +75,17 @@ function NotificationsList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Notifications</h1>
-          <p className="text-muted-foreground mt-0.5">Everything you've been notified about.</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={markAllRead}>
-          <CheckCheck className="mr-2 h-4 w-4" />
-          Mark all read
-        </Button>
-      </div>
+      <PageHeader
+        icon={Bell}
+        title="Notifications"
+        description="Everything you've been notified about."
+        actions={
+          <Button variant="outline" size="sm" onClick={markAllRead}>
+            <CheckCheck className="mr-2 h-4 w-4" />
+            Mark all read
+          </Button>
+        }
+      />
 
       <Card className="border-0 shadow-sm">
         <CardContent className="p-0">
@@ -107,18 +109,18 @@ function NotificationsList() {
                 <li key={notif.id}>
                   <button
                     onClick={() => handleClick(notif)}
-                    className={`w-full text-left flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-gray-50 ${
-                      !notif.read ? "bg-orange-50/60" : ""
+                    className={`w-full text-left flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50 ${
+                      !notif.read ? "bg-warning/10" : ""
                     }`}
                   >
                     <span
                       className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
-                        notif.read ? "bg-gray-300" : "bg-orange-500"
+                        notif.read ? "bg-muted-foreground/30" : "bg-warning"
                       }`}
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-800 leading-snug">{notif.message}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">{timeAgo(notif.created_at)}</p>
+                      <p className="text-sm text-foreground leading-snug">{notif.message}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{timeAgo(notif.created_at)}</p>
                     </div>
                   </button>
                 </li>

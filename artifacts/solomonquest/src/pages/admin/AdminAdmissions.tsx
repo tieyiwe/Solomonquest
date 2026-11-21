@@ -70,32 +70,32 @@ const STATUS_CONFIG: Record<
 > = {
   received: {
     label: "Received",
-    color: "text-yellow-700",
-    badgeClass: "bg-yellow-50 text-yellow-700 border-yellow-200",
+    color: "text-warning",
+    badgeClass: "bg-warning/10 text-warning border-warning/30",
     icon: Clock,
   },
   under_review: {
     label: "Under Review",
-    color: "text-blue-700",
-    badgeClass: "bg-blue-50 text-blue-700 border-blue-200",
+    color: "text-primary",
+    badgeClass: "bg-primary/10 text-primary border-primary/30",
     icon: AlertCircle,
   },
   finalizing: {
     label: "Finalizing",
-    color: "text-purple-700",
-    badgeClass: "bg-purple-50 text-purple-700 border-purple-200",
+    color: "text-chart-5",
+    badgeClass: "bg-chart-5/10 text-chart-5 border-chart-5/30",
     icon: FileText,
   },
   approved: {
     label: "Approved",
-    color: "text-green-700",
-    badgeClass: "bg-green-50 text-green-700 border-green-200",
+    color: "text-success",
+    badgeClass: "bg-success/10 text-success border-success/30",
     icon: CheckCircle2,
   },
   rejected: {
     label: "Rejected",
-    color: "text-red-700",
-    badgeClass: "bg-red-50 text-red-700 border-red-200",
+    color: "text-destructive",
+    badgeClass: "bg-destructive/10 text-destructive border-destructive/30",
     icon: XCircle,
   },
 };
@@ -154,7 +154,7 @@ function ApplicationDetailPanel({
               {(app.applicantName || "?")[0].toUpperCase()}
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900 text-lg">
+              <h3 className="font-semibold text-foreground text-lg">
                 {app.applicantName || "Unknown Applicant"}
               </h3>
               <p className="text-sm text-muted-foreground">Application ID: {app.id.slice(0, 8)}...</p>
@@ -205,11 +205,11 @@ function ApplicationDetailPanel({
                   <div key={s} className="flex items-center gap-1 flex-1">
                     <div
                       className={`h-2 flex-1 rounded-full ${
-                        isDone ? "bg-primary" : "bg-gray-200"
+                        isDone ? "bg-primary" : "bg-muted"
                       }`}
                     />
                     {i < STATUS_PIPELINE.length - 1 && (
-                      <ChevronRight className="h-3 w-3 text-gray-300 shrink-0" />
+                      <ChevronRight className="h-3 w-3 text-muted-foreground/60 shrink-0" />
                     )}
                   </div>
                 );
@@ -231,8 +231,8 @@ function ApplicationDetailPanel({
 
           {/* Notes */}
           <div className="space-y-1.5">
-            <Label>Add Notes</Label>
-            <Textarea
+            <Label htmlFor="adminadmissions-add-notes">Add Notes</Label>
+            <Textarea id="adminadmissions-add-notes"
               placeholder="Internal notes about this application..."
               rows={3}
               value={notes}
@@ -256,7 +256,7 @@ function ApplicationDetailPanel({
               )}
               <Button
                 variant="outline"
-                className="w-full border-green-300 text-green-700 hover:bg-green-50"
+                className="w-full border-success/30 text-success hover:bg-success/20"
                 onClick={() => onStatusChange(app.id, "approved", notes)}
                 disabled={updating}
               >
@@ -265,7 +265,7 @@ function ApplicationDetailPanel({
               </Button>
               <Button
                 variant="outline"
-                className="w-full border-red-300 text-red-700 hover:bg-red-50"
+                className="w-full border-destructive/30 text-destructive hover:bg-destructive/20"
                 onClick={() => onStatusChange(app.id, "rejected", notes)}
                 disabled={updating}
               >
@@ -276,17 +276,17 @@ function ApplicationDetailPanel({
           )}
 
           {isApproved && (
-            <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center">
-              <CheckCircle2 className="h-6 w-6 text-green-600 mx-auto mb-1" />
-              <p className="text-sm font-medium text-green-700">Application Approved</p>
+            <div className="rounded-lg bg-success/10 border border-success/30 p-4 text-center">
+              <CheckCircle2 className="h-6 w-6 text-success mx-auto mb-1" />
+              <p className="text-sm font-medium text-success">Application Approved</p>
             </div>
           )}
 
           {isRejected && (
             <div className="space-y-2">
-              <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-center">
-                <XCircle className="h-6 w-6 text-red-600 mx-auto mb-1" />
-                <p className="text-sm font-medium text-red-700">Application Rejected</p>
+              <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-4 text-center">
+                <XCircle className="h-6 w-6 text-destructive mx-auto mb-1" />
+                <p className="text-sm font-medium text-destructive">Application Rejected</p>
               </div>
               <Button
                 variant="outline"
@@ -386,7 +386,7 @@ export default function AdminAdmissions() {
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Admissions</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Admissions</h1>
             <p className="text-muted-foreground mt-0.5">
               Review and manage student applications.
             </p>
@@ -396,7 +396,7 @@ export default function AdminAdmissions() {
               onClick={togglePublish}
               disabled={publishing}
               variant={isOpen ? "outline" : "default"}
-              className={isOpen ? "border-green-300 text-green-700 hover:bg-green-50" : ""}
+              className={isOpen ? "border-success/30 text-success hover:bg-success/20" : ""}
             >
               {publishing ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -407,7 +407,7 @@ export default function AdminAdmissions() {
               )}
               {isOpen ? "Close Applications" : "Publish Now"}
             </Button>
-            <span className={`text-xs font-medium ${isOpen ? "text-green-600" : "text-muted-foreground"}`}>
+            <span className={`text-xs font-medium ${isOpen ? "text-success" : "text-muted-foreground"}`}>
               {isOpen ? "Applications are LIVE" : "Applications are closed"}
             </span>
           </div>
@@ -416,7 +416,7 @@ export default function AdminAdmissions() {
         {/* Summary cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {FILTER_TABS.map((tab) => {
-            const cfg = STATUS_CONFIG[tab.value] || { badgeClass: "bg-gray-50 text-gray-700 border-gray-200", icon: ClipboardList };
+            const cfg = STATUS_CONFIG[tab.value] || { badgeClass: "bg-muted/50 text-foreground/80 border-border", icon: ClipboardList };
             const Icon = cfg.icon || ClipboardList;
             const count = counts[tab.value as keyof typeof counts] ?? 0;
             return (
@@ -426,10 +426,10 @@ export default function AdminAdmissions() {
                 className={`text-left p-3 rounded-xl border transition-all ${
                   statusFilter === tab.value
                     ? "border-primary bg-primary/5 ring-1 ring-primary"
-                    : "border-gray-200 bg-white hover:border-gray-300"
+                    : "border-border bg-card hover:border-input"
                 }`}
               >
-                <p className="text-2xl font-bold text-gray-900">{count}</p>
+                <p className="text-2xl font-bold text-foreground">{count}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{tab.label}</p>
               </button>
             );
@@ -445,13 +445,13 @@ export default function AdminAdmissions() {
               className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                 statusFilter === tab.value
                   ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-gray-700"
+                  : "border-transparent text-muted-foreground hover:text-foreground/80"
               }`}
             >
               {tab.label}
               <span
                 className={`ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs font-semibold ${
-                  statusFilter === tab.value ? "bg-primary text-white" : "bg-gray-100 text-gray-600"
+                  statusFilter === tab.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
                 }`}
               >
                 {counts[tab.value as keyof typeof counts] ?? 0}
@@ -490,7 +490,7 @@ export default function AdminAdmissions() {
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50">
+                  <TableRow className="bg-muted/30">
                     <TableHead className="font-semibold">Applicant</TableHead>
                     <TableHead className="font-semibold">Program</TableHead>
                     <TableHead className="font-semibold">Status</TableHead>
@@ -504,7 +504,7 @@ export default function AdminAdmissions() {
                     return (
                       <TableRow
                         key={app.id}
-                        className="hover:bg-gray-50/50 cursor-pointer"
+                        className="hover:bg-muted/30 cursor-pointer"
                         onClick={() => setSelectedApp(app)}
                       >
                         <TableCell>
@@ -512,7 +512,7 @@ export default function AdminAdmissions() {
                             <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
                               {(app.applicantName || "?")[0].toUpperCase()}
                             </div>
-                            <span className="font-medium text-sm text-gray-900">
+                            <span className="font-medium text-sm text-foreground">
                               {app.applicantName || "Unknown"}
                             </span>
                           </div>
@@ -545,7 +545,7 @@ export default function AdminAdmissions() {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                                className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/20"
                                 onClick={() => handleStatusChange(app.id, "rejected")}
                                 disabled={updateStatus.isPending}
                               >

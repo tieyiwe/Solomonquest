@@ -38,12 +38,13 @@ const SIZE_EMOJI: Record<NonNullable<AvatarProps["size"]>, string> = {
 };
 
 const BG_COLORS = [
-  "bg-indigo-500",
-  "bg-purple-500",
-  "bg-blue-500",
-  "bg-green-500",
-  "bg-orange-500",
-  "bg-red-500",
+  // Categorical identity colors (same in light and dark; all >= 4.5:1 with white initials)
+  "bg-indigo-600",
+  "bg-violet-600",
+  "bg-sky-700",
+  "bg-emerald-700",
+  "bg-amber-700",
+  "bg-rose-600",
   "bg-pink-500",
   "bg-teal-500",
 ];
@@ -110,7 +111,7 @@ export default function Avatar({ user, size = "md", className = "", onClick }: A
       <button
         type="button"
         onClick={onClick}
-        className={`rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${className}`}
+        className={`rounded-full focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${className}`}
         style={{ width: px, height: px }}
         aria-label="Avatar"
       >

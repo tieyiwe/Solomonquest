@@ -169,9 +169,9 @@ export default function Login() {
               </div>
 
               {resetSent ? (
-                <div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800 p-4 space-y-1">
-                  <p className="font-semibold text-green-800 dark:text-green-300">Check your email</p>
-                  <p className="text-sm text-green-700 dark:text-green-400">
+                <div className="rounded-lg border border-success/30 bg-success/10 p-4 space-y-1">
+                  <p className="font-semibold text-success ">Check your email</p>
+                  <p className="text-sm text-success ">
                     We've sent a password reset link to <strong>{resetForm.getValues("email")}</strong>.
                     Check your inbox and follow the link to set a new password.
                   </p>
@@ -297,10 +297,10 @@ export default function Login() {
         </div>
       </div>
 
-      <div className="hidden md:block bg-primary relative overflow-hidden">
+      <div className="hidden md:block bg-brand relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1497633762265-9d179a990aa6?q=80&w=2073&auto=format&fit=crop')] bg-cover bg-center opacity-20 mix-blend-overlay"></div>
-        <div className="absolute inset-0 flex flex-col justify-end p-12 text-primary-foreground z-10 bg-gradient-to-t from-primary/90 to-transparent">
-          <blockquote className="space-y-2 max-w-lg">
+        <div className="absolute inset-0 flex flex-col justify-end p-12 text-white z-10 bg-gradient-to-t from-black/35 to-transparent">
+          <blockquote className="space-y-2 max-w-lg border-l-4 border-gold pl-5">
             <p className="text-2xl font-medium leading-snug">
               "The platform has completely transformed how our faculty manages coursework and communicates with students."
             </p>

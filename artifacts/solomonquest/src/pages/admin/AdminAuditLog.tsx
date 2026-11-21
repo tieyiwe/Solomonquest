@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import { ArrowLeft, History, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
+import { EmptyState } from "@/components/common/States";
 
 interface AuditEntry {
   id: string;
@@ -57,11 +58,11 @@ function actionLabel(action: string) {
 }
 
 function actionBadgeClass(action: string) {
-  if (action.includes("delete") || action.includes("danger")) return "bg-red-100 text-red-700 border-red-200";
-  if (action.includes("password") || action.includes("role")) return "bg-amber-100 text-amber-700 border-amber-200";
-  if (action.includes("invitation")) return "bg-blue-100 text-blue-700 border-blue-200";
-  if (action.includes("login") || action.includes("logout")) return "bg-gray-100 text-gray-600 border-gray-200";
-  return "bg-violet-100 text-violet-700 border-violet-200";
+  if (action.includes("delete") || action.includes("danger")) return "bg-destructive/10 text-destructive border-destructive/30";
+  if (action.includes("password") || action.includes("role")) return "bg-warning/10 text-warning border-warning/30";
+  if (action.includes("invitation")) return "bg-primary/10 text-primary border-primary/30";
+  if (action.includes("login") || action.includes("logout")) return "bg-muted text-muted-foreground border-border";
+  return "bg-chart-5/10 text-chart-5 border-chart-5/30";
 }
 
 export default function AdminAuditLog() {
@@ -121,7 +122,7 @@ export default function AdminAuditLog() {
       </div>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <History className="h-6 w-6" />
             Audit Log
           </h1>
@@ -212,11 +213,11 @@ export default function AdminAuditLog() {
                 ))}
               </div>
             ) : visibleEntries.length === 0 ? (
-              <p className="p-10 text-center text-sm text-muted-foreground">No matching activity found.</p>
+              <EmptyState compact icon={History} title="No matching activity" description="Try widening the date range or clearing filters." className="m-4" />
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50">
+                  <TableRow className="bg-muted/30">
                     <TableHead className="font-semibold">Action</TableHead>
                     <TableHead className="font-semibold">Target</TableHead>
                     <TableHead className="font-semibold">Performed By</TableHead>
@@ -225,7 +226,7 @@ export default function AdminAuditLog() {
                 </TableHeader>
                 <TableBody>
                   {visibleEntries.map((entry) => (
-                    <TableRow key={entry.id} className="hover:bg-gray-50/50">
+                    <TableRow key={entry.id} className="hover:bg-muted/30">
                       <TableCell>
                         <Badge className={`border text-xs ${actionBadgeClass(entry.action)}`}>
                           {actionLabel(entry.action)}

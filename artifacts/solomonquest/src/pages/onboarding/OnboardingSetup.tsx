@@ -102,7 +102,7 @@ export default function OnboardingSetup() {
             </>
           ) : (
             <>
-              <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto" />
+              <CheckCircle2 className="h-10 w-10 text-success mx-auto" />
               <h1 className="text-2xl font-bold tracking-tight text-foreground">Request approved!</h1>
               <p className="text-muted-foreground">
                 "{existingRequest.suggestedSchoolName}" has been created. Refresh or log back in to access your

@@ -78,10 +78,10 @@ async function apiFetch(path: string, options: RequestInit = {}) {
 }
 
 const statusStyles: Record<Term["status"], string> = {
-  upcoming: "bg-blue-100 text-blue-700 border-blue-200",
-  active: "bg-green-100 text-green-700 border-green-200",
-  completed: "bg-gray-100 text-gray-600 border-gray-200",
-  archived: "bg-gray-100 text-gray-400 border-gray-200",
+  upcoming: "bg-primary/10 text-primary border-primary/30",
+  active: "bg-success/10 text-success border-success/30",
+  completed: "bg-muted text-muted-foreground border-border",
+  archived: "bg-muted text-muted-foreground border-border",
 };
 
 interface TermFormData {
@@ -152,8 +152,8 @@ function TermFormDialog({
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label>Name</Label>
-            <Input
+            <Label htmlFor="adminterms-name">Name</Label>
+            <Input id="adminterms-name"
               placeholder="e.g. Fall 2025, Quarter 1, Trimester 2"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -161,16 +161,16 @@ function TermFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Start Date</Label>
-              <Input
+              <Label htmlFor="adminterms-start-date">Start Date</Label>
+              <Input id="adminterms-start-date"
                 type="date"
                 value={form.startDate}
                 onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>End Date</Label>
-              <Input
+              <Label htmlFor="adminterms-end-date">End Date</Label>
+              <Input id="adminterms-end-date"
                 type="date"
                 value={form.endDate}
                 onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))}
@@ -178,9 +178,9 @@ function TermFormDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Status</Label>
+            <Label htmlFor="adminterms-status">Status</Label>
             <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v as Term["status"] }))}>
-              <SelectTrigger>
+              <SelectTrigger id="adminterms-status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -298,7 +298,7 @@ export default function AdminTerms() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
               <CalendarRange className="h-6 w-6" />
               Terms & Scheduling
             </h1>
@@ -332,7 +332,7 @@ export default function AdminTerms() {
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50">
+                  <TableRow className="bg-muted/30">
                     <TableHead className="font-semibold">Name</TableHead>
                     <TableHead className="font-semibold">Dates</TableHead>
                     <TableHead className="font-semibold">Status</TableHead>
@@ -341,7 +341,7 @@ export default function AdminTerms() {
                 </TableHeader>
                 <TableBody>
                   {terms.map((term) => (
-                    <TableRow key={term.id} className="hover:bg-gray-50/50">
+                    <TableRow key={term.id} className="hover:bg-muted/30">
                       <TableCell className="font-medium text-sm">{term.name}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {new Date(term.startDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
@@ -367,7 +367,7 @@ export default function AdminTerms() {
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50">
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/20">
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </AlertDialogTrigger>

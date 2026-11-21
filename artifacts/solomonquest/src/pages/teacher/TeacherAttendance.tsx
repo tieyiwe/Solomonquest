@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "wouter";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, CalendarCheck } from "lucide-react";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import { useGetMyCourses } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import PageHeader from "@/components/layout/PageHeader";
 
 interface StudentAttendance {
   id: string;
@@ -139,11 +140,12 @@ export default function TeacherAttendance() {
           </button>
         </Link>
       </div>
-      <div className="p-6 space-y-6 max-w-5xl mx-auto">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Attendance</h1>
-          <p className="text-gray-500 text-sm mt-1">View and manage student attendance per class session.</p>
-        </div>
+      <div className="space-y-6 max-w-5xl mx-auto">
+        <PageHeader
+          icon={CalendarCheck}
+          title="Attendance"
+          description="View and manage student attendance per class session."
+        />
 
         {/* Filters */}
         <Card>
@@ -169,8 +171,8 @@ export default function TeacherAttendance() {
             </div>
 
             <div className="space-y-1">
-              <Label>Date</Label>
-              <Input
+              <Label htmlFor="teacherattendance-date">Date</Label>
+              <Input id="teacherattendance-date"
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
@@ -198,9 +200,9 @@ export default function TeacherAttendance() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div className="w-full bg-muted rounded-full h-2.5">
                 <div
-                  className="bg-green-500 h-2.5 rounded-full transition-all"
+                  className="bg-success h-2.5 rounded-full transition-all"
                   style={{ width: `${pct}%` }}
                 />
               </div>
@@ -210,7 +212,7 @@ export default function TeacherAttendance() {
 
         {/* Attendance Table */}
         {!selectedCourse && (
-          <p className="text-gray-500 text-sm">Select a course to view attendance.</p>
+          <p className="text-muted-foreground text-sm">Select a course to view attendance.</p>
         )}
 
         {selectedCourse && loadingAttendance && (
@@ -220,7 +222,7 @@ export default function TeacherAttendance() {
         )}
 
         {attError && (
-          <p className="text-red-600 text-sm">{attError}</p>
+          <p className="text-destructive text-sm">{attError}</p>
         )}
 
         {attendance && !loadingAttendance && (
@@ -238,7 +240,7 @@ export default function TeacherAttendance() {
               <TableBody>
                 {attendance.students.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-gray-500 py-8">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                       No students enrolled in this course.
                     </TableCell>
                   </TableRow>
@@ -246,24 +248,24 @@ export default function TeacherAttendance() {
                 {attendance.students.map((student) => (
                   <TableRow key={student.id}>
                     <TableCell className="font-medium">{student.name ?? "—"}</TableCell>
-                    <TableCell className="text-gray-500 text-sm">{student.unique_student_id ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{student.unique_student_id ?? "—"}</TableCell>
                     <TableCell>
                       {student.checked_in ? (
-                        <Badge className="bg-green-100 text-green-800 border-green-200">Present</Badge>
+                        <Badge className="bg-success/10 text-success border-success/30">Present</Badge>
                       ) : (
-                        <Badge variant="outline" className="text-gray-500">Not checked in</Badge>
+                        <Badge variant="outline" className="text-muted-foreground">Not checked in</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-gray-500 text-sm">{formatTime(student.checked_in_at)}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{formatTime(student.checked_in_at)}</TableCell>
                     <TableCell className="text-right space-x-2">
                       {overrideLoading[student.id] ? (
-                        <span className="text-xs text-gray-400">Updating...</span>
+                        <span className="text-xs text-muted-foreground">Updating...</span>
                       ) : (
                         <>
                           <Button
                             size="sm"
                             variant={student.checked_in ? "outline" : "default"}
-                            className={student.checked_in ? "" : "bg-green-600 hover:bg-green-700 text-white"}
+                            className={student.checked_in ? "" : "bg-success hover:bg-success/90 text-success-foreground"}
                             onClick={() => handleOverride(student.id, student.attendance_id, "present")}
                             disabled={student.checked_in}
                           >

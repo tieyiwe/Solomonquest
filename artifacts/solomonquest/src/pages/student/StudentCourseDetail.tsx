@@ -274,8 +274,8 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
               key={assignment.id}
               className={cn(
                 "hover:border-primary/40 transition-colors cursor-pointer",
-                isSubmitted && "border-green-200 dark:border-green-900 bg-green-50/40 dark:bg-green-950/10",
-                isOverdue && "border-red-200 dark:border-red-900"
+                isSubmitted && "border-success/30 bg-success/10 ",
+                isOverdue && "border-destructive/30 "
               )}
               onClick={() => {
                 setSelectedAssignmentId(assignment.id);
@@ -287,14 +287,14 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
                   className={cn(
                     "h-10 w-10 rounded-lg flex items-center justify-center shrink-0",
                     isSubmitted
-                      ? "bg-green-100 dark:bg-green-900/30"
-                      : "bg-orange-100 dark:bg-orange-900/30"
+                      ? "bg-success/10 "
+                      : "bg-warning/10 "
                   )}
                 >
                   {isSubmitted ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    <CheckCircle2 className="h-5 w-5 text-success " />
                   ) : (
-                    <CheckSquare className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                    <CheckSquare className="h-5 w-5 text-warning " />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -302,7 +302,7 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
                     <p className="font-medium text-foreground">{assignment.title}</p>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isSubmitted ? (
-                        <Badge className="bg-green-600 hover:bg-green-600 text-white">
+                        <Badge className="bg-success hover:bg-success/90 text-success-foreground">
                           <CheckCircle2 className="h-3 w-3 mr-1" />
                           Completed
                         </Badge>
@@ -326,8 +326,8 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
                       className={cn(
                         "text-xs flex items-center gap-1 mt-1.5 font-medium",
                         isOverdue
-                          ? "text-red-600 dark:text-red-400"
-                          : "text-orange-600 dark:text-orange-400"
+                          ? "text-destructive "
+                          : "text-warning "
                       )}
                     >
                       <Calendar className="h-3 w-3" />
@@ -352,7 +352,7 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
           <DialogHeader>
             <DialogTitle>{selectedAssignment?.title}</DialogTitle>
             {safeFormat(selectedAssignment?.dueDate, "EEEE, MMMM d, yyyy") && (
-              <p className="text-sm text-orange-600 dark:text-orange-400 flex items-center gap-1 font-medium mt-1">
+              <p className="text-sm text-warning flex items-center gap-1 font-medium mt-1">
                 <Calendar className="h-3.5 w-3.5" />
                 Due {safeFormat(selectedAssignment?.dueDate, "EEEE, MMMM d, yyyy")}
               </p>
@@ -369,8 +369,8 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
             </div>
           )}
           {(selectedAssignment as any)?.hasSubmitted ? (
-            <div className="flex items-center gap-2 rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/20 p-4">
-              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
+            <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 p-4">
+              <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
               <p className="text-sm text-foreground">
                 You've already submitted this assignment. You can resubmit below to replace your answer.
               </p>
@@ -452,8 +452,8 @@ function QuizzesTab({ courseId }: { courseId: string }) {
       {quizzes.filter((q) => q.is_published).map((quiz) => (
         <Card key={quiz.id} className="hover:border-primary/40 transition-colors">
           <CardContent className="flex items-center gap-4 p-4">
-            <div className="h-10 w-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-              <FileQuestion className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <div className="h-10 w-10 rounded-lg bg-chart-5/10 flex items-center justify-center shrink-0">
+              <FileQuestion className="h-5 w-5 text-chart-5 " />
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-foreground">{quiz.title}</p>
@@ -471,7 +471,7 @@ function QuizzesTab({ courseId }: { courseId: string }) {
                   </span>
                 )}
                 {safeFormat(quiz.due_date, "MMM d") && (
-                  <span className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1 font-medium">
+                  <span className="text-xs text-warning flex items-center gap-1 font-medium">
                     <Calendar className="h-3 w-3" />
                     Due {safeFormat(quiz.due_date, "MMM d")}
                   </span>
@@ -546,20 +546,20 @@ function VideoTab({ courseId }: { courseId: string }) {
 
   return (
     <div className="space-y-4">
-      <Card className="border-green-200 bg-green-50 dark:border-green-900/40 dark:bg-green-900/10">
+      <Card className="border-success/30 bg-success/10  ">
         <CardContent className="flex items-center gap-4 p-4">
-          <div className="h-3 w-3 rounded-full bg-green-500 animate-pulse shrink-0" />
+          <div className="h-3 w-3 rounded-full bg-success animate-pulse shrink-0" />
           <div className="flex-1">
-            <p className="font-semibold text-green-700 dark:text-green-400">Live Class in Progress</p>
+            <p className="font-semibold text-success ">Live Class in Progress</p>
             {safeFormat(videoSession.started_at, "h:mm a") && (
-              <p className="text-xs text-green-600/70 dark:text-green-400/70">
+              <p className="text-xs text-success ">
                 Started {safeFormat(videoSession.started_at, "h:mm a")}
               </p>
             )}
           </div>
           <Button
             size="sm"
-            className="bg-green-600 hover:bg-green-700 text-white shrink-0"
+            className="bg-success hover:bg-success/90 text-success-foreground shrink-0"
             onClick={() => setJoining(true)}
           >
             <PlayCircle className="mr-1.5 h-4 w-4" />
@@ -704,7 +704,7 @@ export default function StudentCourseDetail() {
                 onClick={() => setActiveTab("assignments")}
               >
                 <CardContent className="flex items-center gap-3 p-4">
-                  <CheckSquare className="h-8 w-8 text-orange-500 shrink-0" />
+                  <CheckSquare className="h-8 w-8 text-warning shrink-0" />
                   <div>
                     <p className="font-semibold text-foreground">Assignments</p>
                     <p className="text-xs text-muted-foreground">View and submit work</p>
@@ -716,7 +716,7 @@ export default function StudentCourseDetail() {
                 onClick={() => setActiveTab("quizzes")}
               >
                 <CardContent className="flex items-center gap-3 p-4">
-                  <FileQuestion className="h-8 w-8 text-purple-500 shrink-0" />
+                  <FileQuestion className="h-8 w-8 text-chart-5 shrink-0" />
                   <div>
                     <p className="font-semibold text-foreground">Quizzes</p>
                     <p className="text-xs text-muted-foreground">Take tests and quizzes</p>
@@ -728,7 +728,7 @@ export default function StudentCourseDetail() {
                 onClick={() => setActiveTab("video")}
               >
                 <CardContent className="flex items-center gap-3 p-4">
-                  <Video className="h-8 w-8 text-green-500 shrink-0" />
+                  <Video className="h-8 w-8 text-success shrink-0" />
                   <div>
                     <p className="font-semibold text-foreground">Live Class</p>
                     <p className="text-xs text-muted-foreground">Join video session</p>

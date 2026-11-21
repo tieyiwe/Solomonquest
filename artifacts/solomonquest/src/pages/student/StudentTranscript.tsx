@@ -76,11 +76,11 @@ function calcCourseAverage(assignments: TranscriptAssignment[]): number | null {
 
 function gradeColor(pct: number | null) {
   if (pct == null) return "text-muted-foreground";
-  if (pct >= 90) return "text-green-600";
-  if (pct >= 80) return "text-blue-600";
-  if (pct >= 70) return "text-amber-600";
-  if (pct >= 60) return "text-orange-500";
-  return "text-red-600";
+  if (pct >= 90) return "text-success";
+  if (pct >= 80) return "text-primary";
+  if (pct >= 70) return "text-warning";
+  if (pct >= 60) return "text-warning";
+  return "text-destructive";
 }
 
 function letterGrade(pct: number | null): string {
@@ -93,10 +93,10 @@ function letterGrade(pct: number | null): string {
 }
 
 function gpaColor(gpa: number) {
-  if (gpa >= 3.5) return "text-green-600";
-  if (gpa >= 2.5) return "text-blue-600";
-  if (gpa >= 1.5) return "text-amber-600";
-  return "text-red-600";
+  if (gpa >= 3.5) return "text-success";
+  if (gpa >= 2.5) return "text-primary";
+  if (gpa >= 1.5) return "text-warning";
+  return "text-destructive";
 }
 
 async function fetchTranscript(studentId: string): Promise<TranscriptData> {
@@ -173,7 +173,7 @@ function CourseTranscriptCard({ course }: { course: TranscriptCourse }) {
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     {graded ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
                     ) : (
                       <Clock className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
                     )}
@@ -405,11 +405,11 @@ export function TranscriptDocument({ studentId: studentIdProp, bare }: StudentTr
                   <div className="hidden sm:block text-xs text-muted-foreground space-y-0.5 border-l pl-6">
                     <div className="font-semibold mb-1">GPA Scale</div>
                     {[
-                      { label: "A  (90%+)", gpa: "4.0", color: "text-green-600" },
-                      { label: "B  (80%+)", gpa: "3.0", color: "text-blue-600" },
-                      { label: "C  (70%+)", gpa: "2.0", color: "text-amber-600" },
-                      { label: "D  (60%+)", gpa: "1.0", color: "text-orange-500" },
-                      { label: "F  (below)", gpa: "0.0", color: "text-red-600" },
+                      { label: "A (90%+)", gpa: "4.0", color: "text-success" },
+                      { label: "B (80%+)", gpa: "3.0", color: "text-primary" },
+                      { label: "C (70%+)", gpa: "2.0", color: "text-warning" },
+                      { label: "D (60%+)", gpa: "1.0", color: "text-warning" },
+                      { label: "F (below)", gpa: "0.0", color: "text-destructive" },
                     ].map((row) => (
                       <div key={row.gpa} className="flex gap-3 justify-between font-mono">
                         <span>{row.label}</span>

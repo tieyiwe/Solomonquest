@@ -171,7 +171,7 @@ function QuestionCard({
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0 ml-auto">
-            <Button
+            <Button aria-label="Move up"
               variant="ghost"
               size="icon"
               className="h-7 w-7"
@@ -180,7 +180,7 @@ function QuestionCard({
             >
               <ArrowUp className="h-3.5 w-3.5" />
             </Button>
-            <Button
+            <Button aria-label="Move down"
               variant="ghost"
               size="icon"
               className="h-7 w-7"
@@ -197,7 +197,7 @@ function QuestionCard({
             >
               {expanded ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
             </Button>
-            <Button
+            <Button aria-label="Delete"
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
@@ -213,8 +213,8 @@ function QuestionCard({
         <CardContent className="space-y-4 pt-0">
           <div className="flex gap-4">
             <div className="flex-1 space-y-1.5">
-              <Label className="text-xs">Question Text</Label>
-              <Textarea
+              <Label htmlFor="teacherquizbuilder-question-text" className="text-xs">Question Text</Label>
+              <Textarea id="teacherquizbuilder-question-text"
                 value={question.text}
                 onChange={(e) => onUpdate({ ...question, text: e.target.value })}
                 placeholder="Enter your question here..."
@@ -223,8 +223,8 @@ function QuestionCard({
               />
             </div>
             <div className="w-24 space-y-1.5 shrink-0">
-              <Label className="text-xs">Points</Label>
-              <Input
+              <Label htmlFor="teacherquizbuilder-points" className="text-xs">Points</Label>
+              <Input id="teacherquizbuilder-points"
                 type="number"
                 min={0}
                 value={question.points}
@@ -243,7 +243,7 @@ function QuestionCard({
                 <div key={option.id} className="flex items-center gap-2">
                   <button type="button" onClick={() => setCorrectOption(option.id)} className="shrink-0">
                     {option.isCorrect ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <CheckCircle2 className="h-5 w-5 text-success" />
                     ) : (
                       <Circle className="h-5 w-5 text-muted-foreground hover:text-foreground transition-colors" />
                     )}
@@ -257,7 +257,7 @@ function QuestionCard({
                 </div>
               ))}
               {question.options.filter((o) => o.isCorrect).length === 0 && (
-                <p className="text-xs text-amber-600">Please mark a correct answer.</p>
+                <p className="text-xs text-warning">Please mark a correct answer.</p>
               )}
             </div>
           )}
@@ -273,7 +273,7 @@ function QuestionCard({
                     onClick={() => setCorrectOption(option.id)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all ${
                       option.isCorrect
-                        ? "border-green-600 bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                        ? "border-success bg-success/10 text-success  "
                         : "border-border text-muted-foreground hover:border-foreground/50"
                     }`}
                   >
@@ -315,8 +315,8 @@ function QuestionCard({
 
           {question.type === "fill_blank" && (
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Correct Answer(s)</Label>
-              <Input
+              <Label htmlFor="teacherquizbuilder-correct-answer-s" className="text-xs text-muted-foreground">Correct Answer(s)</Label>
+              <Input id="teacherquizbuilder-correct-answer-s"
                 value={question.correctAnswer || ""}
                 onChange={(e) => onUpdate({ ...question, correctAnswer: e.target.value })}
                 placeholder="Correct answer (separate multiple with commas)"
@@ -413,9 +413,9 @@ function CreateQuizForm({ courses, onCreated, onCancel }: CreateQuizFormProps) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Course</Label>
+            <Label htmlFor="teacherquizbuilder-course">Course</Label>
             <Select value={courseId} onValueChange={setCourseId}>
-              <SelectTrigger>
+              <SelectTrigger id="teacherquizbuilder-course">
                 <SelectValue placeholder="Select a course..." />
               </SelectTrigger>
               <SelectContent>

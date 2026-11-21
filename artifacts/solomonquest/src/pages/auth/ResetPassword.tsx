@@ -194,10 +194,10 @@ export default function ResetPassword() {
       </div>
 
       {/* Right: decorative panel */}
-      <div className="hidden md:block bg-primary relative overflow-hidden">
+      <div className="hidden md:block bg-brand relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1497633762265-9d179a990aa6?q=80&w=2073&auto=format&fit=crop')] bg-cover bg-center opacity-20 mix-blend-overlay"></div>
-        <div className="absolute inset-0 flex flex-col justify-end p-12 text-primary-foreground z-10 bg-gradient-to-t from-primary/90 to-transparent">
-          <blockquote className="space-y-2 max-w-lg">
+        <div className="absolute inset-0 flex flex-col justify-end p-12 text-white z-10 bg-gradient-to-t from-black/35 to-transparent">
+          <blockquote className="space-y-2 max-w-lg border-l-4 border-gold pl-5">
             <p className="text-2xl font-medium leading-snug">
               "The platform has completely transformed how our faculty manages coursework and communicates with students."
             </p>

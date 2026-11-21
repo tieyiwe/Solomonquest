@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ClipboardList, Video, Bell, CalendarDays } from "lucide-react";
+import PageHeader from "@/components/layout/PageHeader";
 
 interface CalendarEvent {
   id: string;
@@ -23,9 +24,9 @@ interface CalendarEvent {
 }
 
 const EVENT_META: Record<CalendarEvent["type"], { label: string; icon: typeof ClipboardList; color: string }> = {
-  assignment_due: { label: "Assignment due", icon: ClipboardList, color: "bg-orange-100 text-orange-700 border-orange-200" },
-  video_session: { label: "Live session", icon: Video, color: "bg-blue-100 text-blue-700 border-blue-200" },
-  reminder: { label: "Reminder", icon: Bell, color: "bg-violet-100 text-violet-700 border-violet-200" },
+  assignment_due: { label: "Assignment due", icon: ClipboardList, color: "bg-warning/10 text-warning border-warning/30" },
+  video_session: { label: "Live session", icon: Video, color: "bg-primary/10 text-primary border-primary/30" },
+  reminder: { label: "Reminder", icon: Bell, color: "bg-chart-5/10 text-chart-5 border-chart-5/30" },
 };
 
 function groupByDay(events: CalendarEvent[]): { day: string; events: CalendarEvent[] }[] {
@@ -78,15 +79,11 @@ function CalendarContent() {
         </Link>
       </div>
 
-      <div className="flex items-center gap-3">
-        <CalendarDays className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Calendar</h1>
-          <p className="text-muted-foreground mt-0.5">
-            Assignment due dates, live sessions, and reminders in one place.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        icon={CalendarDays}
+        title="Calendar"
+        description="Assignment due dates, live sessions, and reminders in one place."
+      />
 
       {isLoading ? (
         <div className="space-y-3">
@@ -121,14 +118,14 @@ function CalendarContent() {
                     const past = new Date(event.date).getTime() < now;
                     const body = (
                       <Card
-                        className={`border-0 shadow-sm transition-colors ${event.link ? "hover:bg-gray-50/70 cursor-pointer" : ""} ${past ? "opacity-60" : ""}`}
+                        className={`border-0 shadow-sm transition-colors ${event.link ? "hover:bg-muted/40 cursor-pointer" : ""} ${past ? "opacity-60" : ""}`}
                       >
                         <CardContent className="py-3 px-4 flex items-center gap-3">
                           <div className={`h-9 w-9 rounded-lg border flex items-center justify-center shrink-0 ${meta.color}`}>
                             <Icon className="h-4 w-4" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{event.title}</p>
+                            <p className="text-sm font-medium text-foreground truncate">{event.title}</p>
                             <p className="text-xs text-muted-foreground truncate">
                               {event.courseTitle ? `${event.courseTitle} · ` : ""}
                               {new Date(event.date).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}

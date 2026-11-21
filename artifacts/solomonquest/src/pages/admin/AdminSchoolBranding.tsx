@@ -31,6 +31,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { Link } from "wouter";
+import { LoadingRows } from "@/components/common/States";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -232,12 +233,12 @@ function ColorPickerRow({
 }) {
   return (
     <div className="flex items-center gap-3 mb-4">
-      <label className="text-sm font-medium w-44 shrink-0 text-gray-700">{label}</label>
+      <label className="text-sm font-medium w-44 shrink-0 text-foreground/80">{label}</label>
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-10 h-10 rounded cursor-pointer border border-gray-200"
+        className="w-10 h-10 rounded cursor-pointer border border-border"
       />
       <Input
         value={value}
@@ -286,24 +287,24 @@ function SlugField({
 
   return (
     <div>
-      <Label className="text-sm font-medium text-gray-700 mb-1 block">URL Slug</Label>
+      <Label htmlFor="adminschoolbranding-url-slug" className="text-sm font-medium text-foreground/80 mb-1 block">URL Slug</Label>
       <div className="flex items-center gap-2">
-        <div className="text-sm text-gray-500 whitespace-nowrap">solomonquest.app/schools/</div>
+        <div className="text-sm text-muted-foreground whitespace-nowrap">solomonquest.app/schools/</div>
         <div className="relative flex-1">
-          <Input
+          <Input id="adminschoolbranding-url-slug"
             value={value}
             onChange={(e) => handleChange(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
             placeholder="my-school"
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2">
-            {status === "checking" && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
-            {status === "available" && <span className="text-green-500 text-lg">✓</span>}
-            {status === "taken" && <span className="text-red-500 text-lg">✗</span>}
+            {status === "checking" && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+            {status === "available" && <span className="text-success text-lg">✓</span>}
+            {status === "taken" && <span className="text-destructive text-lg">✗</span>}
           </div>
         </div>
       </div>
-      {status === "available" && <p className="text-xs text-green-600 mt-1">Slug is available!</p>}
-      {status === "taken" && <p className="text-xs text-red-500 mt-1">This slug is already taken.</p>}
+      {status === "available" && <p className="text-xs text-success mt-1">Slug is available!</p>}
+      {status === "taken" && <p className="text-xs text-destructive mt-1">This slug is already taken.</p>}
     </div>
   );
 }
@@ -444,23 +445,23 @@ function DomainTab({ schoolId }: { schoolId: string }) {
   };
 
   if (loading) {
-    return <div className="text-sm text-gray-400">Loading…</div>;
+    return <LoadingRows rows={2} />;
   }
 
   const statusBadge = {
     unset: null,
-    requested: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">Awaiting platform approval</span>,
-    approved: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">Approved — add DNS records</span>,
-    verified: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">Connected</span>,
-    failed: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200">Verification failed</span>,
+    requested: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/30">Awaiting platform approval</span>,
+    approved: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-warning/10 text-warning border border-warning/30">Approved — add DNS records</span>,
+    verified: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success border border-success/30">Connected</span>,
+    failed: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive border border-destructive/30">Verification failed</span>,
   }[status];
 
   return (
     <div className="space-y-5">
       <div>
-        <Label className="text-sm font-medium text-gray-700 mb-1 block">Your domain</Label>
-        <p className="text-xs text-gray-500 mb-3">
-          Use your own domain (e.g. <code className="bg-gray-100 px-1 rounded font-mono">school.edu</code>) instead of the
+        <Label className="text-sm font-medium text-foreground/80 mb-1 block">Your domain</Label>
+        <p className="text-xs text-muted-foreground mb-3">
+          Use your own domain (e.g. <code className="bg-muted px-1 rounded font-mono">school.edu</code>) instead of the
           shared SolomonQuest URL for your school's public page.
         </p>
         <div className="flex items-center gap-2">
@@ -483,8 +484,8 @@ function DomainTab({ schoolId }: { schoolId: string }) {
       )}
 
       {status === "requested" && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-          <p className="text-sm text-blue-800">
+        <div className="rounded-lg border border-primary/30 bg-primary/10 p-4">
+          <p className="text-sm text-primary">
             Your request to connect <strong>{domain}</strong> has been submitted to the platform team. You'll get a
             notification here (and by email) once it's approved and ready for you to add the DNS records.
           </p>
@@ -492,9 +493,9 @@ function DomainTab({ schoolId }: { schoolId: string }) {
       )}
 
       {(status === "approved" || status === "failed") && dnsRecords.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
-          <p className="text-sm font-medium text-gray-800">Add these DNS records at your domain registrar</p>
-          <ol className="text-sm text-gray-600 space-y-3 list-decimal list-inside">
+        <div className="rounded-lg border border-border bg-muted/50 p-4 space-y-4">
+          <p className="text-sm font-medium text-foreground">Add these DNS records at your domain registrar</p>
+          <ol className="text-sm text-muted-foreground space-y-3 list-decimal list-inside">
             <li>
               Log in to wherever you manage DNS for <strong>{domain}</strong> (e.g. GoDaddy, Namecheap, Cloudflare,
               Google Domains).
@@ -507,7 +508,7 @@ function DomainTab({ schoolId }: { schoolId: string }) {
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
-                <tr className="text-left text-gray-500 border-b border-gray-200">
+                <tr className="text-left text-muted-foreground border-b border-border">
                   <th className="py-2 pr-4 font-medium">Type</th>
                   <th className="py-2 pr-4 font-medium">Host / Name</th>
                   <th className="py-2 pr-4 font-medium">Value</th>
@@ -515,7 +516,7 @@ function DomainTab({ schoolId }: { schoolId: string }) {
               </thead>
               <tbody>
                 {dnsRecords.map((rec, i) => (
-                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                  <tr key={i} className="border-b border-border last:border-0">
                     <td className="py-2 pr-4 font-mono">{rec.type}</td>
                     <td className="py-2 pr-4 font-mono break-all">{rec.host}</td>
                     <td className="py-2 pr-4 font-mono break-all">{rec.value}</td>
@@ -533,8 +534,8 @@ function DomainTab({ schoolId }: { schoolId: string }) {
       )}
 
       {status === "verified" && (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-4 space-y-3">
-          <p className="text-sm text-green-800">
+        <div className="rounded-lg border border-success/30 bg-success/10 p-4 space-y-3">
+          <p className="text-sm text-success">
             <strong>{domain}</strong> is connected and verified. Visitors to this domain will see your school's public
             page.
           </p>
@@ -705,8 +706,8 @@ export default function AdminSchoolBranding() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-        <span className="ml-3 text-gray-600">Loading branding settings...</span>
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="ml-3 text-muted-foreground">Loading branding settings...</span>
       </div>
     );
   }
@@ -715,19 +716,19 @@ export default function AdminSchoolBranding() {
   const firstSlide = branding.banner_slides[0];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-screen overflow-hidden bg-muted/50">
       {/* ── LEFT PANEL (60%) ── */}
-      <div className="w-[60%] flex flex-col h-full border-r border-gray-200 bg-white">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div className="w-[60%] flex flex-col h-full border-r border-border bg-card">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div className="flex items-center gap-3">
             <Link href="/dashboard/admin">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button aria-label="Back" variant="ghost" size="icon" className="h-8 w-8">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             </Link>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">School Branding</h1>
-              <p className="text-sm text-gray-500">Customize your school's public page</p>
+              <h1 className="text-xl font-bold text-foreground">School Branding</h1>
+              <p className="text-sm text-muted-foreground">Customize your school's public page</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -742,7 +743,7 @@ export default function AdminSchoolBranding() {
                 <ExternalLink className="w-3 h-3 ml-1" />
               </Button>
             )}
-            <Button onClick={handleSave} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+            <Button onClick={handleSave} disabled={saving} className="bg-primary hover:bg-primary/90 text-primary-foreground">
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               {saving ? "Saving..." : "Save Branding"}
             </Button>
@@ -751,8 +752,8 @@ export default function AdminSchoolBranding() {
 
         <div className="flex-1 overflow-y-auto">
           <Tabs defaultValue="identity" className="h-full">
-            <div className="px-6 pt-4 border-b border-gray-100 sticky top-0 bg-white z-10">
-              <TabsList className="flex flex-wrap gap-1 h-auto bg-gray-100 p-1">
+            <div className="px-6 pt-4 border-b border-border sticky top-0 bg-card z-10">
+              <TabsList className="flex flex-wrap gap-1 h-auto bg-muted p-1">
                 <TabsTrigger value="identity" className="text-xs">Identity</TabsTrigger>
                 <TabsTrigger value="hero" className="text-xs">Hero Banner</TabsTrigger>
                 <TabsTrigger value="colors" className="text-xs">Colors & Fonts</TabsTrigger>
@@ -769,13 +770,13 @@ export default function AdminSchoolBranding() {
               {/* ── TAB 1: Identity ── */}
               <TabsContent value="identity" className="space-y-6 mt-0">
                 <div>
-                  <Label className="text-sm font-medium text-gray-700 mb-2 block">School Logo</Label>
+                  <Label className="text-sm font-medium text-foreground/80 mb-2 block">School Logo</Label>
                   <div className="flex items-center gap-4">
-                    <div className="w-24 h-24 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden shrink-0">
+                    <div className="w-24 h-24 border-2 border-dashed border-border rounded-lg flex items-center justify-center bg-muted/50 overflow-hidden shrink-0">
                       {branding.logo_url ? (
                         <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" />
                       ) : (
-                        <School className="w-10 h-10 text-gray-300" />
+                        <School className="w-10 h-10 text-muted-foreground/60" />
                       )}
                     </div>
                     <div className="flex-1 space-y-2">
@@ -787,27 +788,27 @@ export default function AdminSchoolBranding() {
                         <button
                           type="button"
                           onClick={() => update("logo_url", "")}
-                          className="text-xs text-red-500 hover:text-red-700"
+                          className="text-xs text-destructive hover:text-destructive"
                         >
                           Remove logo
                         </button>
                       )}
-                      <p className="text-xs text-gray-400">PNG, JPG or SVG. Max 2 MB.</p>
+                      <p className="text-xs text-muted-foreground">PNG, JPG or SVG. Max 2 MB.</p>
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <Label className="text-sm font-medium text-gray-700 mb-1 block">School Name</Label>
-                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-gray-700 text-sm">
+                  <Label className="text-sm font-medium text-foreground/80 mb-1 block">School Name</Label>
+                  <div className="px-3 py-2 bg-muted/50 border border-border rounded-md text-foreground/80 text-sm">
                     {branding.school_name || "—"}
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">School name is managed by your account settings.</p>
+                  <p className="text-xs text-muted-foreground mt-1">School name is managed by your account settings.</p>
                 </div>
 
                 <div>
-                  <Label className="text-sm font-medium text-gray-700 mb-1 block">Tagline</Label>
-                  <Input
+                  <Label htmlFor="adminschoolbranding-tagline" className="text-sm font-medium text-foreground/80 mb-1 block">Tagline</Label>
+                  <Input id="adminschoolbranding-tagline"
                     placeholder="Empowering minds, shaping futures"
                     value={branding.tagline}
                     onChange={(e) => update("tagline", e.target.value)}
@@ -825,7 +826,7 @@ export default function AdminSchoolBranding() {
               <TabsContent value="hero" className="space-y-6 mt-0">
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <Label className="text-sm font-semibold text-gray-700">Slides ({branding.banner_slides.length}/6)</Label>
+                    <Label className="text-sm font-semibold text-foreground/80">Slides ({branding.banner_slides.length}/6)</Label>
                     {branding.banner_slides.length < 6 && (
                       <Button size="sm" variant="outline" onClick={() => setAddingSlide((v) => !v)}>
                         <Plus className="w-4 h-4 mr-1" /> Add Slide
@@ -835,26 +836,26 @@ export default function AdminSchoolBranding() {
 
                   <div className="space-y-2">
                     {branding.banner_slides.map((slide, idx) => (
-                      <div key={slide.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
-                        <div className="w-10 h-10 rounded overflow-hidden bg-gray-200 shrink-0">
+                      <div key={slide.id} className="flex items-center gap-3 p-3 border border-border rounded-lg bg-muted/50">
+                        <div className="w-10 h-10 rounded overflow-hidden bg-muted shrink-0">
                           {slide.image_url ? (
                             <img src={slide.image_url} alt="" className="w-full h-full object-cover" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">IMG</div>
+                            <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">IMG</div>
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-800 truncate">{slide.title || "Untitled Slide"}</p>
-                          <p className="text-xs text-gray-500 truncate">{slide.subtitle}</p>
+                          <p className="text-sm font-medium text-foreground truncate">{slide.title || "Untitled Slide"}</p>
+                          <p className="text-xs text-muted-foreground truncate">{slide.subtitle}</p>
                         </div>
                         <div className="flex items-center gap-1">
-                          <button onClick={() => moveSlide(idx, -1)} disabled={idx === 0} className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30">
+                          <button aria-label="Move up" onClick={() => moveSlide(idx, -1)} disabled={idx === 0} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30">
                             <ChevronUp className="w-4 h-4" />
                           </button>
-                          <button onClick={() => moveSlide(idx, 1)} disabled={idx === branding.banner_slides.length - 1} className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30">
+                          <button aria-label="Move down" onClick={() => moveSlide(idx, 1)} disabled={idx === branding.banner_slides.length - 1} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30">
                             <ChevronDown className="w-4 h-4" />
                           </button>
-                          <button onClick={() => deleteSlide(idx)} className="p-1 text-red-400 hover:text-red-600">
+                          <button aria-label="Delete" onClick={() => deleteSlide(idx)} className="p-1 text-destructive hover:text-destructive">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -863,11 +864,11 @@ export default function AdminSchoolBranding() {
                   </div>
 
                   {addingSlide && (
-                    <div className="mt-4 p-4 border border-indigo-200 rounded-lg bg-indigo-50 space-y-3">
-                      <h3 className="text-sm font-semibold text-indigo-900">New Slide</h3>
+                    <div className="mt-4 p-4 border border-primary/30 rounded-lg bg-primary/10 space-y-3">
+                      <h3 className="text-sm font-semibold text-primary">New Slide</h3>
                       <div>
-                        <Label className="text-xs text-gray-600 mb-1 block">Image URL</Label>
-                        <Input
+                        <Label htmlFor="adminschoolbranding-image-url" className="text-xs text-muted-foreground mb-1 block">Image URL</Label>
+                        <Input id="adminschoolbranding-image-url"
                           placeholder="https://example.com/hero.jpg"
                           value={newSlide.image_url}
                           onChange={(e) => setNewSlide((p) => ({ ...p, image_url: e.target.value }))}
@@ -878,32 +879,32 @@ export default function AdminSchoolBranding() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <Label className="text-xs text-gray-600 mb-1 block">Title</Label>
-                          <Input
+                          <Label htmlFor="adminschoolbranding-title" className="text-xs text-muted-foreground mb-1 block">Title</Label>
+                          <Input id="adminschoolbranding-title"
                             placeholder="Welcome to Springfield Academy"
                             value={newSlide.title}
                             onChange={(e) => setNewSlide((p) => ({ ...p, title: e.target.value }))}
                           />
                         </div>
                         <div>
-                          <Label className="text-xs text-gray-600 mb-1 block">Subtitle</Label>
-                          <Input
+                          <Label htmlFor="adminschoolbranding-subtitle" className="text-xs text-muted-foreground mb-1 block">Subtitle</Label>
+                          <Input id="adminschoolbranding-subtitle"
                             placeholder="Where Excellence Meets Innovation"
                             value={newSlide.subtitle}
                             onChange={(e) => setNewSlide((p) => ({ ...p, subtitle: e.target.value }))}
                           />
                         </div>
                         <div>
-                          <Label className="text-xs text-gray-600 mb-1 block">CTA Button Text</Label>
-                          <Input
+                          <Label htmlFor="adminschoolbranding-cta-button-text" className="text-xs text-muted-foreground mb-1 block">CTA Button Text</Label>
+                          <Input id="adminschoolbranding-cta-button-text"
                             placeholder="Apply Now"
                             value={newSlide.cta_text}
                             onChange={(e) => setNewSlide((p) => ({ ...p, cta_text: e.target.value }))}
                           />
                         </div>
                         <div>
-                          <Label className="text-xs text-gray-600 mb-1 block">CTA URL</Label>
-                          <Input
+                          <Label htmlFor="adminschoolbranding-cta-url" className="text-xs text-muted-foreground mb-1 block">CTA URL</Label>
+                          <Input id="adminschoolbranding-cta-url"
                             placeholder="/schools/springfield/apply"
                             value={newSlide.cta_url}
                             onChange={(e) => setNewSlide((p) => ({ ...p, cta_url: e.target.value }))}
@@ -912,17 +913,17 @@ export default function AdminSchoolBranding() {
                       </div>
                       <div className="flex items-center gap-4">
                         <div>
-                          <Label className="text-xs text-gray-600 mb-1 block">Overlay Color</Label>
-                          <input
+                          <Label htmlFor="adminschoolbranding-overlay-color" className="text-xs text-muted-foreground mb-1 block">Overlay Color</Label>
+                          <input id="adminschoolbranding-overlay-color"
                             type="color"
                             value={newSlide.overlay_color}
                             onChange={(e) => setNewSlide((p) => ({ ...p, overlay_color: e.target.value }))}
-                            className="w-10 h-10 rounded border border-gray-200 cursor-pointer"
+                            className="w-10 h-10 rounded border border-border cursor-pointer"
                           />
                         </div>
                         <div className="flex-1">
-                          <Label className="text-xs text-gray-600 mb-1 block">Overlay Opacity: {newSlide.overlay_opacity}%</Label>
-                          <input
+                          <Label htmlFor="adminschoolbranding-overlay-opacity" className="text-xs text-muted-foreground mb-1 block">Overlay Opacity: {newSlide.overlay_opacity}%</Label>
+                          <input id="adminschoolbranding-overlay-opacity"
                             type="range"
                             min={0}
                             max={80}
@@ -934,19 +935,19 @@ export default function AdminSchoolBranding() {
                       </div>
                       <div className="flex gap-2 justify-end">
                         <Button size="sm" variant="outline" onClick={() => setAddingSlide(false)}>Cancel</Button>
-                        <Button size="sm" onClick={addSlide} className="bg-indigo-600 hover:bg-indigo-700 text-white">Add Slide</Button>
+                        <Button size="sm" onClick={addSlide} className="bg-primary hover:bg-primary/90 text-primary-foreground">Add Slide</Button>
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="border-t border-gray-100 pt-4 space-y-4">
+                <div className="border-t border-border pt-4 space-y-4">
                   <div>
-                    <Label className="text-sm font-medium text-gray-700 mb-1 block">Hero Animation</Label>
-                    <select
+                    <Label htmlFor="adminschoolbranding-hero-animation" className="text-sm font-medium text-foreground/80 mb-1 block">Hero Animation</Label>
+                    <select id="adminschoolbranding-hero-animation"
                       value={branding.hero_settings.animation}
                       onChange={(e) => update("hero_settings", { ...branding.hero_settings, animation: e.target.value as "fade" | "slide" | "zoom" | "none" })}
-                      className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                     >
                       <option value="fade">Fade (crossfade between slides)</option>
                       <option value="slide">Slide (slides left/right)</option>
@@ -961,15 +962,15 @@ export default function AdminSchoolBranding() {
                         checked={branding.hero_settings.auto_advance}
                         onCheckedChange={(v) => update("hero_settings", { ...branding.hero_settings, auto_advance: v })}
                       />
-                      <Label className="text-sm text-gray-700">Auto-advance slides</Label>
+                      <Label className="text-sm text-foreground/80">Auto-advance slides</Label>
                     </div>
                     {branding.hero_settings.auto_advance && (
                       <div className="flex items-center gap-2">
-                        <Label className="text-sm text-gray-600 whitespace-nowrap">Interval:</Label>
-                        <select
+                        <Label htmlFor="adminschoolbranding-interval" className="text-sm text-muted-foreground whitespace-nowrap">Interval:</Label>
+                        <select id="adminschoolbranding-interval"
                           value={branding.hero_settings.interval_seconds}
                           onChange={(e) => update("hero_settings", { ...branding.hero_settings, interval_seconds: Number(e.target.value) })}
-                          className="border border-gray-200 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                          className="border border-border rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                         >
                           {INTERVAL_OPTIONS.map((s) => (
                             <option key={s} value={s}>{s}s</option>
@@ -984,47 +985,47 @@ export default function AdminSchoolBranding() {
               {/* ── TAB 3: Colors & Fonts ── */}
               <TabsContent value="colors" className="space-y-6 mt-0">
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Brand Colors</h3>
+                  <h3 className="text-sm font-semibold text-foreground/80 mb-3">Brand Colors</h3>
                   <ColorPickerRow label="Primary Color" value={branding.primary_color} onChange={(v) => update("primary_color", v)} />
                   <ColorPickerRow label="Secondary Color" value={branding.secondary_color} onChange={(v) => update("secondary_color", v)} />
                   <ColorPickerRow label="Accent Color" value={branding.accent_color} onChange={(v) => update("accent_color", v)} />
                   <ColorPickerRow label="Heading Text Color" value={branding.heading_text_color} onChange={(v) => update("heading_text_color", v)} />
                 </div>
 
-                <div className="border-t border-gray-100 pt-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Typography</h3>
+                <div className="border-t border-border pt-4">
+                  <h3 className="text-sm font-semibold text-foreground/80 mb-3">Typography</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-sm text-gray-600 mb-1 block">Heading Font</Label>
-                      <select
+                      <Label htmlFor="adminschoolbranding-heading-font" className="text-sm text-muted-foreground mb-1 block">Heading Font</Label>
+                      <select id="adminschoolbranding-heading-font"
                         value={branding.heading_font}
                         onChange={(e) => update("heading_font", e.target.value)}
-                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                       >
                         {HEADING_FONTS.map((f) => (
                           <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
                         ))}
                       </select>
-                      <p className="text-xs text-gray-400 mt-1" style={{ fontFamily: branding.heading_font }}>Preview: {branding.heading_font}</p>
+                      <p className="text-xs text-muted-foreground mt-1" style={{ fontFamily: branding.heading_font }}>Preview: {branding.heading_font}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-600 mb-1 block">Body Font</Label>
-                      <select
+                      <Label htmlFor="adminschoolbranding-body-font" className="text-sm text-muted-foreground mb-1 block">Body Font</Label>
+                      <select id="adminschoolbranding-body-font"
                         value={branding.body_font}
                         onChange={(e) => update("body_font", e.target.value)}
-                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                       >
                         {BODY_FONTS.map((f) => (
                           <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
                         ))}
                       </select>
-                      <p className="text-xs text-gray-400 mt-1" style={{ fontFamily: branding.body_font }}>Preview: {branding.body_font}</p>
+                      <p className="text-xs text-muted-foreground mt-1" style={{ fontFamily: branding.body_font }}>Preview: {branding.body_font}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="border-t border-gray-100 pt-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Border Radius Style</h3>
+                <div className="border-t border-border pt-4">
+                  <h3 className="text-sm font-semibold text-foreground/80 mb-3">Border Radius Style</h3>
                   <div className="flex gap-3">
                     {BORDER_RADIUS_OPTIONS.map((opt) => (
                       <button
@@ -1032,19 +1033,19 @@ export default function AdminSchoolBranding() {
                         onClick={() => update("border_radius", opt.value)}
                         className={`flex-1 flex flex-col items-center gap-2 p-3 border-2 rounded-lg transition-all ${
                           branding.border_radius === opt.value
-                            ? "border-indigo-500 bg-indigo-50"
-                            : "border-gray-200 bg-white hover:border-gray-300"
+                            ? "border-primary bg-primary/10"
+                            : "border-border bg-card hover:border-input"
                         }`}
                       >
                         <div
-                          className="w-12 h-8 bg-indigo-500 flex items-center justify-center text-white text-xs font-medium"
+                          className="w-12 h-8 bg-primary flex items-center justify-center text-primary-foreground text-xs font-medium"
                           style={{ borderRadius: opt.px }}
                         >
                           Btn
                         </div>
                         <div className="text-center">
-                          <p className="text-xs font-semibold text-gray-700">{opt.label}</p>
-                          <p className="text-xs text-gray-400">{opt.desc}</p>
+                          <p className="text-xs font-semibold text-foreground/80">{opt.label}</p>
+                          <p className="text-xs text-muted-foreground">{opt.desc}</p>
                         </div>
                       </button>
                     ))}
@@ -1062,7 +1063,7 @@ export default function AdminSchoolBranding() {
                         checked={branding.stats_visible}
                         onCheckedChange={(v) => update("stats_visible", v)}
                       />
-                      <Label className="text-sm font-semibold text-gray-700">Stats Section</Label>
+                      <Label className="text-sm font-semibold text-foreground/80">Stats Section</Label>
                     </div>
                     {branding.stats.length < 6 && (
                       <Button size="sm" variant="outline" onClick={addStat}>
@@ -1072,11 +1073,11 @@ export default function AdminSchoolBranding() {
                   </div>
                   <div className="space-y-2">
                     {branding.stats.map((stat, idx) => (
-                      <div key={stat.id} className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg">
+                      <div key={stat.id} className="flex items-center gap-2 p-2 border border-border rounded-lg">
                         <select
                           value={stat.icon}
                           onChange={(e) => updateStat(idx, "icon", e.target.value)}
-                          className="border border-gray-200 rounded px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                          className="border border-border rounded px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-primary/30"
                         >
                           {STAT_ICONS.map((i) => <option key={i} value={i}>{i}</option>)}
                         </select>
@@ -1092,7 +1093,7 @@ export default function AdminSchoolBranding() {
                           onChange={(e) => updateStat(idx, "value", e.target.value)}
                           className="text-xs w-24"
                         />
-                        <button onClick={() => deleteStat(idx)} className="text-red-400 hover:text-red-600">
+                        <button onClick={() => deleteStat(idx)} className="text-destructive hover:text-destructive">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -1101,9 +1102,9 @@ export default function AdminSchoolBranding() {
                 </div>
 
                 {/* Features */}
-                <div className="border-t border-gray-100 pt-4">
+                <div className="border-t border-border pt-4">
                   <div className="flex items-center justify-between mb-3">
-                    <Label className="text-sm font-semibold text-gray-700">Features Section</Label>
+                    <Label className="text-sm font-semibold text-foreground/80">Features Section</Label>
                     {branding.features.length < 6 && (
                       <Button size="sm" variant="outline" onClick={addFeature}>
                         <Plus className="w-4 h-4 mr-1" /> Add Feature
@@ -1112,12 +1113,12 @@ export default function AdminSchoolBranding() {
                   </div>
                   <div className="space-y-3">
                     {branding.features.map((feat, idx) => (
-                      <div key={feat.id} className="p-3 border border-gray-200 rounded-lg space-y-2">
+                      <div key={feat.id} className="p-3 border border-border rounded-lg space-y-2">
                         <div className="flex items-center gap-2">
                           <select
                             value={feat.icon}
                             onChange={(e) => updateFeature(idx, "icon", e.target.value)}
-                            className="border border-gray-200 rounded px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            className="border border-border rounded px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-primary/30"
                           >
                             {FEATURE_ICONS.map((i) => <option key={i} value={i}>{i}</option>)}
                           </select>
@@ -1127,7 +1128,7 @@ export default function AdminSchoolBranding() {
                             onChange={(e) => updateFeature(idx, "title", e.target.value)}
                             className="text-xs"
                           />
-                          <button onClick={() => deleteFeature(idx)} className="text-red-400 hover:text-red-600 shrink-0">
+                          <button onClick={() => deleteFeature(idx)} className="text-destructive hover:text-destructive shrink-0">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -1144,9 +1145,9 @@ export default function AdminSchoolBranding() {
                 </div>
 
                 {/* Testimonials */}
-                <div className="border-t border-gray-100 pt-4">
+                <div className="border-t border-border pt-4">
                   <div className="flex items-center justify-between mb-3">
-                    <Label className="text-sm font-semibold text-gray-700">Testimonials Section</Label>
+                    <Label className="text-sm font-semibold text-foreground/80">Testimonials Section</Label>
                     {branding.testimonials.length < 4 && (
                       <Button size="sm" variant="outline" onClick={addTestimonial}>
                         <Plus className="w-4 h-4 mr-1" /> Add Testimonial
@@ -1155,7 +1156,7 @@ export default function AdminSchoolBranding() {
                   </div>
                   <div className="space-y-3">
                     {branding.testimonials.map((t, idx) => (
-                      <div key={t.id} className="p-3 border border-gray-200 rounded-lg space-y-2">
+                      <div key={t.id} className="p-3 border border-border rounded-lg space-y-2">
                         <div className="flex items-center gap-2">
                           <Input
                             placeholder="Name"
@@ -1169,7 +1170,7 @@ export default function AdminSchoolBranding() {
                             onChange={(e) => updateTestimonial(idx, "role", e.target.value)}
                             className="text-xs"
                           />
-                          <button onClick={() => deleteTestimonial(idx)} className="text-red-400 hover:text-red-600 shrink-0">
+                          <button onClick={() => deleteTestimonial(idx)} className="text-destructive hover:text-destructive shrink-0">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -1199,13 +1200,13 @@ export default function AdminSchoolBranding() {
                     checked={branding.show_announcement}
                     onCheckedChange={(v) => update("show_announcement", v)}
                   />
-                  <Label className="text-sm font-medium text-gray-700">Show Announcement Banner</Label>
+                  <Label className="text-sm font-medium text-foreground/80">Show Announcement Banner</Label>
                 </div>
 
                 {branding.show_announcement && (
-                  <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                  <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/50">
                     <div>
-                      <Label className="text-sm text-gray-600 mb-1 block">
+                      <Label className="text-sm text-muted-foreground mb-1 block">
                         Banner Text ({branding.announcement_text.length}/200)
                       </Label>
                       <Textarea
@@ -1221,7 +1222,7 @@ export default function AdminSchoolBranding() {
                       onChange={(v) => update("announcement_bg_color", v)}
                     />
                     <div>
-                      <Label className="text-sm text-gray-600 mb-2 block">Preview</Label>
+                      <Label className="text-sm text-muted-foreground mb-2 block">Preview</Label>
                       <div
                         className="px-4 py-2 text-white text-sm rounded-md text-center"
                         style={{ backgroundColor: branding.announcement_bg_color }}
@@ -1244,9 +1245,9 @@ export default function AdminSchoolBranding() {
                   { key: "social_youtube", label: "YouTube URL", icon: <Youtube className="w-4 h-4" />, placeholder: "https://youtube.com/@yourschool" },
                 ].map(({ key, label, icon, placeholder }) => (
                   <div key={key} className="flex items-center gap-3">
-                    <div className="w-8 h-8 flex items-center justify-center text-gray-400 shrink-0">{icon}</div>
+                    <div className="w-8 h-8 flex items-center justify-center text-muted-foreground shrink-0">{icon}</div>
                     <div className="flex-1">
-                      <Label className="text-xs text-gray-500 mb-1 block">{label}</Label>
+                      <Label className="text-xs text-muted-foreground mb-1 block">{label}</Label>
                       <Input
                         placeholder={placeholder}
                         value={branding[key as keyof Branding] as string}
@@ -1260,16 +1261,16 @@ export default function AdminSchoolBranding() {
               {/* ── TAB 7: Custom CSS ── */}
               <TabsContent value="css" className="space-y-4 mt-0">
                 <div>
-                  <Label className="text-sm font-medium text-gray-700 mb-1 block">Custom CSS</Label>
-                  <div className="flex items-start gap-2 mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                    <span className="text-amber-500 text-base leading-none mt-0.5">⚠️</span>
-                    <p className="text-xs text-amber-800 font-medium">
+                  <Label className="text-sm font-medium text-foreground/80 mb-1 block">Custom CSS</Label>
+                  <div className="flex items-start gap-2 mb-3 p-3 bg-warning/10 border border-warning/30 rounded-lg">
+                    <span className="text-warning text-base leading-none mt-0.5">⚠️</span>
+                    <p className="text-xs text-warning font-medium">
                       <strong>For developers only.</strong> If you are not a developer, do not add anything here — incorrect CSS can break your school's public page appearance.
                     </p>
                   </div>
-                  <p className="text-xs text-gray-500 mb-2">
+                  <p className="text-xs text-muted-foreground mb-2">
                     This CSS is injected into your school's public page.
-                    Hint: Use <code className="bg-gray-100 px-1 rounded text-xs font-mono">:root {"{ --custom-bg: #fff; }"}</code> to override CSS variables.
+                    Hint: Use <code className="bg-muted px-1 rounded text-xs font-mono">:root {"{ --custom-bg: #fff; }"}</code> to override CSS variables.
                   </p>
                   <Textarea
                     value={branding.custom_css}

@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { navIconActive, navIconIdle, navItemClass } from "@/components/layout/navStyles";
 
 // ─── apiFetch ─────────────────────────────────────────────────────────────────
 
@@ -129,61 +130,57 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
   const { user, signOut } = useAuth();
 
   return (
-    <div className="flex flex-col h-full bg-slate-900">
-      <div className="px-4 py-5 border-b border-white/10 flex items-center justify-between shrink-0">
+    <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
+      <div className="px-4 h-16 border-b border-sidebar-border flex items-center justify-between shrink-0">
         <Link href="/dashboard/admin">
           <div className="flex items-center gap-2.5 cursor-pointer">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm shrink-0">
+            <div className="h-8 w-8 rounded-lg bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm shrink-0" aria-hidden="true">
               S
             </div>
             <div>
-              <p className="text-white font-semibold text-sm leading-tight">SolomonQuest</p>
-              <p className="text-slate-400 text-xs">Admin Panel</p>
+              <p className="text-sidebar-accent-foreground font-semibold text-sm leading-tight">SolomonQuest</p>
+              <p className="text-sidebar-foreground/60 text-xs">Admin Panel</p>
             </div>
           </div>
         </Link>
         {onClose && (
-          <button onClick={onClose} className="text-slate-400 hover:text-white md:hidden">
+          <button onClick={onClose} aria-label="Close navigation" className="p-1.5 rounded-md text-sidebar-foreground/70 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 md:hidden">
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
+      <nav aria-label="Admin navigation" className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
         {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
           const active = exact ? location === href : location.startsWith(href);
           return (
             <Link key={href} href={href}>
               <button
                 onClick={onClose}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white"
-                }`}
+                aria-current={active ? "page" : undefined}
+                className={navItemClass(active)}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className={active ? navIconActive : navIconIdle} aria-hidden="true" />
                 <span className="flex-1 text-left">{label}</span>
-                {active && <ChevronRight className="h-3 w-3 opacity-70" />}
               </button>
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-3 border-t border-white/10 shrink-0">
+      <div className="p-3 border-t border-sidebar-border shrink-0">
         <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
-          <Avatar className="h-8 w-8 border border-white/20 shrink-0">
+          <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
             <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold">
               {getInitials((user as any)?.firstName, (user as any)?.lastName)}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 overflow-hidden">
-            <p className="text-white text-sm font-medium truncate">
+            <p className="text-sidebar-accent-foreground text-sm font-medium truncate">
               {(user as any)?.firstName} {(user as any)?.lastName}
             </p>
-            <p className="text-slate-400 text-xs capitalize truncate">
+            <p className="text-sidebar-foreground/60 text-xs capitalize truncate">
               {(user as any)?.role?.replace("_", " ")}
             </p>
           </div>
@@ -191,7 +188,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-slate-400 hover:text-red-400 hover:bg-red-400/10"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/15"
           onClick={signOut}
         >
           <LogOut className="mr-2 h-3.5 w-3.5" />
@@ -226,11 +223,11 @@ function StatCard({
             {loading ? (
               <Skeleton className="h-9 w-20 mt-1" />
             ) : (
-              <p className="text-3xl font-bold tracking-tight mt-1 text-gray-900">{value ?? 0}</p>
+              <p className="text-3xl font-bold tracking-tight mt-1 text-foreground">{value ?? 0}</p>
             )}
           </div>
           <div className={`p-3 rounded-xl ${color} shrink-0`}>
-            <Icon className="h-5 w-5 text-white" />
+            <Icon className="h-5 w-5" aria-hidden="true" />
           </div>
         </div>
       </CardContent>
@@ -266,7 +263,7 @@ function EnrollmentsChart({ data, loading }: { data: EnrollmentPoint[]; loading:
                 title={`${d.month}: ${d.count} enrollments`}
               />
               {/* Tooltip */}
-              <span className="absolute -top-7 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-900 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-10">
+              <span className="absolute -top-7 left-1/2 -translate-x-1/2 hidden group-hover:block bg-foreground text-background text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-10">
                 {d.count}
               </span>
             </div>
@@ -292,9 +289,9 @@ function FunnelBar({ label, value, total, color }: { label: string; value: numbe
     <div className="space-y-1">
       <div className="flex justify-between text-sm">
         <span className="text-muted-foreground capitalize">{label.replace("_", " ")}</span>
-        <span className="font-semibold text-gray-900">{value}</span>
+        <span className="font-semibold text-foreground">{value}</span>
       </div>
-      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+      <div className="h-2.5 bg-muted rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full transition-all ${color}`}
           style={{ width: `${pct}%` }}
@@ -361,7 +358,7 @@ export default function AdminAnalytics() {
     : 0;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-muted/50 flex">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col h-screen sticky top-0">
         <Sidebar />
@@ -379,8 +376,8 @@ export default function AdminAnalytics() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-14 bg-white border-b flex items-center px-4 gap-3 sticky top-0 z-20 shadow-sm">
-          <Button
+        <header className="h-16 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 border-b flex items-center px-4 md:px-6 gap-3 sticky top-0 z-20">
+          <Button aria-label="Open menu"
             variant="ghost"
             size="icon"
             className="md:hidden shrink-0"
@@ -389,7 +386,7 @@ export default function AdminAnalytics() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-base font-semibold text-gray-900">Analytics</h1>
+            <h1 className="text-base font-semibold text-foreground">Analytics</h1>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -430,7 +427,7 @@ export default function AdminAnalytics() {
           </DropdownMenu>
           <Avatar className="h-8 w-8 border">
             <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold">
               {getInitials((user as any)?.firstName, (user as any)?.lastName)}
             </AvatarFallback>
           </Avatar>
@@ -448,16 +445,16 @@ export default function AdminAnalytics() {
           <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-8">
 
             <div>
-              <h2 className="text-2xl font-bold tracking-tight text-gray-900">School Analytics</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-foreground">School Analytics</h2>
               <p className="text-muted-foreground mt-0.5">Overview of school performance and activity.</p>
             </div>
 
             {/* Stats Row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard title="Total Students" value={stats?.totalStudents} icon={GraduationCap} color="bg-emerald-500" loading={statsLoading} />
-              <StatCard title="Total Teachers" value={stats?.totalTeachers} icon={Users} color="bg-blue-500" loading={statsLoading} />
-              <StatCard title="Active Courses" value={stats?.totalCourses} icon={BookOpen} color="bg-violet-500" loading={statsLoading} />
-              <StatCard title="Applications" value={funnelTotal || stats?.pendingApplications} icon={ClipboardList} color="bg-orange-500" loading={statsLoading || analyticsLoading} />
+              <StatCard title="Total Students" value={stats?.totalStudents} icon={GraduationCap} color="bg-success/10 text-success" loading={statsLoading} />
+              <StatCard title="Total Teachers" value={stats?.totalTeachers} icon={Users} color="bg-primary/10 text-primary" loading={statsLoading} />
+              <StatCard title="Active Courses" value={stats?.totalCourses} icon={BookOpen} color="bg-chart-5/10 text-chart-5" loading={statsLoading} />
+              <StatCard title="Applications" value={funnelTotal || stats?.pendingApplications} icon={ClipboardList} color="bg-warning/10 text-warning" loading={statsLoading || analyticsLoading} />
             </div>
 
             {/* Enrollments Chart + Application Funnel */}
@@ -491,10 +488,10 @@ export default function AdminAnalytics() {
                     Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)
                   ) : funnel ? (
                     <>
-                      <FunnelBar label="Submitted" value={funnel.submitted} total={funnelTotal} color="bg-yellow-400" />
-                      <FunnelBar label="Under Review" value={funnel.under_review} total={funnelTotal} color="bg-blue-400" />
-                      <FunnelBar label="Approved" value={funnel.approved} total={funnelTotal} color="bg-emerald-500" />
-                      <FunnelBar label="Rejected" value={funnel.rejected} total={funnelTotal} color="bg-red-400" />
+                      <FunnelBar label="Submitted" value={funnel.submitted} total={funnelTotal} color="bg-warning" />
+                      <FunnelBar label="Under Review" value={funnel.under_review} total={funnelTotal} color="bg-primary" />
+                      <FunnelBar label="Approved" value={funnel.approved} total={funnelTotal} color="bg-success" />
+                      <FunnelBar label="Rejected" value={funnel.rejected} total={funnelTotal} color="bg-destructive" />
                     </>
                   ) : (
                     <p className="text-sm text-muted-foreground text-center py-4">No application data.</p>
@@ -513,7 +510,7 @@ export default function AdminAnalytics() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b bg-gray-50/60">
+                      <tr className="border-b bg-muted/40">
                         {["Course", "Enrolled", "Avg Grade"].map((h) => (
                           <th key={h} className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap">
                             {h}
@@ -532,25 +529,25 @@ export default function AdminAnalytics() {
                         ))
                       ) : (analytics?.top_courses ?? []).length > 0 ? (
                         (analytics?.top_courses ?? []).map((c, idx) => (
-                          <tr key={c.course_id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                          <tr key={c.course_id} className="border-b last:border-0 hover:bg-muted/50 transition-colors">
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground font-mono w-5">{idx + 1}</span>
-                                <span className="font-medium text-gray-900">{c.name}</span>
+                                <span className="font-medium text-foreground">{c.name}</span>
                               </div>
                             </td>
                             <td className="px-4 py-3 text-muted-foreground">{c.enrolled_count}</td>
                             <td className="px-4 py-3">
                               {c.avg_grade !== null ? (
                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                                  c.avg_grade >= 90 ? "bg-emerald-100 text-emerald-700" :
-                                  c.avg_grade >= 70 ? "bg-yellow-100 text-yellow-700" :
-                                  "bg-red-100 text-red-700"
+                                  c.avg_grade >= 90 ? "bg-success/10 text-success" :
+                                  c.avg_grade >= 70 ? "bg-warning/10 text-warning" :
+                                  "bg-destructive/10 text-destructive"
                                 }`}>
                                   {c.avg_grade}%
                                 </span>
                               ) : (
-                                <span className="text-gray-300">—</span>
+                                <span className="text-muted-foreground/60">—</span>
                               )}
                             </td>
                           </tr>
@@ -581,26 +578,26 @@ export default function AdminAnalytics() {
                     Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
                   ) : analytics?.student_activity ? (
                     <>
-                      <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                      <div className="flex items-center justify-between p-4 bg-success/10 rounded-xl border border-success/30">
                         <div>
-                          <p className="text-sm font-medium text-emerald-700">Active This Week</p>
-                          <p className="text-2xl font-bold text-emerald-900 mt-0.5">
+                          <p className="text-sm font-medium text-success">Active This Week</p>
+                          <p className="text-2xl font-bold text-success mt-0.5">
                             {analytics.student_activity.active_this_week}
                           </p>
                         </div>
-                        <div className="h-10 w-10 rounded-full bg-emerald-500 flex items-center justify-center">
-                          <Activity className="h-5 w-5 text-white" />
+                        <div className="h-10 w-10 rounded-full bg-success text-success-foreground flex items-center justify-center">
+                          <Activity className="h-5 w-5" aria-hidden="true" />
                         </div>
                       </div>
-                      <div className="flex items-center justify-between p-4 bg-blue-50 rounded-xl border border-blue-100">
+                      <div className="flex items-center justify-between p-4 bg-primary/10 rounded-xl border border-primary/30">
                         <div>
-                          <p className="text-sm font-medium text-blue-700">Avg Assignments Submitted</p>
-                          <p className="text-2xl font-bold text-blue-900 mt-0.5">
+                          <p className="text-sm font-medium text-primary">Avg Assignments Submitted</p>
+                          <p className="text-2xl font-bold text-primary mt-0.5">
                             {analytics.student_activity.avg_assignments_submitted}
                           </p>
                         </div>
-                        <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center">
-                          <ClipboardList className="h-5 w-5 text-white" />
+                        <div className="h-10 w-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+                          <ClipboardList className="h-5 w-5" aria-hidden="true" />
                         </div>
                       </div>
                     </>
@@ -620,7 +617,7 @@ export default function AdminAnalytics() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b bg-gray-50/60">
+                        <tr className="border-b bg-muted/40">
                           {["Teacher", "Courses", "Avg Student Grade"].map((h) => (
                             <th key={h} className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap">
                               {h}
@@ -639,20 +636,20 @@ export default function AdminAnalytics() {
                           ))
                         ) : (analytics?.teacher_performance ?? []).length > 0 ? (
                           (analytics?.teacher_performance ?? []).map((t) => (
-                            <tr key={t.teacher_id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
-                              <td className="px-4 py-3 font-medium text-gray-900">{t.name}</td>
+                            <tr key={t.teacher_id} className="border-b last:border-0 hover:bg-muted/50 transition-colors">
+                              <td className="px-4 py-3 font-medium text-foreground">{t.name}</td>
                               <td className="px-4 py-3 text-muted-foreground">{t.courses}</td>
                               <td className="px-4 py-3">
                                 {t.avg_student_grade !== null ? (
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    t.avg_student_grade >= 90 ? "bg-emerald-100 text-emerald-700" :
-                                    t.avg_student_grade >= 70 ? "bg-yellow-100 text-yellow-700" :
-                                    "bg-red-100 text-red-700"
+                                    t.avg_student_grade >= 90 ? "bg-success/10 text-success" :
+                                    t.avg_student_grade >= 70 ? "bg-warning/10 text-warning" :
+                                    "bg-destructive/10 text-destructive"
                                   }`}>
                                     {t.avg_student_grade}%
                                   </span>
                                 ) : (
-                                  <span className="text-gray-300">—</span>
+                                  <span className="text-muted-foreground/60">—</span>
                                 )}
                               </td>
                             </tr>
@@ -775,7 +772,7 @@ function TeacherActivityRanking() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b bg-gray-50/60">
+              <tr className="border-b bg-muted/40">
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap">
                   Rank
                 </th>
@@ -815,14 +812,14 @@ function TeacherActivityRanking() {
                 ))
               ) : sorted.length > 0 ? (
                 sorted.map((t, idx) => (
-                  <tr key={t.teacherId} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                  <tr key={t.teacherId} className="border-b last:border-0 hover:bg-muted/50 transition-colors">
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold ${
-                          idx === 0 ? "bg-yellow-100 text-yellow-700" :
-                          idx === 1 ? "bg-gray-200 text-gray-700" :
-                          idx === 2 ? "bg-orange-100 text-orange-700" :
-                          "bg-gray-50 text-muted-foreground"
+                          idx === 0 ? "bg-warning/10 text-warning" :
+                          idx === 1 ? "bg-muted text-foreground/80" :
+                          idx === 2 ? "bg-warning/10 text-warning" :
+                          "bg-muted/50 text-muted-foreground"
                         }`}
                       >
                         {idx + 1}
@@ -837,7 +834,7 @@ function TeacherActivityRanking() {
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-medium text-gray-900 whitespace-nowrap">{t.name}</p>
+                          <p className="font-medium text-foreground whitespace-nowrap">{t.name}</p>
                           <p className="text-[11px] text-muted-foreground">Score: {t.activityScore}</p>
                         </div>
                       </div>
@@ -959,18 +956,18 @@ function ActivityLog() {
         ) : (
           <div className="divide-y max-h-96 overflow-y-auto">
             {entries.map((e) => (
-              <div key={e.id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
+              <div key={e.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/50 transition-colors">
                 <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
                   {(e.performerName || "?")[0].toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                  <p className="text-sm font-medium text-foreground truncate">
                     {e.performerName}
                     <span className="ml-1.5 text-xs font-normal text-muted-foreground capitalize">{e.performerRole}</span>
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {ACTION_LABELS[e.action] ?? e.action}
-                    {e.targetName && <span className="font-medium text-gray-700"> · {e.targetName}</span>}
+                    {e.targetName && <span className="font-medium text-foreground/80"> · {e.targetName}</span>}
                   </p>
                 </div>
                 <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">

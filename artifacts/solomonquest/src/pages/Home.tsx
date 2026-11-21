@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { EmptyState } from "@/components/common/States";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -19,21 +20,21 @@ export default function Home() {
   return (
     <PublicLayout>
       <div className="relative">
-        <section className="py-20 md:py-32 px-4 bg-primary text-primary-foreground relative overflow-hidden">
+        <section className="py-16 md:py-32 px-4 bg-brand text-white relative overflow-hidden">
           <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-10 mix-blend-overlay"></div>
           <div className="container mx-auto max-w-6xl relative z-10">
             <div className="max-w-3xl space-y-6">
-              <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-primary-foreground leading-tight">
+              <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight text-white leading-tight">
                 Education, Elevated.
               </h1>
-              <p className="text-xl md:text-2xl text-primary-foreground/80 font-medium">
+              <p className="text-lg sm:text-xl md:text-2xl text-white/80 font-medium">
                 The premium learning management system that respects your time, your craft, and your students.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                <Button size="lg" variant="secondary" asChild className="text-lg px-8">
+                <Button size="lg" asChild className="text-base sm:text-lg px-8 bg-gold text-gold-foreground border-gold hover:bg-gold/90 shadow-md">
                   <Link href="/auth/register">Create a School</Link>
                 </Button>
-                <Button size="lg" variant="outline" className="bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 text-lg px-8" asChild>
+                <Button size="lg" variant="outline" className="bg-transparent border-white/30 text-white hover:bg-white/10 text-base sm:text-lg px-8" asChild>
                   <Link href="/onboarding/join">Join a School</Link>
                 </Button>
               </div>
@@ -59,8 +60,8 @@ export default function Home() {
               </Card>
               <Card className="border-border shadow-sm">
                 <CardHeader>
-                  <div className="h-12 w-12 rounded-lg bg-secondary/10 flex items-center justify-center mb-4">
-                    <BookOpen className="h-6 w-6 text-secondary" />
+                  <div className="h-12 w-12 rounded-lg bg-gold/15 flex items-center justify-center mb-4">
+                    <BookOpen className="h-6 w-6 text-gold-foreground dark:text-gold" />
                   </div>
                   <CardTitle>Clean Hierarchy</CardTitle>
                 </CardHeader>
@@ -137,12 +138,16 @@ export default function Home() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-12 bg-card rounded-lg border border-border">
-                <p className="text-muted-foreground mb-4">No schools found.</p>
-                <Button variant="outline" asChild>
-                  <Link href="/onboarding/setup">Be the first to create one</Link>
-                </Button>
-              </div>
+              <EmptyState
+                icon={GraduationCap}
+                title="No schools listed yet"
+                description="Schools that publish a public page will appear here."
+                action={
+                  <Button asChild>
+                    <Link href="/onboarding/setup">Be the first to create one</Link>
+                  </Button>
+                }
+              />
             )}
           </div>
         </section>

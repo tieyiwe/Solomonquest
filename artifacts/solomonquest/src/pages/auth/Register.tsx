@@ -95,9 +95,9 @@ export default function Register() {
 
   return (
     <div className="min-h-screen flex flex-col md:grid md:grid-cols-2">
-      <div className="hidden md:block bg-primary relative overflow-hidden">
+      <div className="hidden md:block bg-brand relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-20 mix-blend-overlay"></div>
-        <div className="absolute inset-0 flex flex-col justify-center p-12 text-primary-foreground z-10 bg-gradient-to-br from-primary/90 to-primary/40">
+        <div className="absolute inset-0 flex flex-col justify-center p-12 text-white z-10 bg-gradient-to-br from-black/10 to-black/30">
           <h2 className="text-4xl font-bold mb-6">Join SolomonQuest</h2>
           <p className="text-xl opacity-90 max-w-lg">
             Experience an LMS that actually respects its users. Clean, organized, and focused on education.

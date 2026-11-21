@@ -156,7 +156,7 @@ export function RequiredVideoPlayer({ src, onComplete, className = "", assignmen
 
       {/* Seek blocked flash */}
       {seekBlocked && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-red-500/90 text-white text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 pointer-events-none">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-destructive/90 text-destructive-foreground text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 pointer-events-none">
           <Lock className="h-3.5 w-3.5" />
           You cannot skip ahead
         </div>

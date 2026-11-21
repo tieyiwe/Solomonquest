@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format, isToday, isFuture, parseISO } from "date-fns";
+import { navIconActive, navIconIdle, navItemClass } from "@/components/layout/navStyles";
 
 // ─── apiFetch helper ──────────────────────────────────────────────────────────
 
@@ -129,10 +130,10 @@ function formatDate(raw?: string | null) {
 }
 
 function gradeColor(pct: number) {
-  if (pct >= 90) return "text-green-600";
-  if (pct >= 75) return "text-blue-600";
-  if (pct >= 60) return "text-yellow-600";
-  return "text-red-600";
+  if (pct >= 90) return "text-success";
+  if (pct >= 75) return "text-primary";
+  if (pct >= 60) return "text-warning";
+  return "text-destructive";
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
@@ -155,44 +156,40 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
   const { user, signOut } = useAuth();
 
   return (
-    <div className="flex flex-col h-full bg-slate-900">
+    <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
       {/* Logo */}
-      <div className="px-4 py-5 border-b border-white/10 flex items-center justify-between shrink-0">
+      <div className="px-4 h-16 border-b border-sidebar-border flex items-center justify-between shrink-0">
         <Link href="/dashboard/student">
           <div className="flex items-center gap-2.5 cursor-pointer">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground shrink-0">
+            <div className="h-8 w-8 rounded-lg bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground shrink-0" aria-hidden="true">
               <GraduationCap className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-white font-semibold text-sm leading-tight">SolomonQuest</p>
-              <p className="text-slate-400 text-xs">Student Portal</p>
+              <p className="text-sidebar-accent-foreground font-semibold text-sm leading-tight">SolomonQuest</p>
+              <p className="text-sidebar-foreground/60 text-xs">Student Portal</p>
             </div>
           </div>
         </Link>
         {onClose && (
-          <button onClick={onClose} className="text-slate-400 hover:text-white md:hidden">
+          <button onClick={onClose} aria-label="Close navigation" className="p-1.5 rounded-md text-sidebar-foreground/70 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 md:hidden">
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
+      <nav aria-label="Main navigation" className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
         {NAV_LINKS.map(({ href, label, icon: Icon, exact }, idx) => {
           const active = exact ? location === href : location.startsWith(href);
           return (
             <Link key={`${href}-${idx}`} href={href}>
               <button
                 onClick={onClose}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white"
-                }`}
+                aria-current={active ? "page" : undefined}
+                className={navItemClass(active)}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className={active ? navIconActive : navIconIdle} aria-hidden="true" />
                 <span className="flex-1 text-left">{label}</span>
-                {active && <ChevronRight className="h-3 w-3 opacity-70" />}
               </button>
             </Link>
           );
@@ -200,19 +197,19 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
       </nav>
 
       {/* User footer */}
-      <div className="p-3 border-t border-white/10 shrink-0">
+      <div className="p-3 border-t border-sidebar-border shrink-0">
         <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
-          <Avatar className="h-8 w-8 border border-white/20 shrink-0">
+          <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
             <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold">
               {getInitials((user as any)?.firstName, (user as any)?.lastName)}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 overflow-hidden">
-            <p className="text-white text-sm font-medium truncate">
+            <p className="text-sidebar-accent-foreground text-sm font-medium truncate">
               {(user as any)?.firstName} {(user as any)?.lastName}
             </p>
-            <p className="text-slate-400 text-xs font-mono truncate">
+            <p className="text-sidebar-foreground/60 text-xs font-mono truncate">
               {formatStudentId((user as any)?.uniqueStudentId || (user as any)?.unique_student_id || (user as any)?.id)}
             </p>
           </div>
@@ -220,7 +217,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-slate-400 hover:text-red-400 hover:bg-red-400/10"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/15"
           onClick={signOut}
         >
           <LogOut className="mr-2 h-3.5 w-3.5" />
@@ -251,7 +248,7 @@ function StatCard({
   highlight?: boolean;
 }) {
   return (
-    <Card className={`border shadow-sm ${highlight ? "border-orange-300" : ""}`}>
+    <Card className={`border shadow-sm ${highlight ? "border-warning/30" : ""}`}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
         <CardTitle className="text-xs font-medium text-muted-foreground">{title}</CardTitle>
         <div className={`h-8 w-8 rounded-full ${bg} flex items-center justify-center shrink-0`}>
@@ -360,7 +357,7 @@ export default function StudentOverview() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-muted/50 flex">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col h-screen sticky top-0">
         <Sidebar />
@@ -379,8 +376,8 @@ export default function StudentOverview() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Bar */}
-        <header className="h-14 bg-white border-b flex items-center px-4 gap-3 sticky top-0 z-20 shadow-sm">
-          <Button
+        <header className="h-16 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 border-b flex items-center px-4 md:px-6 gap-3 sticky top-0 z-20">
+          <Button aria-label="Open menu"
             variant="ghost"
             size="icon"
             className="md:hidden shrink-0"
@@ -389,10 +386,10 @@ export default function StudentOverview() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-base font-semibold text-gray-900 hidden md:block">
+            <h1 className="text-base font-semibold text-foreground hidden md:block">
               Student Dashboard
             </h1>
-            <h1 className="text-base font-semibold text-gray-900 md:hidden">SolomonQuest</h1>
+            <h1 className="text-base font-semibold text-foreground md:hidden">SolomonQuest</h1>
           </div>
 
           {/* Notification Bell */}
@@ -406,9 +403,9 @@ export default function StudentOverview() {
                 setNotifOpen((o) => !o);
               }}
             >
-              <Bell className="h-5 w-5 text-gray-600" />
+              <Bell className="h-5 w-5 text-muted-foreground" />
               {pendingAssignments > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-bold">
+                <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center font-bold">
                   {pendingAssignments > 9 ? "9+" : pendingAssignments}
                 </span>
               )}
@@ -416,25 +413,25 @@ export default function StudentOverview() {
 
             {notifOpen && (
               <div
-                className="absolute right-0 top-10 w-72 bg-white rounded-xl shadow-lg border z-50 overflow-hidden"
+                className="absolute right-0 top-10 w-72 bg-card rounded-xl shadow-lg border z-50 overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="px-4 py-3 border-b flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                  <p className="text-sm font-semibold text-foreground">Notifications</p>
                   <button
-                    className="text-gray-400 hover:text-gray-600"
+                    className="text-muted-foreground hover:text-foreground"
                     onClick={() => setNotifOpen(false)}
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
                 {pendingAssignments > 0 ? (
-                  <div className="px-4 py-3 flex items-start gap-3 hover:bg-gray-50">
-                    <div className="mt-0.5 h-7 w-7 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
-                      <AlertCircle className="h-3.5 w-3.5 text-orange-600" />
+                  <div className="px-4 py-3 flex items-start gap-3 hover:bg-muted/50">
+                    <div className="mt-0.5 h-7 w-7 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+                      <AlertCircle className="h-3.5 w-3.5 text-warning" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-900">
+                      <p className="text-sm font-medium text-foreground">
                         {pendingAssignments} assignment{pendingAssignments > 1 ? "s" : ""} pending
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5">Don&apos;t fall behind!</p>
@@ -447,7 +444,7 @@ export default function StudentOverview() {
                   </div>
                 ) : (
                   <div className="px-4 py-8 text-center">
-                    <Bell className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                    <Bell className="h-8 w-8 text-muted-foreground/60 mx-auto mb-2" />
                     <p className="text-sm text-muted-foreground">You are all caught up!</p>
                   </div>
                 )}
@@ -464,7 +461,7 @@ export default function StudentOverview() {
           <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-8">
 
             {/* Welcome Banner */}
-            <div className="rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-gray-50 border p-6 flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-gold/10 border p-6 flex flex-col sm:flex-row sm:items-center gap-4">
               <Avatar className="h-14 w-14 border-2 border-primary/30 shrink-0">
                 <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
                 <AvatarFallback className="bg-primary text-primary-foreground text-xl font-bold">
@@ -472,7 +469,7 @@ export default function StudentOverview() {
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+                <h2 className="text-2xl font-bold tracking-tight text-foreground">
                   Welcome back, {firstName}!
                 </h2>
                 <p className="text-muted-foreground mt-0.5 text-sm">
@@ -507,8 +504,8 @@ export default function StudentOverview() {
                   title="Pending Assignments"
                   value={pendingAssignments}
                   icon={ClipboardList}
-                  color="text-orange-600"
-                  bg="bg-orange-100"
+                  color="text-warning"
+                  bg="bg-warning/10"
                   loading={statsLoading}
                   highlight={pendingAssignments > 0}
                 />
@@ -518,8 +515,8 @@ export default function StudentOverview() {
                   title="Average Grade"
                   value={avgGrade != null ? `${avgGrade}%` : "N/A"}
                   icon={TrendingUp}
-                  color="text-green-600"
-                  bg="bg-green-100"
+                  color="text-success"
+                  bg="bg-success/10"
                   loading={statsLoading}
                 />
               </Link>
@@ -528,8 +525,8 @@ export default function StudentOverview() {
                   title="Application Status"
                   value={appStatus ? appStatus.replace(/_/g, " ") : "N/A"}
                   icon={Inbox}
-                  color="text-blue-600"
-                  bg="bg-blue-100"
+                  color="text-primary"
+                  bg="bg-primary/10"
                   loading={statsLoading}
                 />
               </Link>
@@ -544,7 +541,7 @@ export default function StudentOverview() {
                 {/* Enrolled Courses */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                       <BookOpen className="h-5 w-5 text-primary" />
                       My Courses
                     </h3>
@@ -588,7 +585,7 @@ export default function StudentOverview() {
                                 </div>
                                 <div className="flex gap-1.5">
                                   {course.is_live && (
-                                    <Badge className="text-xs gap-1 bg-red-500 hover:bg-red-600">
+                                    <Badge className="text-xs gap-1 bg-destructive hover:bg-destructive/90">
                                       <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
                                       Live
                                     </Badge>
@@ -618,7 +615,7 @@ export default function StudentOverview() {
                                 {activeRoom ? (
                                   <Button
                                     size="sm"
-                                    className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700"
+                                    className="h-7 text-xs gap-1 bg-success hover:bg-success/90"
                                     onClick={() =>
                                       window.open(
                                         `https://meet.jit.si/${activeRoom}`,
@@ -663,7 +660,7 @@ export default function StudentOverview() {
                 {/* Upcoming Live Classes */}
                 {upcomingLive.length > 0 && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                       <Video className="h-5 w-5 text-primary" />
                       Upcoming Live Classes
                     </h3>
@@ -685,15 +682,15 @@ export default function StudentOverview() {
                         return (
                           <Card
                             key={course.id}
-                            className="border-green-200 bg-green-50/50"
+                            className="border-success/30 bg-success/10"
                           >
                             <CardContent className="p-4">
                               <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                                  <Video className="h-5 w-5 text-green-600" />
+                                <div className="h-10 w-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+                                  <Video className="h-5 w-5 text-success" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="font-semibold text-sm text-gray-900 truncate">
+                                  <p className="font-semibold text-sm text-foreground truncate">
                                     {course.title}
                                   </p>
                                   {classDisplay && (
@@ -706,7 +703,7 @@ export default function StudentOverview() {
                                 {activeRoom ? (
                                   <Button
                                     size="sm"
-                                    className="bg-green-600 hover:bg-green-700 shrink-0 gap-1"
+                                    className="bg-success hover:bg-success/90 shrink-0 gap-1"
                                     onClick={() =>
                                       window.open(
                                         `https://meet.jit.si/${activeRoom}`,
@@ -738,7 +735,7 @@ export default function StudentOverview() {
 
                 {/* Recent Grades */}
                 <div className="space-y-4">
-                  <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                  <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
                     <Star className="h-5 w-5 text-primary" />
                     Recent Grades
                   </h3>
@@ -759,7 +756,7 @@ export default function StudentOverview() {
                             return (
                               <div key={g.id} className="p-3 flex items-center gap-3">
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-900 truncate">{title}</p>
+                                  <p className="text-sm font-medium text-foreground truncate">{title}</p>
                                   {(g.courseTitle || g.course_title) && (
                                     <p className="text-xs text-muted-foreground truncate">
                                       {g.courseTitle || g.course_title}
@@ -802,7 +799,7 @@ export default function StudentOverview() {
 
                 {/* Quick Links */}
                 <div className="space-y-3">
-                  <h3 className="text-base font-semibold text-gray-900">Quick Links</h3>
+                  <h3 className="text-base font-semibold text-foreground">Quick Links</h3>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { label: "Assignments", href: "/dashboard/student/assignments", icon: ClipboardList },

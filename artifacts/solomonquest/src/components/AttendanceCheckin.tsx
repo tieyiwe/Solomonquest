@@ -75,23 +75,23 @@ export default function AttendanceCheckin({ courses }: AttendanceCheckinProps) {
         const error = state?.error;
 
         return (
-          <Card key={course.id} className="border-orange-300 bg-orange-50">
+          <Card key={course.id} className="border-warning/30 bg-warning/10">
             <CardContent className="flex items-center justify-between py-4 px-5">
               <div className="flex items-center gap-3">
-                <Badge className="bg-red-500 text-white animate-pulse">LIVE</Badge>
+                <Badge className="bg-destructive text-destructive-foreground animate-pulse">LIVE</Badge>
                 <div>
-                  <p className="font-semibold text-gray-900">Live class today!</p>
-                  <p className="text-sm text-gray-600">
+                  <p className="font-semibold text-foreground">Live class today!</p>
+                  <p className="text-sm text-muted-foreground">
                     {course.name} at {formatTime(course.class_date)}
                   </p>
-                  {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+                  {error && <p className="text-xs text-destructive mt-1">{error}</p>}
                 </div>
               </div>
 
               <div className="flex items-center gap-3">
                 {checkedIn ? (
-                  <span className="flex items-center gap-1.5 text-green-700 font-medium text-sm">
-                    <svg className="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <span className="flex items-center gap-1.5 text-success font-medium text-sm">
+                    <svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                     Checked in at {formatTime(state.checked_in_at!)}
@@ -100,7 +100,7 @@ export default function AttendanceCheckin({ courses }: AttendanceCheckinProps) {
                   <Button
                     onClick={() => handleCheckin(course.id)}
                     disabled={loading}
-                    className="bg-orange-500 hover:bg-orange-600 text-white"
+                    className="bg-warning hover:bg-warning/90 text-warning-foreground"
                   >
                     {loading ? "Checking in..." : "Check In"}
                   </Button>

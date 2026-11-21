@@ -417,7 +417,7 @@ function AssignmentFormDialog({
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Lock className="h-4 w-4 text-orange-500" />
+                  <Lock className="h-4 w-4 text-warning" />
                   <div>
                     <p className="text-sm font-medium">Require full watch</p>
                     <p className="text-xs text-muted-foreground">Students cannot skip ahead or proceed until the video ends</p>
@@ -640,7 +640,7 @@ function CourseAssignmentsPanel({
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="font-medium text-sm">{assignment.title}</h4>
                       {(assignment as any).assignmentType === "video" && (
-                        <Badge variant="outline" className="text-xs gap-1 border-blue-200 text-blue-600">
+                        <Badge variant="outline" className="text-xs gap-1 border-primary/30 text-primary">
                           <Video className="h-2.5 w-2.5" />
                           Video
                           {(assignment as any).requireFullWatch && <Lock className="h-2.5 w-2.5 ml-0.5" />}
@@ -830,8 +830,8 @@ export default function TeacherAssignments() {
             </Card>
             <Card className="p-4">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                  <FileText className="h-4 w-4 text-blue-600" />
+                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <FileText className="h-4 w-4 text-primary" />
                 </div>
                 <div>
                   <div className="text-2xl font-bold">—</div>
@@ -841,8 +841,8 @@ export default function TeacherAssignments() {
             </Card>
             <Card className="p-4 col-span-2 sm:col-span-1">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                  <Users className="h-4 w-4 text-amber-600" />
+                <div className="h-9 w-9 rounded-lg bg-warning/10 flex items-center justify-center">
+                  <Users className="h-4 w-4 text-warning" />
                 </div>
                 <div>
                   <div className="text-2xl font-bold">—</div>

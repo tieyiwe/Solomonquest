@@ -67,6 +67,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { EmptyState } from "@/components/common/States";
 
 const assignmentSchema = z.object({
   title: z.string().min(2, "Title is required"),
@@ -590,11 +591,11 @@ export default function TeacherCourseDetail() {
                 <div className="text-sm text-muted-foreground mt-1">Enrolled Students</div>
               </Card>
               <Card className="text-center p-6">
-                <div className="text-3xl font-bold text-blue-600">{assignments?.length || 0}</div>
+                <div className="text-3xl font-bold text-primary">{assignments?.length || 0}</div>
                 <div className="text-sm text-muted-foreground mt-1">Assignments</div>
               </Card>
               <Card className="text-center p-6">
-                <div className="text-3xl font-bold text-green-600">
+                <div className="text-3xl font-bold text-success">
                   {attendance?.length || 0}
                 </div>
                 <div className="text-sm text-muted-foreground mt-1">Attendance Records</div>
@@ -626,7 +627,7 @@ export default function TeacherCourseDetail() {
                         <button
                           key={student.id}
                           onClick={() => setViewStudentId(student.id)}
-                          className="w-full py-3 flex items-center justify-between gap-4 text-left hover:bg-gray-50 rounded-lg px-2 -mx-2 transition-colors"
+                          className="w-full py-3 flex items-center justify-between gap-4 text-left hover:bg-muted/50 rounded-lg px-2 -mx-2 transition-colors"
                         >
                           <div className="flex items-center gap-3">
                             <Avatar className="h-9 w-9">
@@ -665,7 +666,7 @@ export default function TeacherCourseDetail() {
                 ) : (
                   <div className="text-center py-12 border border-dashed rounded-lg">
                     <Users className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
-                    <p className="text-muted-foreground">No students enrolled yet.</p>
+                    <EmptyState compact icon={Users} title="No students enrolled yet" description="Students appear here once they are enrolled in this course." />
                   </div>
                 )}
               </CardContent>
@@ -701,8 +702,8 @@ export default function TeacherCourseDetail() {
 
                 <div className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label>Resource Title</Label>
-                    <Input
+                    <Label htmlFor="teachercoursedetail-resource-title">Resource Title</Label>
+                    <Input id="teachercoursedetail-resource-title"
                       placeholder="e.g. Chapter 1 Reading"
                       value={resourceTitle}
                       onChange={(e) => setResourceTitle(e.target.value)}
@@ -711,8 +712,8 @@ export default function TeacherCourseDetail() {
 
                   {resourceType === "link" ? (
                     <div className="space-y-1.5">
-                      <Label>URL</Label>
-                      <Input
+                      <Label htmlFor="teachercoursedetail-url">URL</Label>
+                      <Input id="teachercoursedetail-url"
                         placeholder="https://..."
                         value={resourceUrl}
                         onChange={(e) => setResourceUrl(e.target.value)}
@@ -800,7 +801,7 @@ export default function TeacherCourseDetail() {
                             <div className="flex items-center gap-2">
                               <p className="font-medium truncate">{resource.title}</p>
                               {resource.is_published ? (
-                                <Badge className="bg-green-600 hover:bg-green-600 text-white text-xs">
+                                <Badge className="bg-success hover:bg-success/90 text-success-foreground text-xs">
                                   Published
                                 </Badge>
                               ) : (
@@ -1037,7 +1038,7 @@ export default function TeacherCourseDetail() {
               <Card className="border-dashed">
                 <CardContent className="text-center py-12">
                   <FileText className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
-                  <p className="text-muted-foreground">No assignments yet.</p>
+                  <EmptyState compact icon={FileText} title="No assignments yet" description="Create the first assignment for this course." />
                   <Button
                     size="sm"
                     className="mt-3"
@@ -1178,7 +1179,7 @@ export default function TeacherCourseDetail() {
                           <div className="flex items-center gap-2">
                             <h4 className="font-semibold">{quiz.title}</h4>
                             {quiz.is_published ? (
-                              <Badge className="bg-green-600 hover:bg-green-600 text-white text-xs">
+                              <Badge className="bg-success hover:bg-success/90 text-success-foreground text-xs">
                                 Published
                               </Badge>
                             ) : (
@@ -1241,7 +1242,7 @@ export default function TeacherCourseDetail() {
               <Card className="border-dashed">
                 <CardContent className="text-center py-12">
                   <FileQuestion className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
-                  <p className="text-muted-foreground">No quizzes created yet.</p>
+                  <EmptyState compact icon={ClipboardList} title="No quizzes yet" description="Build a quiz to check understanding." />
                   <Button size="sm" className="mt-3" asChild>
                     <Link href={`/dashboard/teacher/quiz-builder?courseId=${courseId}`}>
                       <Plus className="h-4 w-4 mr-2" />
@@ -1297,7 +1298,7 @@ export default function TeacherCourseDetail() {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                        <div className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
                         <span className="font-medium text-sm">Live Session Active</span>
                       </div>
                       <div className="flex gap-2">
