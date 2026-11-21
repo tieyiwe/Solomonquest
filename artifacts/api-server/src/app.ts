@@ -11,6 +11,13 @@ const app: Express = express();
 
 app.disable("x-powered-by");
 
+// Replit's infrastructure sits in front of this app as a reverse proxy and
+// sets X-Forwarded-For. Without trusting it, express-rate-limit throws
+// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR on every request, which was crashing
+// the health check and causing autoscale to repeatedly kill/restart the
+// container.
+app.set("trust proxy", 1);
+
 app.use(helmet());
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "http://localhost:3000").split(",");
@@ -24,11 +31,6 @@ app.use(
   }),
 );
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: "Too many requests, please try again later" },
-});
 const apiLimiter = rateLimit({ windowMs: 1 * 60 * 1000, max: 300 });
 // The public transcript-verify endpoint (email + unique_student_id, no auth)
 // is otherwise an enumeration surface — unique_student_id formats tend to be
@@ -68,7 +70,6 @@ app.use("/api", stripeWebhookRouter);
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/api/auth", authLimiter);
 app.use("/api/transcripts/verify", transcriptVerifyLimiter);
 app.use("/api", apiLimiter);
 app.use("/api", router);

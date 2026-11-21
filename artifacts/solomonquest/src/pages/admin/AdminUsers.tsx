@@ -67,6 +67,9 @@ import {
   Eye,
   Upload,
   Download,
+  Trash2,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -924,6 +927,7 @@ interface Invitation {
   expires_at: string;
   accepted_at?: string | null;
   programName?: string | null;
+  archived?: boolean;
 }
 
 function statusBadge(status: string) {
@@ -949,8 +953,10 @@ function InvitationsTab({
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
     let cancelled = false;
     setLoading(true);
     setFetchError("");
@@ -969,7 +975,51 @@ function InvitationsTab({
         .finally(() => { if (!cancelled) setLoading(false); });
     });
     return () => { cancelled = true; };
-  }, [refreshKey]);
+  };
+
+  useEffect(() => load(), [refreshKey]);
+
+  const handleArchive = async (inv: Invitation) => {
+    setBusyId(inv.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/invitations/${inv.id}/archive`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ archived: !inv.archived }),
+      });
+      if (!res.ok) throw new Error("Failed to update invitation");
+      setInvitations((prev) =>
+        prev.map((i) => (i.id === inv.id ? { ...i, archived: !inv.archived } : i))
+      );
+      toast.success(inv.archived ? "Invitation unarchived" : "Invitation archived");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update invitation");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleDelete = async (inv: Invitation) => {
+    setBusyId(inv.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/invitations/${inv.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (!res.ok) throw new Error("Failed to delete invitation");
+      setInvitations((prev) => prev.filter((i) => i.id !== inv.id));
+      toast.success("Invitation deleted");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete invitation");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const visible = invitations
     .filter((inv) => !roleFilter || inv.role === roleFilter)
@@ -991,62 +1041,137 @@ function InvitationsTab({
     );
   }
 
-  if (visible.length === 0) {
-    if (roleFilter) return null;
-    return (
-      <div className="text-center py-16 text-muted-foreground">
-        <Mail className="h-10 w-10 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">No invitations sent yet. Use the Invite buttons in the Teachers, Students, or Staff tabs.</p>
-      </div>
-    );
-  }
+  // Archived invitations only show in the main Invitations tab's "View
+  // Archived" mode; the role-filtered lists embedded in the Teachers /
+  // Students / Staff tabs always show active ones.
+  const showingArchived = !roleFilter && showArchived;
+  const shown = visible.filter((inv) => !!inv.archived === showingArchived);
+
+  if (shown.length === 0 && roleFilter) return null;
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow className="bg-muted/30">
-          <TableHead className="font-semibold">Email</TableHead>
-          <TableHead className="font-semibold">Role</TableHead>
-          <TableHead className="font-semibold">Status</TableHead>
-          <TableHead className="font-semibold">Sent</TableHead>
-          <TableHead className="font-semibold">Accepted / Expires</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {visible.map((inv) => (
-          <TableRow key={inv.id}>
-            <TableCell className="font-medium text-sm">{inv.email}</TableCell>
-            <TableCell>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {inv.role === "teacher" ? (
-                  <Badge className="bg-primary/10 text-primary border-primary/30 border">Teacher</Badge>
-                ) : inv.role === "staff" ? (
-                  <Badge className="bg-warning/10 text-warning border-warning/30 border">Staff</Badge>
-                ) : (
-                  <Badge variant="outline" className="capitalize">{inv.role}</Badge>
-                )}
-                {inv.programName && (
-                  <Badge className="bg-primary/10 text-primary border-primary/30 border text-xs">
-                    {inv.programName}
-                  </Badge>
-                )}
-              </div>
-            </TableCell>
-            <TableCell>{statusBadge(inv.status)}</TableCell>
-            <TableCell className="text-sm text-muted-foreground">
-              {new Date(inv.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
-            </TableCell>
-            <TableCell className="text-sm text-muted-foreground">
-              {inv.status === "accepted" && inv.accepted_at
-                ? new Date(inv.accepted_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-                : inv.status === "expired"
-                ? "—"
-                : `Expires ${new Date(inv.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <div>
+      {!roleFilter && (
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <p className="text-sm text-muted-foreground">
+            {showArchived ? "Archived invitations." : "Invitations sent to prospective users."}
+          </p>
+          <Button variant="outline" size="sm" onClick={() => setShowArchived((v) => !v)}>
+            {showArchived ? (
+              <><ArchiveRestore className="mr-2 h-3.5 w-3.5" />View Active</>
+            ) : (
+              <><Archive className="mr-2 h-3.5 w-3.5" />View Archived</>
+            )}
+          </Button>
+        </div>
+      )}
+
+      {shown.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <Mail className="h-10 w-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">
+            {showingArchived
+              ? "No archived invitations."
+              : "No invitations sent yet. Use the Invite buttons in the Teachers, Students, or Staff tabs."}
+          </p>
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/30">
+              <TableHead className="font-semibold">Email</TableHead>
+              <TableHead className="font-semibold">Role</TableHead>
+              <TableHead className="font-semibold">Status</TableHead>
+              <TableHead className="font-semibold">Sent</TableHead>
+              <TableHead className="font-semibold">Accepted / Expires</TableHead>
+              <TableHead className="font-semibold text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {shown.map((inv) => (
+              <TableRow key={inv.id}>
+                <TableCell className="font-medium text-sm">{inv.email}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {inv.role === "teacher" ? (
+                      <Badge className="bg-primary/10 text-primary border-primary/30 border">Teacher</Badge>
+                    ) : inv.role === "staff" ? (
+                      <Badge className="bg-warning/10 text-warning border-warning/30 border">Staff</Badge>
+                    ) : inv.role === "student" ? (
+                      <Badge className="bg-success/10 text-success border-success/30 border">Student</Badge>
+                    ) : (
+                      <Badge variant="outline" className="capitalize">{inv.role}</Badge>
+                    )}
+                    {inv.programName && (
+                      <Badge className="bg-primary/10 text-primary border-primary/30 border text-xs">
+                        {inv.programName}
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>{statusBadge(inv.status)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {new Date(inv.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {inv.status === "accepted" && inv.accepted_at
+                    ? new Date(inv.accepted_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+                    : inv.status === "expired"
+                    ? "—"
+                    : `Expires ${new Date(inv.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      disabled={busyId === inv.id}
+                      onClick={() => handleArchive(inv)}
+                      title={inv.archived ? "Unarchive" : "Archive"}
+                      aria-label={inv.archived ? `Unarchive invitation for ${inv.email}` : `Archive invitation for ${inv.email}`}
+                    >
+                      {inv.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          disabled={busyId === inv.id}
+                          title="Delete"
+                          aria-label={`Delete invitation for ${inv.email}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Invitation?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently delete the invitation sent to <strong>{inv.email}</strong>. This cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDelete(inv)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
   );
 }
 

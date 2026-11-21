@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Link, useRoute } from "wouter";
+import { Link, useParams } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -402,7 +402,7 @@ function dashboardPathFor(role?: string | null): string {
 }
 
 export default function SchoolPublicPage() {
-  const [, params] = useRoute("/schools/:slug");
+  const params = useParams<{ slug: string }>();
   const slug = params?.slug ?? "";
 
   const { user } = useAuth();
@@ -464,7 +464,7 @@ export default function SchoolPublicPage() {
 
   const handleApply = () => {
     if (user) {
-      window.location.href = `/schools/${slug}/apply`;
+      window.location.href = `/${slug}/apply`;
     } else {
       setShowAuthDialog(true);
     }

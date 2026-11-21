@@ -49,7 +49,40 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-function baseLayout(title: string, body: string): string {
+function baseLayout(
+  title: string,
+  body: string,
+  options?: { confetti?: boolean; headerTitle?: string; headerLogoUrl?: string }
+): string {
+  const confettiRow = options?.confetti
+    ? `
+          <!-- Confetti -->
+          <tr>
+            <td style="background:${PRIMARY};padding:0 40px 22px;text-align:center;font-size:26px;line-height:1;letter-spacing:6px;">
+              &#127881; &#127882; &#10024; &#127880; &#127882; &#10024; &#127881;
+            </td>
+          </tr>`
+    : "";
+
+  // headerTitle is expected to arrive already HTML-escaped (callers escape
+  // schoolName before passing it). The logo URL is raw school-controlled
+  // data, so only allow http(s) and escape it for the attribute context.
+  const headerTitle = options?.headerTitle ?? "SolomonQuest";
+  const headerLogoUrl =
+    options?.headerLogoUrl && /^https?:\/\//i.test(options.headerLogoUrl)
+      ? escapeHtml(options.headerLogoUrl)
+      : undefined;
+  const headerContent = headerLogoUrl
+    ? `<table cellpadding="0" cellspacing="0"><tr>
+        <td style="padding-right:12px;vertical-align:middle;">
+          <img src="${headerLogoUrl}" alt="${headerTitle}" height="36" style="height:36px;max-width:120px;display:block;object-fit:contain;" />
+        </td>
+        <td style="vertical-align:middle;">
+          <p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">${headerTitle}</p>
+        </td>
+      </tr></table>`
+    : `<p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">${headerTitle}</p>`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -64,10 +97,10 @@ function baseLayout(title: string, body: string): string {
         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
           <!-- Header -->
           <tr>
-            <td style="background:${PRIMARY};padding:28px 40px;">
-              <p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">SolomonQuest</p>
+            <td style="background:${PRIMARY};padding:28px 40px${options?.confetti ? " 6px" : ""};">
+              ${headerContent}
             </td>
-          </tr>
+          </tr>${confettiRow}
           <!-- Body -->
           <tr>
             <td style="padding:40px;">
@@ -139,6 +172,7 @@ export async function sendTestEmail(to: string): Promise<void> {
 export interface TeacherInviteParams {
   to: string;
   schoolName: string;
+  schoolLogoUrl?: string;
   inviterName: string;
   inviteUrl: string;
   role?: string;
@@ -147,6 +181,7 @@ export interface TeacherInviteParams {
 export async function sendTeacherInvite({
   to,
   schoolName,
+  schoolLogoUrl,
   inviterName,
   inviteUrl,
   role = 'teacher',
@@ -173,7 +208,7 @@ export async function sendTeacherInvite({
     ${paragraph(`<span style="color:#999999;font-size:13px;">If you didn't expect this invitation, you can ignore this email — no account will be created without your action.</span>`)}
   `;
 
-  await send(to, subject, baseLayout(subject, body));
+  await send(to, subject, baseLayout(subject, body, { confetti: true, headerTitle: schoolName, headerLogoUrl: schoolLogoUrl }));
 }
 
 // ─── 2. Course Assignment Notification ───────────────────────────────────────
@@ -455,6 +490,7 @@ export async function sendWelcomeEmail({
 export interface EnhancedInviteParams {
   to: string;
   schoolName: string;
+  schoolLogoUrl?: string;
   inviterName: string;
   inviteUrl: string;
   role?: string;
@@ -464,6 +500,7 @@ export interface EnhancedInviteParams {
 export async function sendEnhancedInvite({
   to,
   schoolName,
+  schoolLogoUrl,
   inviterName,
   inviteUrl,
   role = 'teacher',
@@ -512,7 +549,7 @@ export async function sendEnhancedInvite({
     ${paragraph('<span style="color:#999999;font-size:13px;">If you weren\'t expecting this invitation, you can safely ignore this email. No account will be created without your action.</span>')}
   `;
 
-  await send(to, subject, baseLayout(subject, body));
+  await send(to, subject, baseLayout(subject, body, { confetti: true, headerTitle: schoolName, headerLogoUrl: schoolLogoUrl }));
 }
 
 // ─── 9. Broadcast Message ─────────────────────────────────────────────────────

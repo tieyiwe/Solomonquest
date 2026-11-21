@@ -58,12 +58,12 @@ const adminLinks = [
   { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
   { href: "/dashboard/admin/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/dashboard/admin/audit-log", label: "Audit Log", icon: History },
-  { href: "/dashboard/admin/danger-zone", label: "Danger Zone", icon: AlertTriangle },
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/help", label: "Help Center", icon: HelpCircle },
   // Settings sub-links kept here so BottomNav includes them
   { href: "/dashboard/admin/reminders", label: "Reminders", icon: Bell },
   { href: "/dashboard/admin/branding", label: "Branding", icon: Paintbrush },
+  { href: "/dashboard/admin/danger-zone", label: "Danger Zone", icon: AlertTriangle },
   { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
 ];
 
@@ -83,21 +83,19 @@ const NAV_GROUPS: { label: string; hrefs: string[] }[] = [
   },
   { label: "Finance", hrefs: ["/dashboard/admin/tuition", "/dashboard/admin/accounting"] },
   { label: "Communication", hrefs: ["/chat", "/help"] },
-  { label: "Administration", hrefs: ["/dashboard/admin/audit-log", "/dashboard/admin/danger-zone"] },
+  // Danger Zone lives under Settings (after Branding), not here.
+  { label: "Administration", hrefs: ["/dashboard/admin/audit-log"] },
 ];
 
 const settingsSubLinks = [
   { href: "/dashboard/admin/reminders", label: "Reminders", icon: Bell },
   { href: "/dashboard/admin/branding", label: "Branding", icon: Paintbrush },
+  { href: "/dashboard/admin/danger-zone", label: "Danger Zone", icon: AlertTriangle },
 ];
-
-function getInitials(firstName?: string | null, lastName?: string | null) {
-  return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U";
-}
 
 const settingsHrefs = new Set(settingsSubLinks.map((l) => l.href));
 const mainLinks = adminLinks.filter(
-  (l) => l.href !== "/dashboard/admin/settings" && l.href !== "/dashboard/admin/reminders" && l.href !== "/dashboard/admin/branding"
+  (l) => l.href !== "/dashboard/admin/settings" && !settingsHrefs.has(l.href)
 );
 
 // Only the 4 most-used destinations get a bottom-nav tab of their own — the

@@ -91,6 +91,7 @@ export default function AcceptInvitePage() {
         const role = invite.role;
         if (role === "teacher") setLocation("/dashboard/teacher");
         else if (role === "staff" || role === "student") setLocation("/dashboard/student");
+        else if (role === "parent") setLocation("/dashboard/parent");
         else if (role === "admin" || role === "super_admin") setLocation("/dashboard/admin");
         else setLocation("/dashboard/student");
       }, 1500);

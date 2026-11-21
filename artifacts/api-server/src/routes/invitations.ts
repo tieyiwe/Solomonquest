@@ -104,11 +104,12 @@ async function createInvitation(params: CreateInviteParams): Promise<CreateInvit
   }
 
   const [schoolResult, profileResult] = await Promise.all([
-    supabaseAdmin.from("schools").select("name").eq("id", schoolId).single(),
+    supabaseAdmin.from("schools").select("name, logo_url").eq("id", schoolId).single(),
     supabaseAdmin.from("profiles").select("first_name, last_name").eq("id", invitedBy).single(),
   ]);
 
   const schoolName = schoolResult.data?.name ?? "SolomonQuest School";
+  const schoolLogoUrl = schoolResult.data?.logo_url ?? undefined;
   const inviterName = profileResult.data
     ? `${profileResult.data.first_name ?? ""} ${profileResult.data.last_name ?? ""}`.trim() || "An administrator"
     : "An administrator";
@@ -116,7 +117,7 @@ async function createInvitation(params: CreateInviteParams): Promise<CreateInvit
   const inviteUrl = `${process.env.APP_URL ?? ""}/invite/${invitation.token}`;
 
   try {
-    await sendEnhancedInvite({ to: email, schoolName, inviterName, inviteUrl, role });
+    await sendEnhancedInvite({ to: email, schoolName, schoolLogoUrl, inviterName, inviteUrl, role });
   } catch (emailError) {
     console.error("[invitations] email send error:", emailError);
     // Do not fail — the invitation row is already created either way.
@@ -275,7 +276,7 @@ router.get(
 
       const { data: invitations, error } = await supabaseAdmin
         .from("invitations")
-        .select("id, email, role, status, created_at, expires_at, accepted_at, program_id, programs(name)")
+        .select("id, email, role, status, created_at, expires_at, accepted_at, archived, program_id, programs(name)")
         .eq("school_id", schoolId)
         .order("created_at", { ascending: false });
 
@@ -294,6 +295,54 @@ router.get(
       });
     } catch (err: any) {
       console.error("[invitations] Unhandled error in GET /invitations:", err);
+      res.status(500).json({ error: err?.message ?? "Internal server error" });
+    }
+  }
+);
+
+// ─── PATCH /invitations/:id/archive — archive/unarchive invitation ───────────
+
+router.patch(
+  "/invitations/:id/archive",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { userRole, schoolId } = req;
+      const { id } = req.params;
+      const { archived = true } = req.body as { archived?: boolean };
+
+      if (userRole !== "admin" && userRole !== "super_admin") {
+        res.status(403).json({ error: "Forbidden: admin access required" });
+        return;
+      }
+
+      if (!schoolId) {
+        res.status(400).json({ error: "No school associated with this account" });
+        return;
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("invitations")
+        .update({ archived })
+        .eq("id", id)
+        .eq("school_id", schoolId)
+        .select("id, archived")
+        .single();
+
+      if (error) {
+        console.error("[invitations] archive error:", error);
+        res.status(500).json({ error: error.message ?? "Failed to update invitation" });
+        return;
+      }
+
+      if (!data) {
+        res.status(404).json({ error: "Invitation not found" });
+        return;
+      }
+
+      res.json({ success: true, archived: data.archived });
+    } catch (err: any) {
+      console.error("[invitations] Unhandled error in PATCH /invitations/:id/archive:", err);
       res.status(500).json({ error: err?.message ?? "Internal server error" });
     }
   }

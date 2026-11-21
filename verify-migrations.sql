@@ -154,7 +154,11 @@ select * from (values
 
   ('accounting-suite.sql: expenses table',
     exists (select 1 from information_schema.tables
-      where table_schema='public' and table_name='expenses'))
+      where table_schema='public' and table_name='expenses')),
+
+  ('supabase-schema-additions.sql: invitations.archived',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='invitations' and column_name='archived'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

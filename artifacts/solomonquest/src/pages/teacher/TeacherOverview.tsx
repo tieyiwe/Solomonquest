@@ -9,6 +9,7 @@ import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { AgentWidget } from "@/components/agent/AgentWidget";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
+import { HelpCenter } from "@/components/help/HelpCenter";
 import {
   LayoutDashboard,
   BookOpen,
@@ -125,9 +126,9 @@ const NAV_LINKS = [
   { href: "/messages", label: "Messages", icon: MessageSquare },
 ];
 
-function Sidebar({ onClose }: { onClose?: () => void }) {
+function Sidebar({ onClose, onOpenHelp }: { onClose?: () => void; onOpenHelp: () => void }) {
   const [location] = useLocation();
-  const { user, signOut } = useAuth();
+  const { signOut } = useAuth();
 
   return (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
@@ -171,22 +172,17 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
         })}
       </nav>
 
-      {/* User footer */}
+      {/* Footer */}
       <div className="p-3 border-t border-sidebar-border shrink-0">
-        <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
-          <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
-            <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
-            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold">
-              {getInitials((user as any)?.firstName, (user as any)?.lastName)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 overflow-hidden">
-            <p className="text-sidebar-accent-foreground text-sm font-medium truncate">
-              {(user as any)?.firstName} {(user as any)?.lastName}
-            </p>
-            <p className="text-sidebar-foreground/60 text-xs capitalize truncate">Teacher</p>
-          </div>
-        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 mb-1"
+          onClick={onOpenHelp}
+        >
+          <HelpCircle className="mr-2 h-3.5 w-3.5" />
+          Help Center
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -242,6 +238,7 @@ function StatCard({
 export default function TeacherOverview() {
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const [stats, setStats] = useState<TeacherStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -316,7 +313,7 @@ export default function TeacherOverview() {
     <div className="min-h-screen bg-muted/50 flex">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col h-screen sticky top-0">
-        <Sidebar />
+        <Sidebar onOpenHelp={() => setHelpOpen(true)} />
       </aside>
 
       {/* Mobile Sidebar Overlay */}
@@ -324,7 +321,7 @@ export default function TeacherOverview() {
         <div className="fixed inset-0 z-40 flex md:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
           <div className="relative z-50 w-64 flex flex-col h-full shadow-xl">
-            <Sidebar onClose={() => setSidebarOpen(false)} />
+            <Sidebar onClose={() => setSidebarOpen(false)} onOpenHelp={() => setHelpOpen(true)} />
           </div>
         </div>
       )}
@@ -587,6 +584,10 @@ export default function TeacherOverview() {
       <AgentWidget />
       <NotesWidget />
       <StickyNotesLayer />
+
+      {helpOpen && (
+        <HelpCenter role="teacher" onClose={() => setHelpOpen(false)} onStartTour={() => {}} />
+      )}
     </div>
   );
 }

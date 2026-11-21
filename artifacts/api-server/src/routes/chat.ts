@@ -61,6 +61,18 @@ router.get(
   requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const includeArchived = req.query.archived === "true";
+    // Self-heal: make sure the current user is a member of every public
+    // channel in their school. Covers users who joined before their role's
+    // enrollment path existed (e.g. a founding admin from before this fix),
+    // or anyone whose membership otherwise never got created. Cheap and
+    // idempotent — a couple of indexed lookups, no-op if already enrolled.
+    if (req.userId && req.schoolId) {
+      try {
+        await enrollUserInSchoolChannels(req.userId, req.schoolId);
+      } catch (e) {
+        console.warn("[chat] Self-heal enrollment failed:", e);
+      }
+    }
 
     const { data: memberships, error } = await supabaseAdmin
       .from("chat_channel_members")
@@ -415,7 +427,7 @@ router.get(
   "/chat/channels/:channelId/messages",
   requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { channelId } = req.params;
+    const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
 
     const isMember = await assertChannelMember(channelId, req.userId!);
     if (!isMember) {
@@ -565,7 +577,7 @@ router.post(
   "/chat/channels/:channelId/messages",
   requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { channelId } = req.params;
+    const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
 
     // Security: verify user is a member of the channel before allowing post
     const isMember = await assertChannelMember(channelId, req.userId!);
@@ -615,7 +627,7 @@ router.post(
       return;
     }
 
-    const profile = message.profiles as Record<string, unknown> | null;
+    const profile = message.profiles as unknown as Record<string, unknown> | null;
     const senderName =
       [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Someone";
 
@@ -768,7 +780,7 @@ router.post(
       return;
     }
 
-    const profile = message.profiles as Record<string, unknown> | null;
+    const profile = message.profiles as unknown as Record<string, unknown> | null;
 
     res.status(201).json({
       id: message.id,
@@ -807,7 +819,8 @@ router.get(
   "/chat/channels/:channelId/messages/:messageId/thread",
   requireAuth, requireSchoolFeature("chat"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
-    const { channelId, messageId } = req.params;
+    const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId;
+    const messageId = Array.isArray(req.params.messageId) ? req.params.messageId[0] : req.params.messageId;
 
     const isMember = await assertChannelMember(channelId, req.userId!);
     if (!isMember) {

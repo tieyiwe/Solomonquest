@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 import type { Note } from "./types";
 
 async function authedFetch(path: string, init?: RequestInit) {
@@ -36,10 +37,14 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const res = await authedFetch("/api/notes");
-      const data = await res.json();
-      if (res.ok) setNotes(data.notes ?? []);
-    } catch {
-      // ignore — widget shows empty state
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setNotes(data.notes ?? []);
+      } else {
+        console.error("[notes] Failed to load notes:", data?.error);
+      }
+    } catch (err) {
+      console.error("[notes] Failed to load notes:", err);
     } finally {
       setLoading(false);
     }
@@ -50,14 +55,22 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const createNote = useCallback(async (): Promise<Note | null> => {
-    const res = await authedFetch("/api/notes", {
-      method: "POST",
-      body: JSON.stringify({ title: "", content: "" }),
-    });
-    const data = await res.json();
-    if (!res.ok) return null;
-    setNotes((prev) => [data, ...prev]);
-    return data as Note;
+    try {
+      const res = await authedFetch("/api/notes", {
+        method: "POST",
+        body: JSON.stringify({ title: "", content: "" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error ?? `Failed to create note (${res.status})`);
+        return null;
+      }
+      setNotes((prev) => [data, ...prev]);
+      return data as Note;
+    } catch {
+      toast.error("Failed to create note — check your connection and try again.");
+      return null;
+    }
   }, []);
 
   const updateNote = useCallback(async (id: string, patch: Partial<Note>) => {

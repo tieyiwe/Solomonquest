@@ -11,6 +11,7 @@ import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { AgentWidget } from "@/components/agent/AgentWidget";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
+import { HelpCenter } from "@/components/help/HelpCenter";
 import {
   LayoutDashboard,
   Users,
@@ -32,6 +33,7 @@ import {
   ClipboardList,
   Loader2,
   Send,
+  HelpCircle,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -180,7 +182,7 @@ const NAV_LINKS = [
   { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
 ];
 
-function Sidebar({ onClose }: { onClose?: () => void }) {
+function Sidebar({ onClose, onOpenHelp }: { onClose?: () => void; onOpenHelp: () => void }) {
   const [location] = useLocation();
   const { user, signOut } = useAuth();
 
@@ -225,24 +227,17 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
         })}
       </nav>
 
-      {/* User footer */}
+      {/* Footer */}
       <div className="p-3 border-t border-sidebar-border shrink-0">
-        <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
-          <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
-            <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
-            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold">
-              {getInitials((user as any)?.firstName, (user as any)?.lastName)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 overflow-hidden">
-            <p className="text-sidebar-accent-foreground text-sm font-medium truncate">
-              {(user as any)?.firstName} {(user as any)?.lastName}
-            </p>
-            <p className="text-sidebar-foreground/60 text-xs capitalize truncate">
-              {(user as any)?.role?.replace("_", " ")}
-            </p>
-          </div>
-        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 mb-1"
+          onClick={onOpenHelp}
+        >
+          <HelpCircle className="mr-2 h-3.5 w-3.5" />
+          Help Center
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -301,6 +296,7 @@ function StatCard({
 export default function AdminOverview() {
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -367,7 +363,7 @@ export default function AdminOverview() {
     <div className="min-h-screen bg-muted/50 flex">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col h-screen sticky top-0">
-        <Sidebar />
+        <Sidebar onOpenHelp={() => setHelpOpen(true)} />
       </aside>
 
       {/* Mobile Sidebar Overlay */}
@@ -378,7 +374,7 @@ export default function AdminOverview() {
             onClick={() => setSidebarOpen(false)}
           />
           <div className="relative z-50 w-64 flex flex-col h-full shadow-xl">
-            <Sidebar onClose={() => setSidebarOpen(false)} />
+            <Sidebar onClose={() => setSidebarOpen(false)} onOpenHelp={() => setHelpOpen(true)} />
           </div>
         </div>
       )}
@@ -809,6 +805,14 @@ export default function AdminOverview() {
       <AgentWidget />
       <NotesWidget />
       <StickyNotesLayer />
+
+      {helpOpen && (
+        <HelpCenter
+          role={(user as any)?.role as "admin" | "super_admin"}
+          onClose={() => setHelpOpen(false)}
+          onStartTour={() => {}}
+        />
+      )}
     </div>
   );
 }

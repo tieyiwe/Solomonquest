@@ -82,6 +82,29 @@ function StudentVideoSession() {
   );
 }
 
+/**
+ * Top-level path segments that belong to the app itself (or are obvious
+ * app-ish words), never to a school. The root /:slug routes below are a
+ * catch-all placed after every specific route, so they can't shadow a real
+ * route that is registered above them — this list additionally makes paths
+ * like /login, /dashboard or /transcripts (which aren't routes here) render
+ * a real 404 instead of a "school not found" page, and keeps any future
+ * school slug from masquerading as an app page.
+ */
+const RESERVED_ROOT_SEGMENTS = new Set([
+  "api", "auth", "login", "logout", "register", "signup", "onboarding",
+  "schools", "dashboard", "admin", "super_admin", "teacher", "student", "parent",
+  "chat", "forum", "invite", "messages", "calendar", "settings", "notifications",
+  "profile", "transcript", "transcripts", "help", "assets", "static",
+]);
+
+function RootSchoolRoute({ apply = false }: { apply?: boolean }) {
+  const params = useParams<{ slug: string }>();
+  const slug = (params.slug ?? "").toLowerCase();
+  if (!slug || RESERVED_ROOT_SEGMENTS.has(slug)) return <NotFound />;
+  return apply ? <SchoolApply /> : <SchoolPublicPage />;
+}
+
 const LoadingFallback = () => (
   <div className="min-h-screen flex items-center justify-center">
     <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -281,6 +304,12 @@ export function Router() {
         <Route path="/help">
           <ProtectedRoute><HelpPage /></ProtectedRoute>
         </Route>
+
+        {/* School public homepage at the platform root, e.g. solomonquest.com/lincoln-academy.
+            Placed last (before the 404 fallback) so it only matches when no more specific
+            route above claimed the path — /schools/:slug above still works too. */}
+        <Route path="/:slug/apply"><RootSchoolRoute apply /></Route>
+        <Route path="/:slug"><RootSchoolRoute /></Route>
 
         <Route component={NotFound} />
       </Switch>
