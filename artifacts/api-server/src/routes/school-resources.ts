@@ -83,6 +83,35 @@ router.post(
   }
 );
 
+// POST /school-resources/:id/download — count a download (any school member)
+router.post(
+  "/school-resources/:id/download",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!req.schoolId) {
+      res.status(404).json({ error: "Resource not found" });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin.rpc("increment_school_resource_download", {
+      p_resource_id: id,
+      p_school_id: req.schoolId,
+    });
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    if (data === null || data === undefined) {
+      res.status(404).json({ error: "Resource not found" });
+      return;
+    }
+
+    res.json({ downloadCount: data });
+  }
+);
+
 // PATCH /school-resources/:id
 router.patch(
   "/school-resources/:id",

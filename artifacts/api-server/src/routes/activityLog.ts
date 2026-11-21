@@ -6,21 +6,25 @@ const router: IRouter = Router();
 
 // POST /activity-log — log a user action
 router.post("/activity-log", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  const { action, target_type, target_id, target_name, metadata } = req.body;
+  const { action } = req.body as { action?: string };
 
-  if (!action) {
-    res.status(400).json({ error: "action is required" });
+  // This feeds the admin-facing audit log, so clients may only record their
+  // own session events; every other entry is written server-side by the
+  // route that performed the action. Target/metadata fields are ignored so
+  // a client can't attach fabricated details to its entry.
+  if (action !== "login" && action !== "logout") {
+    res.status(400).json({ error: "action must be 'login' or 'logout'" });
     return;
   }
 
   try {
     const { error } = await supabaseAdmin.from("platform_audit_log").insert({
       action,
-      target_type: target_type ?? null,
-      target_id: target_id ?? null,
-      target_name: target_name ?? null,
+      target_type: null,
+      target_id: null,
+      target_name: null,
       performed_by: req.userId,
-      metadata: metadata ?? null,
+      metadata: null,
     });
 
     if (error) {

@@ -158,7 +158,13 @@ select * from (values
 
   ('supabase-schema-additions.sql: invitations.archived',
     exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='invitations' and column_name='archived'))
+      where table_schema='public' and table_name='invitations' and column_name='archived')),
+
+  ('resource-download-count.sql: school_resources.download_count + increment fn',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='school_resources' and column_name='download_count')
+    and exists (select 1 from information_schema.routines
+      where routine_schema='public' and routine_name='increment_school_resource_download'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

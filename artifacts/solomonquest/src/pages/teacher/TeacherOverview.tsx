@@ -70,7 +70,7 @@ interface TeacherStats {
   totalCourses?: number;
   totalStudents?: number;
   pendingGrading?: number;
-  upcomingClasses?: number;
+  dueThisWeek?: number;
 }
 
 interface Course {
@@ -393,8 +393,8 @@ export default function TeacherOverview() {
                 loading={statsLoading}
               />
               <StatCard
-                title="Upcoming Classes"
-                value={stats?.upcomingClasses}
+                title="Due This Week"
+                value={stats?.dueThisWeek}
                 icon={Calendar}
                 color="text-success"
                 bg="bg-success/10"

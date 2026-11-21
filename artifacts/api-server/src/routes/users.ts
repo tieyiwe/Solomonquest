@@ -132,6 +132,14 @@ router.put("/users/me/join-school", requireAuth, async (req: AuthenticatedReques
     return;
   }
 
+  // This route makes the caller a student of the school. A school-less
+  // super_admin would be silently demoted, and an admin must not be able
+  // to self-attach to an arbitrary school, so both are refused.
+  if (profile?.role === "super_admin" || profile?.role === "admin") {
+    res.status(403).json({ error: "Admin accounts can't join a school as a student. Ask the platform administrator to assign you to a school." });
+    return;
+  }
+
   const { error: updateErr } = await supabaseAdmin
     .from("profiles")
     .update({ school_id: schoolId, role: "student" })

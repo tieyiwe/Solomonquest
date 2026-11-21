@@ -536,4 +536,34 @@ router.post("/transcripts/verify", async (req, res): Promise<void> => {
   });
 });
 
+// ─── GET /grades/recent — the caller's own most recently graded work ────────
+router.get("/grades/recent", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const limit = Math.min(20, Math.max(1, parseInt(String(req.query.limit ?? "5"), 10) || 5));
+
+  const { data, error } = await supabaseAdmin
+    .from("submissions")
+    .select("id, grade, graded_at, assignments:assignment_id ( title, points_possible, courses:course_id ( title ) )")
+    .eq("student_id", req.userId ?? "")
+    .eq("status", "graded")
+    .not("grade", "is", null)
+    .order("graded_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  res.json(
+    (data ?? []).map((s: any) => ({
+      id: s.id,
+      assignmentTitle: s.assignments?.title ?? "Assignment",
+      courseTitle: s.assignments?.courses?.title ?? null,
+      score: s.grade != null ? Number(s.grade) : null,
+      maxScore: s.assignments?.points_possible ?? 100,
+      gradedAt: s.graded_at,
+    }))
+  );
+});
+
 export default router;

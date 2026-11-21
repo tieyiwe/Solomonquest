@@ -82,6 +82,7 @@ router.get("/dashboard/teacher/stats", requireAuth, async (req: AuthenticatedReq
 
   let totalStudents = 0;
   let pendingGrading = 0;
+  let dueThisWeek = 0;
 
   if (courseIds.length > 0) {
     const { count: studentCount } = await supabaseAdmin
@@ -108,6 +109,17 @@ router.get("/dashboard/teacher/stats", requireAuth, async (req: AuthenticatedReq
 
       pendingGrading = pendingCount ?? 0;
     }
+
+    const now = new Date();
+    const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const { count: dueCount } = await supabaseAdmin
+      .from("assignments")
+      .select("id", { count: "exact", head: true })
+      .in("course_id", courseIds)
+      .gte("due_date", now.toISOString())
+      .lte("due_date", weekAhead.toISOString());
+
+    dueThisWeek = dueCount ?? 0;
   }
 
   // Recent activity
@@ -135,6 +147,7 @@ router.get("/dashboard/teacher/stats", requireAuth, async (req: AuthenticatedReq
     totalCourses,
     totalStudents,
     pendingGrading,
+    dueThisWeek,
     recentActivity,
   });
 });

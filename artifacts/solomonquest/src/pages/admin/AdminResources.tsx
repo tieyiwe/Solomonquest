@@ -274,17 +274,16 @@ export default function AdminResources() {
   const handleDownload = async (resource: SchoolResource) => {
     try {
       const token = await getToken();
-      await fetch(`/api/school-resources/${resource.id}/download`, {
+      const res = await fetch(`/api/school-resources/${resource.id}/download`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      setResources((prev) =>
-        prev.map((r) =>
-          r.id === resource.id
-            ? { ...r, download_count: r.download_count + 1 }
-            : r
-        )
-      );
+      if (res.ok) {
+        const { downloadCount } = (await res.json()) as { downloadCount: number };
+        setResources((prev) =>
+          prev.map((r) => (r.id === resource.id ? { ...r, download_count: downloadCount } : r))
+        );
+      }
     } catch {
       // silently update count failed; still open the resource
     }
