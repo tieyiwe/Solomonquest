@@ -140,7 +140,7 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
       name,
       slug,
       owner_id: req.userId,
-      primary_color: primaryColor ?? "#6E5238",
+      primary_color: primaryColor ?? "#2733a5",
       secondary_color: secondaryColor ?? "#B58F5E",
       is_active: true,
     })

@@ -237,7 +237,7 @@ router.post(
           name: request.suggested_school_name,
           slug,
           owner_id: request.requester_id,
-          primary_color: "#6E5238",
+          primary_color: "#2733a5",
           secondary_color: "#B58F5E",
           is_active: true,
         })
