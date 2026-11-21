@@ -278,18 +278,26 @@ export default function TeacherCourseDetail() {
     if (!courseId) return;
     setIsStartingVideo(true);
     try {
-      const res = await fetch(`/api/courses/${courseId}/video/start`, {
+      // There is no /courses/:id/video/start route. POST /video/sessions
+      // creates the video_sessions row that students' VideoTab polls for and
+      // notifies enrolled students; joining a made-up room instead left
+      // students with "No Active Session" and a different room.
+      const res = await fetch(`/api/video/sessions`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ course_id: courseId }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setVideoRoomUrl(data.url || `https://meet.jit.si/solomonquest-${courseId}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.room_name) {
+        setVideoRoomUrl(`https://meet.jit.si/${data.room_name}`);
       } else {
-        setVideoRoomUrl(`https://meet.jit.si/solomonquest-${courseId}`);
+        toast.error(data.error || "Failed to start live class");
       }
     } catch {
-      setVideoRoomUrl(`https://meet.jit.si/solomonquest-${courseId}`);
+      toast.error("Failed to start live class");
     } finally {
       setIsStartingVideo(false);
     }

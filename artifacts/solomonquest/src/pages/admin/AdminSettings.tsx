@@ -235,20 +235,43 @@ function ApplicationFormTab({ schoolId }: { schoolId: string | undefined }) {
   const [fields, setFields] = useState<FormField[]>(DEFAULT_FIELDS);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Ids of fields that already exist in application_form_fields. Anything
+  // else in `fields` (DEFAULT_FIELDS, or ones added in this session) is new
+  // and gets POSTed on save; server ids missing from `fields` get DELETEd.
+  const [serverIds, setServerIds] = useState<string[]>([]);
 
-  useEffect(() => {
+  // There is no /api/form-builder/schema route — the backend exposes the
+  // form as per-field CRUD under /schools/:schoolId/application-form (the
+  // same table SchoolApply reads), so load and save against that.
+  const loadFields = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
-    apiFetch(`/api/form-builder/schema?school_id=${schoolId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data?.fields) && data.fields.length > 0) {
-          setFields(data.fields);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    try {
+      const r = await apiFetch(`/api/schools/${schoolId}/application-form`);
+      if (!r.ok) return;
+      const data = await r.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setFields(
+          data.map((f: { id: string; label: string; fieldType: FieldType; isRequired: boolean; options?: string[] | null }) => ({
+            id: f.id,
+            label: f.label,
+            type: f.fieldType,
+            required: !!f.isRequired,
+            options: Array.isArray(f.options) ? f.options : undefined,
+          }))
+        );
+        setServerIds(data.map((f: { id: string }) => f.id));
+      }
+    } catch {
+      /* keep defaults */
+    } finally {
+      setLoading(false);
+    }
   }, [schoolId]);
+
+  useEffect(() => {
+    loadFields();
+  }, [loadFields]);
 
   const addField = (type: FieldType = "text") => {
     setFields((f) => [
@@ -279,13 +302,36 @@ function ApplicationFormTab({ schoolId }: { schoolId: string | undefined }) {
   };
 
   const handleSave = async () => {
+    if (!schoolId) return;
     setSaving(true);
     try {
-      const res = await apiFetch("/api/form-builder/schema", {
-        method: "PUT",
-        body: JSON.stringify({ school_id: schoolId, fields }),
-      });
-      if (!res.ok) throw new Error("Failed to save");
+      const base = `/api/schools/${schoolId}/application-form/fields`;
+      const keep = new Set(fields.map((f) => f.id));
+      for (const id of serverIds) {
+        if (keep.has(id)) continue;
+        const res = await apiFetch(`${base}/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Failed to remove a field");
+      }
+      for (let i = 0; i < fields.length; i++) {
+        const f = fields[i];
+        const body = JSON.stringify({
+          label: f.label,
+          fieldType: f.type,
+          isRequired: f.required,
+          options: f.type === "dropdown" || f.type === "checkbox" ? f.options ?? [] : null,
+          sortOrder: i + 1,
+        });
+        const isExisting = serverIds.includes(f.id);
+        const res = await apiFetch(isExisting ? `${base}/${f.id}` : base, {
+          method: isExisting ? "PATCH" : "POST",
+          body,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to save");
+        }
+      }
+      await loadFields();
       toast.success("Application form saved");
     } catch (err: any) {
       toast.error(err.message || "Failed to save form");

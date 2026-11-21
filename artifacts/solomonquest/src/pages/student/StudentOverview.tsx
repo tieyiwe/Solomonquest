@@ -143,11 +143,9 @@ const NAV_LINKS = [
   { href: "/dashboard/student/assignments", label: "Assignments", icon: ClipboardList },
   { href: "/dashboard/student/quizzes", label: "Quizzes", icon: HelpCircle },
   { href: "/dashboard/student/transcript", label: "Transcript", icon: FileText },
-  { href: "/dashboard/student/resources", label: "Resources", icon: FolderOpen },
   { href: "/forum", label: "Forum", icon: MessageSquare },
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/messages", label: "Messages", icon: MessageSquare },
-  { href: "/dashboard/student/applications", label: "Applications", icon: Inbox },
 ];
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -293,7 +291,7 @@ export default function StudentOverview() {
   const [activeSessions, setActiveSessions] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    apiFetch<StudentStats>("/api/dashboard/student")
+    apiFetch<StudentStats>("/api/dashboard/student/stats")
       .then(setStats)
       .catch(() => {})
       .finally(() => setStatsLoading(false));
@@ -523,7 +521,7 @@ export default function StudentOverview() {
                   loading={statsLoading}
                 />
               </Link>
-              <Link href="/dashboard/student/applications">
+              <div>
                 <StatCard
                   title="Application Status"
                   value={appStatus ? appStatus.replace(/_/g, " ") : "N/A"}
@@ -532,7 +530,7 @@ export default function StudentOverview() {
                   bg="bg-blue-100"
                   loading={statsLoading}
                 />
-              </Link>
+              </div>
             </div>
 
             {/* Main grid */}
@@ -548,7 +546,7 @@ export default function StudentOverview() {
                       <BookOpen className="h-5 w-5 text-primary" />
                       My Courses
                     </h3>
-                    <Link href="/dashboard/student/courses">
+                    <Link href="/dashboard/student">
                       <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1">
                         View all <ChevronRight className="h-3 w-3" />
                       </Button>

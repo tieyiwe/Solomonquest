@@ -191,6 +191,34 @@ router.post(
         return;
       }
 
+      // Atomically claim the request (pending -> approved) BEFORE creating
+      // anything. The status check above alone is check-then-act: two
+      // approve calls (double-click, two super admins) both passed it and
+      // each created a school with the requester as owner.
+      const { data: claimed, error: claimError } = await supabaseAdmin
+        .from("school_creation_requests")
+        .update({
+          status: "approved",
+          reviewed_by: req.userId,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("status", "pending")
+        .select("id")
+        .maybeSingle();
+
+      if (claimError || !claimed) {
+        res.status(409).json({ error: "This request was already reviewed." });
+        return;
+      }
+
+      const releaseClaim = async () => {
+        await supabaseAdmin
+          .from("school_creation_requests")
+          .update({ status: "pending", reviewed_by: null, reviewed_at: null })
+          .eq("id", id);
+      };
+
       const baseSlug = (request.suggested_school_name as string)
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
@@ -217,28 +245,24 @@ router.post(
         .single();
 
       if (schoolError || !school) {
+        await releaseClaim();
         res.status(500).json({ error: schoolError?.message ?? "Failed to create school" });
         return;
       }
 
-      await supabaseAdmin
+      // Was unchecked: on failure the school existed (owned by the
+      // requester) but they were never made its admin, with a 200 response.
+      const { error: promoteError } = await supabaseAdmin
         .from("profiles")
         .update({ school_id: school.id, role: "admin" })
         .eq("id", request.requester_id);
 
       invalidateCachedProfile(request.requester_id as string);
 
-      const { error: updateError } = await supabaseAdmin
-        .from("school_creation_requests")
-        .update({
-          status: "approved",
-          reviewed_by: req.userId,
-          reviewed_at: new Date().toISOString(),
-        })
-        .eq("id", id);
-
-      if (updateError) {
-        logger.error({ err: updateError }, "School created but failed to mark request approved");
+      if (promoteError) {
+        logger.error({ err: promoteError, schoolId: school.id }, "School created but failed to promote requester to admin");
+        res.status(500).json({ error: "School was created but the requester could not be made its admin. Assign them from the school's settings." });
+        return;
       }
 
       notifyUsers({

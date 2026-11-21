@@ -386,7 +386,21 @@ export default function SchoolApply() {
       });
       if (res.status === 404) return null;
       if (!res.ok) return null;
-      return res.json();
+      // The backend returns a bare array of { id, label, fieldType,
+      // isRequired, options }. Map it to the { fields: [...] } shape this
+      // page renders, otherwise formConfig.fields is always undefined and
+      // the school's custom questions never show.
+      const rows: Array<{ id: string; label: string; fieldType: ApplicationFormField["type"]; isRequired?: boolean; options?: string[] | null }> = await res.json();
+      if (!Array.isArray(rows)) return null;
+      return {
+        fields: rows.map((f) => ({
+          id: f.id,
+          label: f.label,
+          type: f.fieldType,
+          required: !!f.isRequired,
+          options: Array.isArray(f.options) ? f.options : undefined,
+        })),
+      };
     },
     enabled: !!school?.id,
   });
@@ -427,7 +441,11 @@ export default function SchoolApply() {
       const payload = {
         schoolId: school.id,
         courseIds: selectedCourseIds,
-        formResponses,
+        // POST /applications reads formResponses as [{ fieldId, value }]
+        // and silently drops anything that isn't an array.
+        formResponses: Object.entries(formResponses)
+          .filter(([, value]) => value !== "" && value !== undefined)
+          .map(([fieldId, value]) => ({ fieldId, value: String(value) })),
         message: message.trim() || undefined,
       };
 
@@ -442,7 +460,7 @@ export default function SchoolApply() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to submit application");
+        throw new Error(err.error || err.message || "Failed to submit application");
       }
 
       toast.success(`Application submitted to ${school.name}!`);

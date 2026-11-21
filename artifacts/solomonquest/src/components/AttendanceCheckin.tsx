@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/lib/supabase";
 
 interface LiveCourse {
   id: string;
@@ -34,7 +35,10 @@ export default function AttendanceCheckin({ courses }: AttendanceCheckinProps) {
     }));
 
     try {
-      const token = localStorage.getItem("token") ?? sessionStorage.getItem("token");
+      // The session lives in the Supabase client; no "token" key is ever
+      // written to local/sessionStorage, so this used to send no auth.
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
       const res = await fetch("/api/attendance/checkin", {
         method: "POST",
         headers: {

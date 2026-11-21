@@ -110,6 +110,21 @@ router.post("/assignments/:assignmentId/submissions", requireAuth, async (req: A
 
   const { content } = req.body;
 
+  // The upsert below overwrote content (and reset status to "submitted") on
+  // an already-graded submission while keeping its grade, so a student
+  // could swap in different work after seeing their mark and the grade
+  // would silently attach to it.
+  const { data: prior } = await supabaseAdmin
+    .from("submissions")
+    .select("id, grade, graded_at")
+    .eq("assignment_id", assignmentId)
+    .eq("student_id", req.userId ?? "")
+    .maybeSingle();
+  if (prior && (prior.grade != null || prior.graded_at)) {
+    res.status(409).json({ error: "This submission has already been graded and can no longer be changed" });
+    return;
+  }
+
   // Upsert submission
   const { data, error } = await supabaseAdmin
     .from("submissions")

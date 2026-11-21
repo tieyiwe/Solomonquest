@@ -25,31 +25,31 @@ function getNavItems(role?: string | null): NavItem[] {
   if (role === "admin" || role === "super_admin") {
     return [
       { label: "Home", href: "/dashboard/admin", icon: LayoutDashboard },
-      { label: "Users", href: "/admin/users", icon: Users },
-      { label: "Courses", href: "/admin/courses", icon: BookOpen },
+      { label: "Users", href: "/dashboard/admin/users", icon: Users },
+      { label: "Courses", href: "/dashboard/admin/courses", icon: BookOpen },
       { label: "Chat", href: "/chat", icon: MessageCircle },
     ];
   }
   if (role === "teacher") {
     return [
       { label: "Home", href: "/dashboard/teacher", icon: LayoutDashboard },
-      { label: "Courses", href: "/teacher/courses", icon: BookOpen },
-      { label: "Gradebook", href: "/teacher/gradebook", icon: Star },
+      { label: "Courses", href: "/dashboard/teacher", icon: BookOpen },
+      { label: "Gradebook", href: "/dashboard/teacher/gradebook", icon: Star },
       { label: "Chat", href: "/chat", icon: MessageCircle },
     ];
   }
   // student / staff / default
   return [
     { label: "Home", href: "/dashboard/student", icon: LayoutDashboard },
-    { label: "Courses", href: "/courses", icon: BookOpen },
-    { label: "Assignments", href: "/assignments", icon: ClipboardList },
+    { label: "Courses", href: "/dashboard/student", icon: BookOpen },
+    { label: "Assignments", href: "/dashboard/student/assignments", icon: ClipboardList },
     { label: "Chat", href: "/chat", icon: MessageCircle },
   ];
 }
 
 const moreItems: NavItem[] = [
   { label: "Profile", href: "/profile", icon: User },
-  { label: "Settings", href: "/settings", icon: Settings },
+  { label: "Settings", href: "/settings/notifications", icon: Settings },
   { label: "Help", href: "/help", icon: HelpCircle },
 ];
 

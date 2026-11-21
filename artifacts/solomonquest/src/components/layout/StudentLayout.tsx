@@ -61,8 +61,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
     { href: "/calendar", label: "Calendar", icon: CalendarDays, exact: false },
     { href: "/dashboard/student/assignments", label: "Assignments", icon: FileText, exact: false },
     { href: "/dashboard/student/quizzes", label: "Quizzes", icon: ClipboardList, exact: false },
-    { href: "/dashboard/student/resources", label: "Resources", icon: FolderOpen, exact: false },
-    { href: "/dashboard/student/forum", label: "Forum", icon: MessageSquare, exact: false },
+    { href: "/forum", label: "Forum", icon: MessageSquare, exact: false },
     { href: "/dashboard/student/transcript", label: "Transcript", icon: Scroll, exact: false },
     { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
     ...(user?.role === "staff"
@@ -72,7 +71,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
 
   // Only the 4 most-used destinations get their own bottom-nav tab — the
   // rest live behind "More", which opens the same drawer as the hamburger.
-  const bottomNavPrimaryLinks = [navLinks[0], navLinks[1], navLinks[2], navLinks[6]];
+  const bottomNavPrimaryLinks = [navLinks[0], navLinks[1], navLinks[2], navLinks[5]];
   const bottomNavPrimaryHrefs = new Set(bottomNavPrimaryLinks.map((l) => l.href));
   const bottomNavOverflowLinks = navLinks.filter((l) => !bottomNavPrimaryHrefs.has(l.href));
 

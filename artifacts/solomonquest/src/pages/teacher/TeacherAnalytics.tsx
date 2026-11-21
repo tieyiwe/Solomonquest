@@ -118,7 +118,7 @@ function gradeBadge(g: number | null) {
 
 const NAV_LINKS = [
   { href: "/dashboard/teacher", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/dashboard/teacher/courses", label: "My Courses", icon: BookOpen },
+  { href: "/dashboard/teacher", label: "My Courses", icon: BookOpen },
   { href: "/dashboard/teacher/assignments", label: "Assignments", icon: ClipboardList },
   { href: "/dashboard/teacher/gradebook", label: "Gradebook", icon: Star },
   { href: "/dashboard/teacher/quizzes", label: "Quizzes", icon: HelpCircle },
@@ -126,7 +126,6 @@ const NAV_LINKS = [
   { href: "/forum", label: "Forum", icon: MessageSquare },
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/dashboard/teacher/analytics", label: "Analytics", icon: BarChart2 },
-  { href: "/video", label: "Live Class", icon: Video },
 ];
 
 function Sidebar({ onClose }: { onClose?: () => void }) {

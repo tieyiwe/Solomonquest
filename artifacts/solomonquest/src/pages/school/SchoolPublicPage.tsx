@@ -27,6 +27,8 @@ interface BannerSlide {
   title: string;
   subtitle?: string;
   cta_label?: string;
+  // The branding editor (AdminSchoolBranding) saves the button text as cta_text.
+  cta_text?: string;
   cta_url?: string;
   overlay_color?: string;
   overlay_opacity?: number;
@@ -309,7 +311,10 @@ function HeroCarousel({
     <div className="relative w-full h-[70vh] min-h-[480px] overflow-hidden bg-gray-900">
       {slides.map((slide, i) => {
         const overlayColor = slide.overlay_color ?? "#000000";
-        const overlayOpacity = slide.overlay_opacity ?? 0.5;
+        // The branding editor stores opacity as a 0-100 percentage; CSS wants 0-1.
+        const rawOpacity = slide.overlay_opacity ?? 0.5;
+        const overlayOpacity = rawOpacity > 1 ? rawOpacity / 100 : rawOpacity;
+        const ctaLabel = slide.cta_label ?? slide.cta_text;
         return (
           <div key={i} style={getSlideStyle(i)}>
             <div
@@ -338,13 +343,13 @@ function HeroCarousel({
                   {slide.subtitle}
                 </p>
               )}
-              {slide.cta_label && (
+              {ctaLabel && (
                 <button
                   onClick={onApply}
                   className="px-8 py-3 rounded-lg font-semibold text-white text-lg shadow-lg hover:opacity-90 transition-opacity"
                   style={{ background: primaryColor }}
                 >
-                  {slide.cta_label}
+                  {ctaLabel}
                 </button>
               )}
             </div>

@@ -552,7 +552,7 @@ function QuizDetail({ quiz, onPublished }: QuizDetailProps) {
 
   useEffect(() => {
     setLoadingQuestions(true);
-    apiFetch(`/api/quizzes/${quiz.id}/questions`)
+    apiFetch(`/api/quizzes/${quiz.id}`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setQuestions(Array.isArray(data) ? data : data?.questions ?? []))
       .catch(() => setQuestions([]))

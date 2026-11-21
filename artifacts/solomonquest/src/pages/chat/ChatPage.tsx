@@ -1575,8 +1575,7 @@ const STUDENT_LINKS = [
   { href: "/dashboard/student", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/student/assignments", label: "Assignments", icon: FileText },
   { href: "/dashboard/student/quizzes", label: "Quizzes", icon: ClipboardList },
-  { href: "/dashboard/student/resources", label: "Resources", icon: FolderOpen },
-  { href: "/dashboard/student/forum", label: "Forum", icon: MessageSquare },
+  { href: "/forum", label: "Forum", icon: MessageSquare },
   { href: "/dashboard/student/transcript", label: "Transcript", icon: Scroll },
 ];
 

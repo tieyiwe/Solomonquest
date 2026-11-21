@@ -324,7 +324,7 @@ export default function AdminOverview() {
   async function handleReleaseTranscripts() {
     setReleasing(true);
     try {
-      const result = await apiFetch<{ success: boolean; notified: number }>("/api/grading/transcripts/release", {
+      const result = await apiFetch<{ success: boolean; notified: number }>("/api/transcripts/release", {
         method: "POST",
         body: JSON.stringify({ semester: releaseSemester || undefined, message: releaseMessage || undefined }),
       });

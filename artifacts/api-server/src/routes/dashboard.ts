@@ -6,6 +6,12 @@ const router: IRouter = Router();
 
 // Admin stats
 router.get("/dashboard/admin/stats", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  // Had no role check: any signed-in student/parent/teacher could read the
+  // school's admin dashboard figures and recent admissions activity.
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
   const schoolId = req.schoolId ?? "";
 
   const [

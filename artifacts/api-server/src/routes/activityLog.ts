@@ -42,8 +42,12 @@ router.get("/activity-log", requireAuth, async (req: AuthenticatedRequest, res):
     return;
   }
 
-  const limit = Math.min(parseInt(req.query.limit as string || "100"), 500);
-  const offset = parseInt(req.query.offset as string || "0");
+  // A non-numeric / negative limit or offset (NaN through Math.min) produced
+  // an invalid .range() and a 500; clamp both to sane bounds.
+  const parsedLimit = parseInt((req.query.limit as string) || "100", 10);
+  const parsedOffset = parseInt((req.query.offset as string) || "0", 10);
+  const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 100;
+  const offset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
   const actionFilter = req.query.action as string | undefined;
   const performedByFilter = req.query.performedBy as string | undefined;
   const fromDate = req.query.from as string | undefined;

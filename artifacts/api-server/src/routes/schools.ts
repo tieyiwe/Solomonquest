@@ -656,11 +656,15 @@ router.post(
     const newOwnerName =
       [targetProfile.first_name, targetProfile.last_name].filter(Boolean).join(" ") || "A new owner";
 
-    await supabaseAdmin.from("notifications").insert([
+    // notifications.message is GENERATED ALWAYS AS (coalesce(body, title)),
+    // so writing it made Postgres reject this whole insert, unchecked —
+    // neither owner was ever notified. Write title/body instead.
+    const { error: ownerNotifyError } = await supabaseAdmin.from("notifications").insert([
       {
         user_id: newOwnerId,
         type: "info",
-        message: `You are now the owner of ${school.name}.`,
+        title: "School ownership transferred",
+        body: `You are now the owner of ${school.name}.`,
         is_read: false,
       },
       ...(school.owner_id
@@ -668,12 +672,16 @@ router.post(
             {
               user_id: school.owner_id,
               type: "info",
-              message: `You transferred ownership of ${school.name} to ${newOwnerName}.`,
+              title: "School ownership transferred",
+              body: `You transferred ownership of ${school.name} to ${newOwnerName}.`,
               is_read: false,
             },
           ]
         : []),
     ]);
+    if (ownerNotifyError) {
+      logger.error({ error: ownerNotifyError }, "Failed to notify owners of school ownership transfer");
+    }
 
     res.json(mapSchool(updatedSchool));
   }

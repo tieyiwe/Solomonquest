@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { ArrowLeft } from "lucide-react";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import { useGetMyCourses } from "@workspace/api-client-react";
+import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,8 +50,12 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem("token") ?? sessionStorage.getItem("token");
+// Nothing in the app ever writes a "token" key to local/sessionStorage —
+// the session lives in the Supabase client — so reading it from there sent
+// every request unauthenticated (401).
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -72,7 +77,7 @@ export default function TeacherAttendance() {
     try {
       const res = await fetch(
         `/api/attendance/live-class?course_id=${encodeURIComponent(selectedCourse)}`,
-        { headers: authHeaders() }
+        { headers: await authHeaders() }
       );
       if (!res.ok) {
         const json = await res.json();
@@ -96,25 +101,19 @@ export default function TeacherAttendance() {
     if (!selectedCourse) return;
     setOverrideLoading((prev) => ({ ...prev, [studentId]: true }));
     try {
-      if (attendanceId) {
-        // Update existing record
-        await fetch(`/api/attendance/${attendanceId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify({ status: newStatus }),
-        });
-      } else {
-        // Create via existing course attendance endpoint
-        await fetch(`/api/courses/${selectedCourse}/attendance`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify({
-            studentId,
-            sessionDate: selectedDate,
-            status: newStatus,
-          }),
-        });
-      }
+      // There is no PUT /attendance/:id route. POST /courses/:id/attendance
+      // upserts on (course_id, student_id, session_date), so it covers both
+      // creating a record and overriding an existing one.
+      void attendanceId;
+      await fetch(`/api/courses/${selectedCourse}/attendance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({
+          studentId,
+          sessionDate: selectedDate,
+          status: newStatus,
+        }),
+      });
       await fetchAttendance();
     } catch {
       // silently refresh

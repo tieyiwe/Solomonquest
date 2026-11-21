@@ -742,12 +742,22 @@ router.post("/users/admin/reset-password", requireAuth, async (req: Authenticate
   if (req.userRole !== "super_admin") {
     const { data: targetProfile } = await supabaseAdmin
       .from("profiles")
-      .select("school_id")
+      .select("school_id, role")
       .eq("id", user_id)
       .single();
 
     if (!targetProfile || targetProfile.school_id !== req.schoolId) {
       res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    // Setting a password is a direct account takeover. PATCH /users/:id/role
+    // already refuses to let a school admin touch a super_admin; without the
+    // same guard here a school admin could set the password of a
+    // super_admin attached to their school and log in with platform-wide
+    // access.
+    if (targetProfile.role === "super_admin") {
+      res.status(403).json({ error: "Only a super admin can set a super admin's password" });
       return;
     }
   }

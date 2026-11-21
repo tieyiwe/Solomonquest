@@ -935,17 +935,31 @@ router.get(
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { actor_id, action, target_type, from, to, page = "1", limit = "50" } = req.query as Record<string, string>;
-      const pageNum = Math.max(1, parseInt(page, 10));
-      const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10)));
+      // parseInt of a non-numeric value is NaN, which survives Math.max/min
+      // and produced an invalid .range().
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
       const offset = (pageNum - 1) * limitNum;
 
+      // platform_audit_log has two writer conventions: this file and
+      // platform-settings.ts write actor_id/details, while lib/auditLog.ts
+      // (invitations, schools, courses), impersonation.ts and
+      // activityLog.ts write performed_by/metadata. Reading only
+      // actor_id/details showed every row of the second kind with no actor
+      // and no details — e.g. "View As" sessions had no visible performer.
       let query = supabaseAdmin
         .from("platform_audit_log")
-        .select("id, actor_id, actor_email, action, target_type, target_id, target_name, details, ip_address, created_at", { count: "exact" })
+        .select("id, actor_id, actor_email, performed_by, action, target_type, target_id, target_name, details, metadata, ip_address, created_at", { count: "exact" })
         .order("created_at", { ascending: false })
         .range(offset, offset + limitNum - 1);
 
-      if (actor_id) query = query.eq("actor_id", actor_id);
+      if (actor_id) {
+        if (!/^[0-9a-f-]{36}$/i.test(actor_id)) {
+          res.status(400).json({ error: "actor_id must be a uuid" });
+          return;
+        }
+        query = query.or(`actor_id.eq.${actor_id},performed_by.eq.${actor_id}`);
+      }
       if (action) query = query.eq("action", action);
       if (target_type) query = query.eq("target_type", target_type);
       if (from) query = query.gte("created_at", from);
@@ -959,7 +973,13 @@ router.get(
 
       // Enrich with actor name from profiles
       const enriched = await Promise.all(
-        (data ?? []).map(async (entry) => {
+        (data ?? []).map(async (row) => {
+          const { performed_by, metadata, ...rest } = row as typeof row & { performed_by: string | null; metadata: unknown };
+          const entry = {
+            ...rest,
+            actor_id: rest.actor_id ?? performed_by ?? null,
+            details: rest.details ?? metadata ?? null,
+          };
           let actorName: string | null = null;
           if (entry.actor_id) {
             const { data: p } = await supabaseAdmin

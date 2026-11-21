@@ -498,7 +498,9 @@ function VideoTab({ courseId }: { courseId: string }) {
   const { data: videoSession, isLoading, refetch } = useQuery<VideoSession | null>({
     queryKey: ["course-video", courseId],
     queryFn: async () => {
-      const res = await fetch(`/api/courses/${courseId}/video/active`, {
+      // GET /video/sessions?course_id= returns the active session or null;
+      // /courses/:id/video/active never existed, so this always 404'd.
+      const res = await fetch(`/api/video/sessions?course_id=${encodeURIComponent(courseId)}`, {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       if (res.status === 404) return null;

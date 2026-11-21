@@ -31,13 +31,28 @@ const FROM = process.env.SMTP_FROM ?? 'SolomonQuest <solomonquest@tilogics.com>'
 const PRIMARY = '#1a1a2e';
 const ACCENT = '#e94560';
 
+// Every template below interpolates user-controlled text (names, school and
+// course titles, forum topic titles, broadcast messages, notification
+// bodies) into HTML. Unescaped, anyone who could set e.g. their name or a
+// forum topic title could inject links/markup into emails sent under the
+// platform's From address (phishing). Each exported sender escapes its
+// inputs AFTER building the plain-text subject line.
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function baseLayout(title: string, body: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${title}</title>
+  <title>${escapeHtml(title)}</title>
 </head>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 0;">
@@ -134,7 +149,10 @@ export async function sendTeacherInvite({
   role = 'teacher',
 }: TeacherInviteParams): Promise<void> {
   const subject = `You've been invited to join ${schoolName} on SolomonQuest`;
-  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+  schoolName = escapeHtml(schoolName);
+  inviterName = escapeHtml(inviterName);
+  inviteUrl = escapeHtml(inviteUrl);
+  const roleLabel = escapeHtml(role.charAt(0).toUpperCase() + role.slice(1));
 
   const body = `
     ${heading(`You've been invited to join ${schoolName}!`)}
@@ -171,6 +189,9 @@ export async function sendCourseAssignmentNotification({
   schoolName,
 }: CourseAssignmentParams): Promise<void> {
   const subject = `You've been assigned to teach ${courseTitle}`;
+  teacherName = escapeHtml(teacherName);
+  courseTitle = escapeHtml(courseTitle);
+  schoolName = escapeHtml(schoolName);
 
   const body = `
     ${heading('New Course Assignment')}
@@ -211,8 +232,11 @@ export async function sendApplicationStatusUpdate({
   reason,
 }: ApplicationStatusParams): Promise<void> {
   const subject = `Your application to ${schoolName} has been updated`;
+  studentName = escapeHtml(studentName);
+  schoolName = escapeHtml(schoolName);
+  reason = reason ? escapeHtml(reason) : reason;
 
-  const statusUpper = status.toUpperCase();
+  const statusUpper = escapeHtml(status.toUpperCase());
   const isApproved = /approved|accepted/i.test(status);
   const isRejected = /rejected|declined|denied/i.test(status);
 
@@ -262,7 +286,7 @@ export async function sendPasswordResetEmail({
     ${heading('Password Reset Request')}
     ${paragraph('We received a request to reset the password for your SolomonQuest account.')}
     ${paragraph('Click the button below to choose a new password:')}
-    <div style="text-align:center;">${button(resetUrl, 'Reset Password')}</div>
+    <div style="text-align:center;">${button(escapeHtml(resetUrl), 'Reset Password')}</div>
     <div style="margin-top:28px;padding:16px;background:#fff8e1;border-left:4px solid #f59e0b;border-radius:0 4px 4px 0;">
       <p style="margin:0;color:#444444;font-size:13px;">
         <strong>Note:</strong> This link will expire in <strong>1 hour</strong>. If you did not request a password reset, please ignore this email &mdash; your password will not change.
@@ -291,8 +315,11 @@ export async function sendResourceNotification({
   resourceType,
 }: ResourceNotificationParams): Promise<void> {
   const subject = `New resource added to ${courseTitle}`;
+  studentName = escapeHtml(studentName);
+  courseTitle = escapeHtml(courseTitle);
+  resourceTitle = escapeHtml(resourceTitle);
 
-  const typeLabel = resourceType.charAt(0).toUpperCase() + resourceType.slice(1).toLowerCase();
+  const typeLabel = escapeHtml(resourceType.charAt(0).toUpperCase() + resourceType.slice(1).toLowerCase());
 
   const body = `
     ${heading('New Course Resource Available')}
@@ -339,6 +366,8 @@ export async function sendForumNotification({
   const subject = isComment
     ? `Someone commented on your topic: ${topicTitle}`
     : `Someone reacted to your topic: ${topicTitle}`;
+  userName = escapeHtml(userName);
+  topicTitle = escapeHtml(topicTitle);
 
   const actionLabel = isComment ? 'left a comment on' : 'reacted to';
   const icon = isComment ? '&#128172;' : '&#128077;';
@@ -374,8 +403,11 @@ export async function sendWelcomeEmail({
   role = 'student',
   loginUrl,
 }: WelcomeEmailParams): Promise<void> {
-  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+  const roleLabel = escapeHtml(role.charAt(0).toUpperCase() + role.slice(1));
   const subject = `Welcome to SolomonQuest${schoolName ? ` — ${schoolName}` : ''}! 🎉`;
+  firstName = escapeHtml(firstName);
+  schoolName = schoolName ? escapeHtml(schoolName) : schoolName;
+  loginUrl = escapeHtml(loginUrl);
 
   const featureRows = [
     ['📚', 'Courses', 'Access all your enrolled courses and learning materials in one place.'],
@@ -434,8 +466,11 @@ export async function sendEnhancedInvite({
   role = 'teacher',
   expiresInDays = 7,
 }: EnhancedInviteParams): Promise<void> {
-  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+  const roleLabel = escapeHtml(role.charAt(0).toUpperCase() + role.slice(1));
   const subject = `You're invited to join ${schoolName} on SolomonQuest`;
+  schoolName = escapeHtml(schoolName);
+  inviterName = escapeHtml(inviterName);
+  inviteUrl = escapeHtml(inviteUrl);
 
   const steps = [
     ['1', 'Click the button below', `You'll be taken to SolomonQuest to set up your account.`],
@@ -497,12 +532,12 @@ export async function sendBroadcastEmail({
   schoolName,
 }: BroadcastEmailParams): Promise<void> {
   const body = `
-    ${heading(subject)}
-    ${paragraph(`Hi <strong>${recipientName}</strong>,`)}
-    ${paragraph(message.replace(/\n/g, '<br/>'))}
+    ${heading(escapeHtml(subject))}
+    ${paragraph(`Hi <strong>${escapeHtml(recipientName)}</strong>,`)}
+    ${paragraph(escapeHtml(message).replace(/\n/g, '<br/>'))}
     <div style="margin:24px 0;padding:16px;background:#f0f4ff;border-left:4px solid ${PRIMARY};border-radius:0 4px 4px 0;">
       <p style="margin:0;color:#666666;font-size:13px;">
-        Sent by <strong>${senderName}</strong> via ${schoolName} on SolomonQuest.
+        Sent by <strong>${escapeHtml(senderName)}</strong> via ${escapeHtml(schoolName)} on SolomonQuest.
       </p>
     </div>
   `;
@@ -534,10 +569,10 @@ export async function sendGenericNotificationEmail({
 }: GenericNotificationEmailParams): Promise<void> {
   const url = link ? `${appUrl}${link}` : appUrl;
   const body = `
-    ${heading(title)}
-    ${paragraph(`Hi <strong>${recipientName}</strong>,`)}
-    ${paragraph(message)}
-    ${button(url, "View in SolomonQuest")}
+    ${heading(escapeHtml(title))}
+    ${paragraph(`Hi <strong>${escapeHtml(recipientName)}</strong>,`)}
+    ${paragraph(escapeHtml(message).replace(/\n/g, '<br/>'))}
+    ${button(escapeHtml(url), "View in SolomonQuest")}
   `;
 
   await send(to, title, baseLayout(title, body));

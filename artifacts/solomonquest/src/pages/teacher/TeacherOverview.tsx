@@ -258,20 +258,39 @@ export default function TeacherOverview() {
   const [startingSession, setStartingSession] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<TeacherStats>("/api/dashboard/teacher")
+    apiFetch<TeacherStats>("/api/dashboard/teacher/stats")
       .then(setStats)
       .catch(() => {})
       .finally(() => setStatsLoading(false));
 
+    // There is no /api/submissions/pending route; GET /api/submissions is
+    // scoped per course (course_id is required), so gather the ungraded
+    // submissions across this teacher's courses.
     apiFetch<Course[]>("/api/courses/my")
-      .then(setCourses)
+      .then(async (myCourses) => {
+        const list = Array.isArray(myCourses) ? myCourses : [];
+        setCourses(list);
+        setCoursesLoading(false);
+        const perCourse = await Promise.all(
+          list.map((c) =>
+            apiFetch<{ submissions?: (Submission & { grade?: number | null })[] }>(
+              `/api/submissions?course_id=${encodeURIComponent(c.id)}`
+            )
+              .then((d) => d.submissions ?? [])
+              .catch(() => [])
+          )
+        );
+        const pending = perCourse
+          .flat()
+          .filter((s) => s.grade == null)
+          .sort((a, b) => String(b.submitted_at ?? "").localeCompare(String(a.submitted_at ?? "")));
+        setSubmissions(pending.slice(0, 5));
+      })
       .catch(() => {})
-      .finally(() => setCoursesLoading(false));
-
-    apiFetch<Submission[]>("/api/submissions/pending")
-      .then((data) => setSubmissions(data.slice(0, 5)))
-      .catch(() => {})
-      .finally(() => setSubmissionsLoading(false));
+      .finally(() => {
+        setCoursesLoading(false);
+        setSubmissionsLoading(false);
+      });
   }, []);
 
   const firstName = (user as any)?.firstName || (user as any)?.first_name || "Teacher";

@@ -365,11 +365,17 @@ router.post(
     if (parent_id) {
       const { data: parentMsg } = await supabaseAdmin
         .from("internal_messages")
-        .select("id, thread_id")
+        .select("id, thread_id, from_user_id, to_user_id")
         .eq("id", parent_id)
         .maybeSingle();
 
-      if (!parentMsg) {
+      // parent_id is client input: without this check anyone could attach a
+      // reply under any conversation on the platform, and GET /messages/:id
+      // would show it to that conversation's two participants.
+      if (
+        !parentMsg ||
+        (parentMsg.from_user_id !== userId && parentMsg.to_user_id !== userId)
+      ) {
         res.status(400).json({ error: "Parent message not found" });
         return;
       }
@@ -408,13 +414,21 @@ router.post(
       return;
     }
 
-    // Create notification for recipient
-    await supabaseAdmin.from("notifications").insert({
+    // Create notification for recipient. notifications.message is a
+    // GENERATED ALWAYS column (coalesce(body, title)), so supplying it made
+    // Postgres reject this insert and recipients were never notified.
+    const { error: notifyError } = await supabaseAdmin.from("notifications").insert({
       user_id: to_user_id,
       type: "new_message",
-      message: `New message from ${senderName}: ${subject.trim()}`,
+      title: `New message from ${senderName}`,
+      body: subject.trim(),
+      link: "/messages",
       metadata: { message_id: (newMessage as Record<string, unknown>).id },
+      is_read: false,
     });
+    if (notifyError) {
+      console.error("Failed to create new-message notification:", notifyError.message);
+    }
 
     res.status(201).json(newMessage);
   }

@@ -41,6 +41,44 @@ interface UserResult {
   internal_email: string;
 }
 
+type ApiPerson = { id?: string; name?: string; internal_email?: string | null } | null | undefined;
+
+// The backend (routes/messages.ts) returns { from_user: {id,name,...},
+// to_user: {...}, is_read, body_preview | body } — not the flat
+// from_user_id / from_name / read / body fields this page renders. Without
+// this mapping every sender showed as blank, every message stayed unread,
+// and list previews were empty. Raw internal_messages rows (the realtime
+// INSERT payload) are handled too.
+function normalizeMessage(raw: Record<string, any>): Message {
+  const from = raw.from_user as ApiPerson;
+  const to = raw.to_user as ApiPerson;
+  return {
+    id: raw.id,
+    from_user_id: raw.from_user_id ?? from?.id ?? "",
+    to_user_id: raw.to_user_id ?? to?.id ?? "",
+    subject: raw.subject ?? "",
+    body: raw.body ?? raw.body_preview ?? "",
+    created_at: raw.created_at,
+    read: raw.read ?? raw.is_read ?? false,
+    from_name: raw.from_name ?? from?.name ?? undefined,
+    from_email: raw.from_email ?? from?.internal_email ?? undefined,
+    to_name: raw.to_name ?? to?.name ?? undefined,
+    to_email: raw.to_email ?? to?.internal_email ?? undefined,
+  };
+}
+
+// GET /users/search returns raw profile rows (first_name/last_name), not
+// { name }; AvatarCircle/getInitials crashed on the undefined name.
+function normalizeUser(raw: Record<string, any>): UserResult {
+  const name =
+    raw.name ?? `${raw.first_name ?? ""} ${raw.last_name ?? ""}`.trim();
+  return {
+    id: raw.id,
+    name: name || raw.internal_email || "Unknown",
+    internal_email: raw.internal_email ?? "",
+  };
+}
+
 type Folder = "inbox" | "sent" | "search";
 type PanelState = "empty" | "detail" | "compose";
 
@@ -139,7 +177,7 @@ export default function MessagesPage() {
           filter: "to_user_id=eq." + userId,
         },
         (payload) => {
-          const newMsg = payload.new as Message;
+          const newMsg = normalizeMessage(payload.new as Record<string, any>);
           if (folder === "inbox") {
             setMessages((prev) => [newMsg, ...prev]);
           }
@@ -154,22 +192,25 @@ export default function MessagesPage() {
   }, [userId, folder]);
 
   async function fetchMessages() {
+    // There is no /api/messages/search route (it was caught by
+    // GET /messages/:id); the search folder is populated by searchMessages.
+    if (folder === "search") {
+      setMessages([]);
+      return;
+    }
     setLoading(true);
     try {
       const endpoint =
-        folder === "inbox"
-          ? "/api/messages/inbox"
-          : folder === "sent"
-          ? "/api/messages/sent"
-          : `/api/messages/search?query=${encodeURIComponent(searchQuery)}`;
+        folder === "inbox" ? "/api/messages/inbox" : "/api/messages/sent";
       const res = await apiFetch(endpoint);
       if (res.ok) {
         const data = await res.json();
-        setMessages(data.messages ?? data ?? []);
+        const rows: Message[] = (Array.isArray(data) ? data : data.messages ?? []).map(normalizeMessage);
+        setMessages(rows);
         // Build recent contacts
         const contacts: UserResult[] = [];
         const seen = new Set<string>();
-        for (const m of data.messages ?? data ?? []) {
+        for (const m of rows) {
           const otherId =
             folder === "sent" ? m.to_user_id : m.from_user_id;
           if (!seen.has(otherId) && otherId !== userId) {
@@ -200,13 +241,30 @@ export default function MessagesPage() {
     if (!searchQuery.trim()) return;
     setLoading(true);
     try {
-      const res = await apiFetch(
-        `/api/messages/search?query=${encodeURIComponent(searchQuery)}`
-      );
-      if (res.ok) {
+      // No server-side search endpoint exists; search the caller's own
+      // inbox + sent folders client-side.
+      const [inboxRes, sentRes] = await Promise.all([
+        apiFetch("/api/messages/inbox"),
+        apiFetch("/api/messages/sent"),
+      ]);
+      const rows: Message[] = [];
+      for (const res of [inboxRes, sentRes]) {
+        if (!res.ok) continue;
         const data = await res.json();
-        setMessages(data.messages ?? data ?? []);
+        rows.push(...(Array.isArray(data) ? data : data.messages ?? []).map(normalizeMessage));
       }
+      const q = searchQuery.trim().toLowerCase();
+      const seen = new Set<string>();
+      setMessages(
+        rows
+          .filter((m) => {
+            if (seen.has(m.id)) return false;
+            seen.add(m.id);
+            return [m.subject, m.body, m.from_name, m.to_name, m.from_email, m.to_email]
+              .some((v) => (v ?? "").toLowerCase().includes(q));
+          })
+          .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+      );
     } catch {
       // silently fail
     } finally {
@@ -250,7 +308,8 @@ export default function MessagesPage() {
     }
     setSending(true);
     try {
-      const res = await apiFetch("/api/messages/send", {
+      // The send route is POST /api/messages (there is no /messages/send).
+      const res = await apiFetch("/api/messages", {
         method: "POST",
         body: JSON.stringify({
           to_user_id: composeToUser.id,
@@ -290,7 +349,8 @@ export default function MessagesPage() {
         );
         if (res.ok) {
           const data = await res.json();
-          setUserSearchResults(data.users ?? data ?? []);
+          const list = Array.isArray(data) ? data : data.users ?? [];
+          setUserSearchResults(list.map(normalizeUser));
           setShowUserDropdown(true);
         }
       } catch {
@@ -306,12 +366,20 @@ export default function MessagesPage() {
     setShowUserDropdown(false);
   }
 
+  // There is no PATCH /messages/:id/read. GET /messages/:id marks the
+  // message read for its recipient and returns the full body (list rows
+  // only carry a 120-char preview).
   async function markRead(msg: Message) {
-    if (!msg.read) {
-      await apiFetch(`/api/messages/${msg.id}/read`, { method: "PATCH" });
+    try {
+      const res = await apiFetch(`/api/messages/${msg.id}`);
+      if (!res.ok) return;
+      const full = normalizeMessage(await res.json());
+      setSelectedMessage((cur) => (cur?.id === msg.id ? { ...cur, ...full, read: true } : cur));
       setMessages((prev) =>
         prev.map((m) => (m.id === msg.id ? { ...m, read: true } : m))
       );
+    } catch {
+      /* keep the preview */
     }
   }
 

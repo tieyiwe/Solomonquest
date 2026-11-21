@@ -423,9 +423,10 @@ router.get(
       return;
     }
 
-    const limit = Math.min(
-      parseInt((req.query.limit as string) ?? "50", 10) || 50,
-      100
+    // Lower bound too: a negative ?limit= passed straight to .limit().
+    const limit = Math.max(
+      1,
+      Math.min(parseInt((req.query.limit as string) ?? "50", 10) || 50, 100)
     );
     const before = req.query.before as string | undefined;
 
@@ -711,9 +712,15 @@ router.post(
     const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = `${channelId}/${Date.now()}-${safeName}`;
 
+    // The mimetype is client-claimed and the bucket is public: storing an
+    // HTML/SVG/XML/JS upload under its own type made the attachment link
+    // render active content when opened. Serve those as opaque downloads.
+    const ACTIVE_CONTENT = /^(text\/html|application\/xhtml\+xml|image\/svg\+xml|text\/xml|application\/xml|text\/javascript|application\/javascript)/i;
+    const storedContentType = ACTIVE_CONTENT.test(req.file.mimetype) ? "application/octet-stream" : req.file.mimetype;
+
     const { error: uploadError } = await supabaseAdmin.storage
       .from(ATTACHMENTS_BUCKET)
-      .upload(path, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
+      .upload(path, req.file.buffer, { contentType: storedContentType, upsert: false });
 
     if (uploadError) {
       res.status(500).json({ error: uploadError.message });
