@@ -635,7 +635,7 @@ export default function ForumTopicPage() {
           {/* Badges row */}
           <div className="flex items-center gap-2 flex-wrap">
             {topic.is_pinned && (
-              <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0 gap-1 text-xs">
+              <Badge className="bg-warning/10 text-warning border-0 gap-1 text-xs">
                 <Pin size={10} />
                 Pinned
               </Badge>
@@ -646,12 +646,12 @@ export default function ForumTopicPage() {
                 {topic.course_name ?? "Class"}
               </Badge>
             ) : topic.program_id ? (
-              <Badge className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border-0 gap-1 text-xs hover:bg-indigo-100">
+              <Badge className="bg-primary/10 text-primary border-0 gap-1 text-xs hover:bg-primary/20">
                 <BookOpen size={10} />
                 Program
               </Badge>
             ) : (
-              <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0 gap-1 text-xs hover:bg-green-100">
+              <Badge className="bg-success/10 text-success border-0 gap-1 text-xs hover:bg-success/20">
                 <School size={10} />
                 School-wide
               </Badge>

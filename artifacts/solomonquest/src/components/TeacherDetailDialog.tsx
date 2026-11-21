@@ -85,7 +85,7 @@ export function TeacherDetailDialog({
         )}
 
         {!loading && error && (
-          <p className="text-sm text-red-500 py-6 text-center">{error}</p>
+          <p className="text-sm text-destructive py-6 text-center">{error}</p>
         )}
 
         {!loading && !error && detail && (
@@ -98,7 +98,7 @@ export function TeacherDetailDialog({
                 </AvatarFallback>
               </Avatar>
               <div>
-                <p className="font-semibold text-gray-900">
+                <p className="font-semibold text-foreground">
                   {detail.firstName} {detail.lastName}
                 </p>
                 {detail.uniqueStudentId && (

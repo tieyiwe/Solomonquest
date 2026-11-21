@@ -76,11 +76,11 @@ function CheckRow({
       {loading ? (
         <Skeleton className="h-5 w-5 rounded-full shrink-0" />
       ) : pass ? (
-        <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
+        <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
       ) : (
-        <XCircle className="h-5 w-5 text-red-500 shrink-0" />
+        <XCircle className="h-5 w-5 text-destructive shrink-0" />
       )}
-      <span className={`text-sm ${pass ? "text-gray-700" : "text-red-600 font-medium"}`}>
+      <span className={`text-sm ${pass ? "text-foreground/80" : "text-destructive font-medium"}`}>
         {loading ? (
           <Skeleton className="h-4 w-48 inline-block" />
         ) : pass ? (
@@ -179,14 +179,14 @@ function TransferOwnershipCard({
 
   return (
     <>
-      <Card className="border border-amber-200 shadow-sm">
+      <Card className="border border-warning/30 shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
-            <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-amber-100">
-              <Crown className="h-5 w-5 text-amber-600" />
+            <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-warning/10">
+              <Crown className="h-5 w-5 text-warning" />
             </div>
             <div>
-              <CardTitle className="text-base text-gray-900">Transfer School Ownership</CardTitle>
+              <CardTitle className="text-base text-foreground">Transfer School Ownership</CardTitle>
               <CardDescription>
                 Hand full ownership of this school to another admin, staff member, or teacher.
               </CardDescription>
@@ -194,7 +194,7 @@ function TransferOwnershipCard({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-warning/10 border border-warning/30 text-warning text-sm">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
             <p>
               The new owner is promoted to admin if they aren't already. You will keep your own
@@ -203,7 +203,7 @@ function TransferOwnershipCard({
           </div>
           <Button
             variant="outline"
-            className="border-amber-300 text-amber-700 hover:bg-amber-50 w-full sm:w-auto"
+            className="border-warning/30 text-warning hover:bg-warning/20 w-full sm:w-auto"
             onClick={handleOpen}
             disabled={loadingUsers || users.length === 0}
           >
@@ -257,7 +257,7 @@ function TransferOwnershipCard({
           {step === "confirm" && (
             <>
               <DialogHeader>
-                <DialogTitle className="text-amber-700">Are you absolutely sure?</DialogTitle>
+                <DialogTitle className="text-warning">Are you absolutely sure?</DialogTitle>
                 <DialogDescription>
                   You are about to permanently transfer ownership of {schoolName} to{" "}
                   <strong>
@@ -270,7 +270,7 @@ function TransferOwnershipCard({
               <div className="space-y-4 pt-2">
                 <div className="space-y-1.5">
                   <Label>
-                    Type <span className="font-semibold text-gray-800">{schoolName}</span> to confirm:
+                    Type <span className="font-semibold text-foreground">{schoolName}</span> to confirm:
                   </Label>
                   <Input
                     value={nameInput}
@@ -284,7 +284,7 @@ function TransferOwnershipCard({
                     Back
                   </Button>
                   <Button
-                    className="bg-amber-600 hover:bg-amber-700"
+                    className="bg-warning hover:bg-warning/90"
                     disabled={!nameMatches || submitting}
                     onClick={handleTransfer}
                   >
@@ -474,7 +474,7 @@ export default function AdminDangerZone() {
       </div>
       <div className="space-y-6 max-w-2xl">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Danger Zone</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Danger Zone</h1>
           <p className="text-muted-foreground mt-0.5">
             Irreversible actions for your school. Proceed with caution.
           </p>
@@ -482,10 +482,10 @@ export default function AdminDangerZone() {
 
         {/* Success / existing request banner */}
         {step === "success" && existingRequest && (
-          <div className="flex items-start gap-3 p-4 rounded-xl border border-green-200 bg-green-50 text-green-800">
-            <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0 text-green-600" />
+          <div className="flex items-start gap-3 p-4 rounded-xl border border-success/30 bg-success/10 text-success">
+            <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0 text-success" />
             <div className="space-y-1">
-              <p className="font-semibold text-green-900">Deletion Request Submitted</p>
+              <p className="font-semibold text-success">Deletion Request Submitted</p>
               <p className="text-sm">
                 Our team has been notified and will reach out to confirm your request within
                 1-2 business days. If you change your mind, contact{" "}
@@ -496,7 +496,7 @@ export default function AdminDangerZone() {
                   support@solomonquest.com
                 </a>
               </p>
-              <div className="mt-2 flex items-center gap-4 text-xs text-green-700">
+              <div className="mt-2 flex items-center gap-4 text-xs text-success">
                 <span>
                   Status:{" "}
                   <span className="capitalize font-semibold">{existingRequest.status}</span>
@@ -528,14 +528,14 @@ export default function AdminDangerZone() {
 
         {/* Main deletion card */}
         {step !== "success" && (
-          <Card className="border border-red-200 shadow-sm">
+          <Card className="border border-destructive/30 shadow-sm">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-red-100">
-                  <Trash2 className="h-5 w-5 text-red-600" />
+                <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-destructive/10">
+                  <Trash2 className="h-5 w-5 text-destructive" />
                 </div>
                 <div>
-                  <CardTitle className="text-base text-gray-900">School Deletion</CardTitle>
+                  <CardTitle className="text-base text-foreground">School Deletion</CardTitle>
                   <CardDescription>
                     Permanent and cannot be undone after 30 days.
                   </CardDescription>
@@ -545,7 +545,7 @@ export default function AdminDangerZone() {
 
             <CardContent className="space-y-5">
               {/* Warning */}
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-warning/10 border border-warning/30 text-warning text-sm">
                 <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                 <p>
                   Deleting your school is <strong>permanent</strong> and cannot be undone after
@@ -598,7 +598,7 @@ export default function AdminDangerZone() {
             {step === "confirm" && (
               <>
                 <DialogHeader>
-                  <DialogTitle className="text-red-700">Are you absolutely sure?</DialogTitle>
+                  <DialogTitle className="text-destructive">Are you absolutely sure?</DialogTitle>
                   <DialogDescription>
                     This will submit a deletion request to the SolomonQuest team. They will
                     contact you to confirm before proceeding.
@@ -609,7 +609,7 @@ export default function AdminDangerZone() {
                   <div className="space-y-1.5">
                     <Label>
                       Type{" "}
-                      <span className="font-semibold text-gray-800">
+                      <span className="font-semibold text-foreground">
                         {school?.name ?? "your school name"}
                       </span>{" "}
                       to confirm:

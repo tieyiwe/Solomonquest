@@ -72,6 +72,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Course } from "@workspace/api-client-react";
 import { generateSemesterOptions, CUSTOM_SEMESTER_VALUE } from "@/lib/semesters";
+import { LoadingRows } from "@/components/common/States";
 
 interface CourseFormData {
   title: string;
@@ -206,7 +207,7 @@ function TuitionTab({ courseId }: { courseId: string }) {
     }
   };
 
-  if (loading) return <div className="text-sm text-gray-400">Loading…</div>;
+  if (loading) return <LoadingRows rows={3} />;
 
   return (
     <div className="space-y-4">
@@ -215,8 +216,8 @@ function TuitionTab({ courseId }: { courseId: string }) {
         yet, so applications aren't blocked on payment while this is being tested.
       </p>
       <div className="space-y-1.5">
-        <Label>Tuition Amount (USD)</Label>
-        <Input type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        <Label htmlFor="admincourses-tuition-amount-usd">Tuition Amount (USD)</Label>
+        <Input id="admincourses-tuition-amount-usd" type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
       </div>
       <div className="flex items-center justify-between rounded-lg border p-3">
         <div>
@@ -234,8 +235,8 @@ function TuitionTab({ courseId }: { courseId: string }) {
       </div>
       {allowInstallments && (
         <div className="space-y-1.5 pl-3 border-l-2">
-          <Label>Number of Installments</Label>
-          <Input
+          <Label htmlFor="admincourses-number-of-installments">Number of Installments</Label>
+          <Input id="admincourses-number-of-installments"
             type="number"
             min="2"
             value={installmentCount}
@@ -369,7 +370,7 @@ function CourseRosterTab({ courseId }: { courseId: string }) {
       .finally(() => setLoading(false));
   }, [courseId]);
 
-  if (loading) return <div className="text-sm text-gray-400">Loading…</div>;
+  if (loading) return <LoadingRows rows={3} />;
 
   return (
     <div>
@@ -380,13 +381,13 @@ function CourseRosterTab({ courseId }: { courseId: string }) {
           {students.map((s) => (
             <li key={s.id}>
               <button
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-muted/50"
                 onClick={() => setViewStudentId(s.id)}
               >
                 <div className="h-7 w-7 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center shrink-0">
                   {`${s.firstName?.[0] ?? ""}${s.lastName?.[0] ?? ""}`.toUpperCase() || "S"}
                 </div>
-                <span className="text-sm font-medium text-gray-900">
+                <span className="text-sm font-medium text-foreground">
                   {s.firstName} {s.lastName}
                 </span>
               </button>
@@ -575,16 +576,16 @@ function CourseFormDialog({
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label>Course Title *</Label>
-            <Input
+            <Label htmlFor="admincourses-course-title">Course Title *</Label>
+            <Input id="admincourses-course-title"
               placeholder="Introduction to Mathematics"
               value={form.title}
               onChange={(e) => set("title", e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea
+            <Label htmlFor="admincourses-description">Description</Label>
+            <Textarea id="admincourses-description"
               placeholder="Brief description of the course..."
               rows={3}
               value={form.description}
@@ -592,17 +593,17 @@ function CourseFormDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Course Code</Label>
-            <Input
+            <Label htmlFor="admincourses-course-code">Course Code</Label>
+            <Input id="admincourses-course-code"
               placeholder="MATH101"
               value={form.code}
               onChange={(e) => set("code", e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Semester / Term</Label>
+            <Label htmlFor="admincourses-semester-term">Semester / Term</Label>
             <Select value={semesterChoice} onValueChange={handleSemesterChoice}>
-              <SelectTrigger>
+              <SelectTrigger id="admincourses-semester-term">
                 <SelectValue placeholder="Select a semester..." />
               </SelectTrigger>
               <SelectContent>
@@ -626,16 +627,16 @@ function CourseFormDialog({
             {semesterChoice && (
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Start Date</Label>
-                  <Input
+                  <Label htmlFor="admincourses-start-date" className="text-xs text-muted-foreground">Start Date</Label>
+                  <Input id="admincourses-start-date"
                     type="date"
                     value={form.termStartDate}
                     onChange={(e) => set("termStartDate", e.target.value)}
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">End Date</Label>
-                  <Input
+                  <Label htmlFor="admincourses-end-date" className="text-xs text-muted-foreground">End Date</Label>
+                  <Input id="admincourses-end-date"
                     type="date"
                     value={form.termEndDate}
                     onChange={(e) => set("termEndDate", e.target.value)}
@@ -645,9 +646,9 @@ function CourseFormDialog({
             )}
           </div>
           <div className="space-y-1.5">
-            <Label>Assign Teacher</Label>
+            <Label htmlFor="admincourses-assign-teacher">Assign Teacher</Label>
             <Select value={form.teacherId} onValueChange={(v) => set("teacherId", v)}>
-              <SelectTrigger>
+              <SelectTrigger id="admincourses-assign-teacher">
                 <SelectValue placeholder="Select a teacher..." />
               </SelectTrigger>
               <SelectContent>
@@ -662,9 +663,9 @@ function CourseFormDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Program</Label>
+            <Label htmlFor="admincourses-program">Program</Label>
             <Select value={form.programId} onValueChange={(v) => set("programId", v)}>
-              <SelectTrigger>
+              <SelectTrigger id="admincourses-program">
                 <SelectValue placeholder="No program — standalone course" />
               </SelectTrigger>
               <SelectContent>
@@ -683,9 +684,9 @@ function CourseFormDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Scheduling Term</Label>
+            <Label htmlFor="admincourses-scheduling-term">Scheduling Term</Label>
             <Select value={form.termId} onValueChange={(v) => set("termId", v)}>
-              <SelectTrigger>
+              <SelectTrigger id="admincourses-scheduling-term">
                 <SelectValue placeholder="Not scheduled to a term" />
               </SelectTrigger>
               <SelectContent>
@@ -704,8 +705,8 @@ function CourseFormDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Attendance Weight in Final Grade (%)</Label>
-            <Input
+            <Label htmlFor="admincourses-attendance-weight-in-final-gra">Attendance Weight in Final Grade (%)</Label>
+            <Input id="admincourses-attendance-weight-in-final-gra"
               type="number"
               min={0}
               max={100}
@@ -736,18 +737,18 @@ function CourseFormDialog({
 
           {/* Live Class Date/Time (conditional) */}
           {form.isLive && (
-            <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+            <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/10 p-3">
               <div className="space-y-1.5">
-                <Label>Class Date &amp; Time</Label>
-                <Input
+                <Label htmlFor="admincourses-class-date-amp-time">Class Date &amp; Time</Label>
+                <Input id="admincourses-class-date-amp-time"
                   type="datetime-local"
                   value={form.classDate}
                   onChange={(e) => set("classDate", e.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>End Time</Label>
-                <Input
+                <Label htmlFor="admincourses-end-time">End Time</Label>
+                <Input id="admincourses-end-time"
                   type="datetime-local"
                   value={form.classEndTime}
                   onChange={(e) => set("classEndTime", e.target.value)}
@@ -850,8 +851,8 @@ function InviteTeacherDialog() {
             Enter the teacher's email address. They'll receive an invitation link to join your school.
           </p>
           <div className="space-y-1.5">
-            <Label>Email Address</Label>
-            <Input
+            <Label htmlFor="admincourses-email-address">Email Address</Label>
+            <Input id="admincourses-email-address"
               type="email"
               placeholder="teacher@example.com"
               value={email}
@@ -920,7 +921,7 @@ export default function AdminCourses() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Course Management</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Course Management</h1>
             <p className="text-muted-foreground mt-0.5">
               Create, edit and manage all school courses.
             </p>
@@ -979,7 +980,7 @@ export default function AdminCourses() {
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50">
+                  <TableRow className="bg-muted/30">
                     <TableHead className="font-semibold">Course</TableHead>
                     <TableHead className="font-semibold">Teacher</TableHead>
                     <TableHead className="font-semibold">Code & Term</TableHead>
@@ -992,27 +993,27 @@ export default function AdminCourses() {
                   {filtered.map((course) => {
                     const isLive = !!(course as any).isLive;
                     return (
-                      <TableRow key={course.id} className="hover:bg-gray-50/50">
+                      <TableRow key={course.id} className="hover:bg-muted/30">
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <div className="h-9 w-9 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
-                              <BookOpen className="h-4 w-4 text-violet-600" />
+                            <div className="h-9 w-9 rounded-xl bg-chart-5/10 flex items-center justify-center shrink-0">
+                              <BookOpen className="h-4 w-4 text-chart-5" />
                             </div>
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium text-gray-900 text-sm">{course.title}</p>
+                                <p className="font-medium text-foreground text-sm">{course.title}</p>
                                 {(course as any).programId && programNameById[(course as any).programId] && (
-                                  <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 border text-xs">
+                                  <Badge className="bg-primary/10 text-primary border-primary/30 border text-xs">
                                     {programNameById[(course as any).programId]}
                                   </Badge>
                                 )}
                                 {isLive ? (
-                                  <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs gap-1">
+                                  <Badge className="bg-destructive/10 text-destructive border-destructive/30 border text-xs gap-1">
                                     <Radio className="h-3 w-3" />
                                     Live
                                   </Badge>
                                 ) : (
-                                  <Badge className="bg-gray-100 text-gray-500 border-gray-200 border text-xs">
+                                  <Badge className="bg-muted text-muted-foreground border-border border text-xs">
                                     Non-Live
                                   </Badge>
                                 )}
@@ -1060,8 +1061,8 @@ export default function AdminCourses() {
                           <Badge
                             className={
                               course.isPublished
-                                ? "bg-green-100 text-green-700 border-green-200 border"
-                                : "bg-gray-100 text-gray-600 border-gray-200 border"
+                                ? "bg-success/10 text-success border-success/30 border"
+                                : "bg-muted text-muted-foreground border-border border"
                             }
                           >
                             {course.isPublished ? "Published" : "Draft"}
@@ -1083,7 +1084,7 @@ export default function AdminCourses() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                  className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/20"
                                   disabled={deleteCourse.isPending}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -1100,7 +1101,7 @@ export default function AdminCourses() {
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction
-                                    className="bg-red-600 hover:bg-red-700"
+                                    className="bg-destructive hover:bg-destructive/90"
                                     onClick={() => handleDelete(course.id, course.title)}
                                   >
                                     Delete

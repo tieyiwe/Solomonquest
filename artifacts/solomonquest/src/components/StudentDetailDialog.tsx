@@ -95,7 +95,7 @@ export function StudentDetailDialog({
         )}
 
         {!loading && error && (
-          <p className="text-sm text-red-500 py-6 text-center">{error}</p>
+          <p className="text-sm text-destructive py-6 text-center">{error}</p>
         )}
 
         {!loading && !error && detail && (
@@ -108,7 +108,7 @@ export function StudentDetailDialog({
                 </AvatarFallback>
               </Avatar>
               <div>
-                <p className="font-semibold text-gray-900">
+                <p className="font-semibold text-foreground">
                   {detail.firstName} {detail.lastName}
                 </p>
                 {detail.uniqueStudentId && (
@@ -154,7 +154,7 @@ export function StudentDetailDialog({
                 {detail.programs.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {detail.programs.map((p) => (
-                      <Badge key={p.id} className="bg-indigo-100 text-indigo-700 border-indigo-200 border text-xs">
+                      <Badge key={p.id} className="bg-primary/10 text-primary border-primary/30 border text-xs">
                         <GraduationCap className="h-3 w-3 mr-1" />
                         {p.name}
                       </Badge>

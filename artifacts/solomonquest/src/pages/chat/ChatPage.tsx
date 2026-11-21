@@ -379,29 +379,29 @@ function SidebarChannel({
           ? "bg-white/10 text-white"
           : hasUnread
           ? "text-white bg-white/[0.03]"
-          : "text-[#b9bbbe] hover:bg-white/5 hover:text-white"
+          : "text-sidebar-foreground/75 hover:bg-white/5 hover:text-white"
       }`}
     >
       {active && (
-        <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-orange-400 to-pink-500" />
+        <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-sidebar-primary" />
       )}
       <button onClick={onClick} className="flex-1 flex items-center gap-2 min-w-0 text-left">
         {hasUnread ? (
-          <Mail className="w-3.5 h-3.5 flex-shrink-0 text-orange-400" />
+          <Mail className="w-3.5 h-3.5 flex-shrink-0 text-sidebar-primary" />
         ) : (
           <ChannelIcon type={ch.type} className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
         )}
         <span className="flex-1 min-w-0 text-left">
           <span className={`block truncate ${hasUnread ? "font-bold" : ""}`}>{ch.name}</span>
           {role && (
-            <span className="block truncate text-[10px] font-normal uppercase tracking-wide text-[#8a8d93]">
+            <span className="block truncate text-[10px] font-normal uppercase tracking-wide text-sidebar-foreground/55">
               {role}
             </span>
           )}
         </span>
       </button>
       {hasUnread && (
-        <span className="text-xs font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-tight shrink-0">
+        <span className="text-xs font-bold bg-warning text-warning-foreground px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-tight shrink-0">
           {ch.unread_count}
         </span>
       )}
@@ -521,9 +521,9 @@ function PeopleSearch({
   return (
     <div className="px-2 pb-2 relative">
       <div className="relative">
-        <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-[#72767d]" />
+        <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-sidebar-foreground/55" />
         <input
-          className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md bg-white/8 border border-white/10 text-white placeholder:text-[#72767d] focus:outline-none focus:ring-1 focus:ring-white/20"
+          className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md bg-white/8 border border-white/10 text-white placeholder:text-sidebar-foreground/55 focus:outline-none focus:ring-1 focus:ring-sidebar-ring/60"
           placeholder="Find people..."
           value={query}
           onFocus={() => setOpen(true)}
@@ -532,7 +532,7 @@ function PeopleSearch({
         />
         {query && (
           <button
-            className="absolute right-2 top-2 text-[#72767d] hover:text-white"
+            className="absolute right-2 top-2 text-sidebar-foreground/55 hover:text-white"
             onClick={() => { setQuery(""); setResults([]); }}
           >
             <X className="w-3.5 h-3.5" />
@@ -541,9 +541,9 @@ function PeopleSearch({
       </div>
 
       {open && (results.length > 0 || loading) && (
-        <div className="absolute left-2 right-2 mt-1 rounded-md border border-white/10 overflow-hidden z-50" style={{ backgroundColor: "#2b2d42" }}>
+        <div className="absolute left-2 right-2 mt-1 rounded-md border border-white/10 overflow-hidden z-50" style={{ backgroundColor: "hsl(var(--sidebar-accent))" }}>
           {loading && (
-            <p className="px-3 py-2 text-xs text-[#72767d]">Searching…</p>
+            <p className="px-3 py-2 text-xs text-sidebar-foreground/55">Searching…</p>
           )}
           {results.map((p) => {
             const name = fullName(p);
@@ -565,13 +565,13 @@ function PeopleSearch({
                 <div className="min-w-0 flex-1">
                   <p className="text-white font-medium truncate">{name}</p>
                   {chatDate ? (
-                    <p className="text-[#72767d] text-xs truncate">Chatted since {chatDate}</p>
+                    <p className="text-sidebar-foreground/55 text-xs truncate">Chatted since {chatDate}</p>
                   ) : p.internal_email ? (
-                    <p className="text-[#72767d] text-xs truncate">{p.internal_email}</p>
+                    <p className="text-sidebar-foreground/55 text-xs truncate">{p.internal_email}</p>
                   ) : null}
                 </div>
                 {p.role && (
-                  <span className="text-[10px] text-[#72767d] capitalize shrink-0">
+                  <span className="text-[10px] text-sidebar-foreground/55 capitalize shrink-0">
                     {p.role.replace("_", " ")}
                   </span>
                 )}
@@ -700,7 +700,7 @@ function NewChannelDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <button
-          className="w-5 h-5 rounded flex items-center justify-center text-[#b9bbbe] hover:text-white hover:bg-white/10 transition-colors"
+          className="w-5 h-5 rounded flex items-center justify-center text-sidebar-foreground/75 hover:text-white hover:bg-white/10 transition-colors"
           title="Create channel"
         >
           <Plus className="w-4 h-4" />
@@ -900,7 +900,7 @@ function ThreadComposer({
       <button
         className={`flex items-center gap-1.5 text-xs font-medium transition-opacity ${
           replyCount > 0
-            ? "text-blue-500 hover:text-blue-600"
+            ? "text-primary hover:text-primary"
             : "text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100"
         }`}
         onClick={toggle}
@@ -1170,7 +1170,7 @@ function MessageItem({
           <div className="mt-0.5">
             <Avatar name={msg.sender?.name ?? "?"} userId={msg.sender?.id} size={compact ? "sm" : "md"} />
             {online && (
-              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-success border-2 border-background rounded-full" />
             )}
           </div>
         )}
@@ -1244,7 +1244,7 @@ function MessageItem({
             {isDirectChannel && isOwn && !msg._optimistic && (
               <span title={seen ? "Seen" : "Sent"} className="shrink-0 mb-0.5">
                 {seen ? (
-                  <CheckCheck className="w-3.5 h-3.5 text-blue-500" />
+                  <CheckCheck className="w-3.5 h-3.5 text-primary" />
                 ) : (
                   <Check className="w-3.5 h-3.5 text-muted-foreground" />
                 )}
@@ -1506,7 +1506,7 @@ function SidebarSection({
     <div className="mb-3">
       <div className="flex items-center justify-between px-2 mb-1 group/section">
         <button
-          className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-[#8e9297] hover:text-white transition-colors"
+          className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60 hover:text-white transition-colors"
           onClick={() => setCollapsed((v) => !v)}
         >
           {collapsed ? (
@@ -1535,7 +1535,7 @@ function SidebarSection({
             />
           ))}
           {channels.length === 0 && (
-            <p className="px-3 py-1 text-xs text-[#72767d]">None yet</p>
+            <p className="px-3 py-1 text-xs text-sidebar-foreground/55">None yet</p>
           )}
         </div>
       )}
@@ -1600,7 +1600,7 @@ function DashboardRail({ role }: { role?: string | null }) {
   return (
     <div
       className="flex-shrink-0 flex flex-col h-full overflow-hidden transition-all duration-200"
-      style={{ width: expanded ? 200 : 52, backgroundColor: "#0f1117" }}
+      style={{ width: expanded ? 200 : 52, backgroundColor: "hsl(var(--sidebar))", filter: "brightness(0.85)" }}
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
     >
@@ -1609,10 +1609,10 @@ function DashboardRail({ role }: { role?: string | null }) {
         <Link href={dashboardHref}>
           <div
             className="h-7 w-7 rounded-md flex items-center justify-center shrink-0 cursor-pointer"
-            style={{ backgroundColor: "#6366f1" }}
+            style={{ backgroundColor: "hsl(var(--sidebar-primary))", color: "hsl(var(--sidebar-primary-foreground))" }}
             title="Go to Dashboard"
           >
-            <GraduationCap className="h-4 w-4 text-white" />
+            <GraduationCap className="h-4 w-4" aria-hidden="true" />
           </div>
         </Link>
         {expanded && (
@@ -1698,7 +1698,7 @@ function IncomingCallBanner({
           </button>
           <button
             onClick={onAccept}
-            className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium text-success-foreground bg-success hover:bg-success/90 transition-colors"
           >
             <Phone className="h-4 w-4" />
             Join
@@ -1720,7 +1720,7 @@ function ActiveCallOverlay({ call, onEnd }: { call: ActiveCall; onEnd: () => voi
     <div className="fixed inset-0 z-[90] bg-black flex flex-col">
       <div className="flex items-center justify-between px-4 py-2.5 bg-[#1a1a1a] flex-shrink-0">
         <div className="flex items-center gap-2 text-white min-w-0">
-          <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+          <div className="h-2 w-2 rounded-full bg-destructive animate-pulse shrink-0" />
           <span className="text-sm font-medium truncate">{call.channelName}</span>
         </div>
         <Button size="sm" variant="destructive" onClick={onEnd}>
@@ -2372,16 +2372,16 @@ export default function ChatPage() {
         className={`flex-shrink-0 flex-col overflow-hidden w-full md:w-[240px] ${
           activeChannel ? "hidden md:flex" : "flex"
         }`}
-        style={{ backgroundColor: "#1e1e2e" }}
+        style={{ backgroundColor: "hsl(var(--sidebar))" }}
       >
         {/* Workspace header */}
         <div className="px-4 py-3.5 border-b border-white/10 flex-shrink-0 flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center shadow-sm shrink-0">
-            <MessageSquare className="w-4 h-4 text-white" />
+          <div className="h-8 w-8 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground flex items-center justify-center shadow-sm shrink-0">
+            <MessageSquare className="w-4 h-4" aria-hidden="true" />
           </div>
           <div className="min-w-0">
             <h1 className="font-bold text-white text-base leading-tight truncate">Chat</h1>
-            <p className="text-[#8e9297] text-xs truncate">Learning Community</p>
+            <p className="text-sidebar-foreground/60 text-xs truncate">Learning Community</p>
           </div>
         </div>
 
@@ -2433,11 +2433,11 @@ export default function ChatPage() {
           <div className="px-3 py-3 border-t border-white/10 flex items-center gap-2 flex-shrink-0">
             <div className="relative">
               <Avatar name={currentUserName} size="sm" />
-              <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 border-2 rounded-full" style={{ borderColor: "#1e1e2e" }} />
+              <span className="absolute bottom-0 right-0 w-2 h-2 bg-success border-2 rounded-full" style={{ borderColor: "hsl(var(--sidebar))" }} />
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium text-white truncate">{currentUserName}</p>
-              <p className="text-xs text-[#72767d]">Online</p>
+              <p className="text-xs text-sidebar-foreground/55">Online</p>
             </div>
           </div>
         )}
@@ -2466,7 +2466,7 @@ export default function ChatPage() {
                   {activeChannel.type === "direct" && activeChannel.otherUser && (
                     <span
                       className={`text-xs leading-tight truncate ${
-                        isOnline(activeChannel.otherUser.onlineAt) ? "text-green-600 font-medium" : "text-muted-foreground"
+                        isOnline(activeChannel.otherUser.onlineAt) ? "text-success font-medium" : "text-muted-foreground"
                       }`}
                     >
                       {formatLastSeen(activeChannel.otherUser.onlineAt)}
@@ -2557,8 +2557,8 @@ export default function ChatPage() {
             <NotificationBell />
           </div>
           <div className="text-center space-y-3">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-orange-100 to-pink-100 flex items-center justify-center mx-auto">
-              <MessageSquare className="w-10 h-10 text-orange-400" />
+            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+              <MessageSquare className="w-10 h-10 text-primary" />
             </div>
             <h2 className="text-xl font-semibold">No channel selected</h2>
             <p className="text-muted-foreground text-sm">

@@ -65,7 +65,7 @@ export default function MobileNav() {
   return (
     <>
       {/* Bottom navigation bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-background border-t border-border safe-area-pb">
+      <nav aria-label="Primary" className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-card/95 backdrop-blur border-t border-border safe-area-pb">
         <div className="flex items-stretch h-16">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -73,11 +73,12 @@ export default function MobileNav() {
             return (
               <Link key={item.href} href={item.href}>
                 <a
-                  className={`flex flex-col items-center justify-center flex-1 gap-1 text-xs font-medium transition-colors ${
+                  aria-current={active ? "page" : undefined}
+                  className={`flex flex-col items-center justify-center flex-1 gap-1 text-[11px] font-medium transition-colors ${
                     active ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
-                  <Icon className={`h-5 w-5 ${active ? "text-primary" : "text-muted-foreground"}`} />
+                  <Icon className={`h-5 w-5 ${active ? "text-primary" : "text-muted-foreground"}`} aria-hidden="true" />
                   <span>{item.label}</span>
                 </a>
               </Link>
@@ -87,7 +88,9 @@ export default function MobileNav() {
           {/* More button */}
           <button
             onClick={() => setSheetOpen(true)}
-            className="flex flex-col items-center justify-center flex-1 gap-1 text-xs font-medium text-muted-foreground"
+            aria-label="More navigation options"
+            aria-expanded={sheetOpen}
+            className="flex flex-col items-center justify-center flex-1 gap-1 text-[11px] font-medium text-muted-foreground"
           >
             <Menu className="h-5 w-5" />
             <span>More</span>
@@ -100,13 +103,14 @@ export default function MobileNav() {
         <div className="fixed inset-0 z-[60] md:hidden" onClick={() => setSheetOpen(false)}>
           <div className="absolute inset-0 bg-black/50" />
           <div
-            className="absolute bottom-0 left-0 right-0 bg-background rounded-t-2xl shadow-xl safe-area-pb"
+            role="dialog" aria-modal="true" aria-label="More" className="absolute bottom-0 left-0 right-0 bg-card rounded-t-2xl shadow-xl safe-area-pb"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 pt-4 pb-2">
               <h2 className="text-base font-semibold text-foreground">More</h2>
               <button
                 onClick={() => setSheetOpen(false)}
+                aria-label="Close"
                 className="p-2 rounded-full hover:bg-muted transition-colors"
               >
                 <X className="h-5 w-5 text-muted-foreground" />

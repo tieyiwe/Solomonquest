@@ -248,7 +248,7 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
           <div className="flex items-center gap-2 flex-wrap">
             {topic.is_pinned && (
               <span title="Pinned">
-                <Pin size={13} className="text-amber-500 shrink-0" />
+                <Pin size={13} className="text-warning shrink-0" />
               </span>
             )}
             <span className="font-semibold text-foreground leading-snug group-hover:text-primary transition-colors">
@@ -257,7 +257,7 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
           </div>
           <div className="flex shrink-0 items-center gap-1.5 mt-0.5">
             {topic.is_pinned && (
-              <Badge variant="outline" className="text-amber-600 border-amber-300 text-[10px] px-1.5 py-0">
+              <Badge variant="outline" className="text-warning border-warning/30 text-[10px] px-1.5 py-0">
                 Pinned
               </Badge>
             )}
@@ -267,12 +267,12 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
                 {topic.course_name ?? "Course"}
               </Badge>
             ) : topic.program_id ? (
-              <Badge className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 text-[10px] px-1.5 py-0 border-0">
+              <Badge className="bg-primary/10 text-primary text-[10px] px-1.5 py-0 border-0">
                 <BookOpen size={10} className="mr-1" />
                 {topic.program_name ?? "Program"}
               </Badge>
             ) : (
-              <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[10px] px-1.5 py-0 border-0 hover:bg-green-100">
+              <Badge className="bg-success/10 text-success text-[10px] px-1.5 py-0 border-0 hover:bg-success/20">
                 <School size={10} className="mr-1" />
                 School-wide
               </Badge>
@@ -772,9 +772,9 @@ export default function ForumPage() {
       ) : (
         <div className="rounded-xl border bg-card overflow-hidden divide-y">
           {pinnedCount > 0 && (
-            <div className="px-5 py-2 bg-amber-50/60 dark:bg-amber-900/10 flex items-center gap-2">
-              <Pin size={12} className="text-amber-500" />
-              <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            <div className="px-5 py-2 bg-warning/10 flex items-center gap-2">
+              <Pin size={12} className="text-warning" />
+              <span className="text-xs font-medium text-warning ">
                 {pinnedCount} pinned {pinnedCount === 1 ? "topic" : "topics"}
               </span>
             </div>

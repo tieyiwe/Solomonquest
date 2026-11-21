@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
+import { navIconActive, navIconIdle, navItemClass } from "@/components/layout/navStyles";
 
 // ─── apiFetch helper ──────────────────────────────────────────────────────────
 
@@ -129,29 +130,29 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
   const { user, signOut } = useAuth();
 
   return (
-    <div className="flex flex-col h-full bg-slate-900">
+    <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
       {/* Logo */}
-      <div className="px-4 py-5 border-b border-white/10 flex items-center justify-between shrink-0">
+      <div className="px-4 h-16 border-b border-sidebar-border flex items-center justify-between shrink-0">
         <Link href="/dashboard/teacher">
           <div className="flex items-center gap-2.5 cursor-pointer">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm shrink-0">
+            <div className="h-8 w-8 rounded-lg bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm shrink-0" aria-hidden="true">
               S
             </div>
             <div>
-              <p className="text-white font-semibold text-sm leading-tight">SolomonQuest</p>
-              <p className="text-slate-400 text-xs">Teacher Portal</p>
+              <p className="text-sidebar-accent-foreground font-semibold text-sm leading-tight">SolomonQuest</p>
+              <p className="text-sidebar-foreground/60 text-xs">Teacher Portal</p>
             </div>
           </div>
         </Link>
         {onClose && (
-          <button onClick={onClose} className="text-slate-400 hover:text-white md:hidden">
+          <button onClick={onClose} aria-label="Close navigation" className="p-1.5 rounded-md text-sidebar-foreground/70 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 md:hidden">
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
+      <nav aria-label="Main navigation" className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
         {NAV_LINKS.map(({ href, label, icon: Icon, exact }, idx) => {
           const active = exact ? location === href : location.startsWith(href);
           // Deduplicate My Courses / Dashboard — show Dashboard as first active match only
@@ -159,15 +160,11 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
             <Link key={`${href}-${idx}`} href={href}>
               <button
                 onClick={onClose}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white"
-                }`}
+                aria-current={active ? "page" : undefined}
+                className={navItemClass(active)}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className={active ? navIconActive : navIconIdle} aria-hidden="true" />
                 <span className="flex-1 text-left">{label}</span>
-                {active && <ChevronRight className="h-3 w-3 opacity-70" />}
               </button>
             </Link>
           );
@@ -175,25 +172,25 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
       </nav>
 
       {/* User footer */}
-      <div className="p-3 border-t border-white/10 shrink-0">
+      <div className="p-3 border-t border-sidebar-border shrink-0">
         <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
-          <Avatar className="h-8 w-8 border border-white/20 shrink-0">
+          <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
             <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold">
               {getInitials((user as any)?.firstName, (user as any)?.lastName)}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 overflow-hidden">
-            <p className="text-white text-sm font-medium truncate">
+            <p className="text-sidebar-accent-foreground text-sm font-medium truncate">
               {(user as any)?.firstName} {(user as any)?.lastName}
             </p>
-            <p className="text-slate-400 text-xs capitalize truncate">Teacher</p>
+            <p className="text-sidebar-foreground/60 text-xs capitalize truncate">Teacher</p>
           </div>
         </div>
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-slate-400 hover:text-red-400 hover:bg-red-400/10"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/15"
           onClick={signOut}
         >
           <LogOut className="mr-2 h-3.5 w-3.5" />
@@ -316,7 +313,7 @@ export default function TeacherOverview() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-muted/50 flex">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col h-screen sticky top-0">
         <Sidebar />
@@ -335,8 +332,8 @@ export default function TeacherOverview() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Bar */}
-        <header className="h-14 bg-white border-b flex items-center px-4 gap-3 sticky top-0 z-20 shadow-sm">
-          <Button
+        <header className="h-16 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 border-b flex items-center px-4 md:px-6 gap-3 sticky top-0 z-20">
+          <Button aria-label="Open menu"
             variant="ghost"
             size="icon"
             className="md:hidden shrink-0"
@@ -345,12 +342,12 @@ export default function TeacherOverview() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-base font-semibold text-gray-900 hidden md:block">
+            <h1 className="text-base font-semibold text-foreground hidden md:block">
               Teacher Dashboard
             </h1>
-            <h1 className="text-base font-semibold text-gray-900 md:hidden">SolomonQuest</h1>
+            <h1 className="text-base font-semibold text-foreground md:hidden">SolomonQuest</h1>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-gray-100 px-3 py-1.5 rounded-full">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-full">
             <Calendar className="h-3.5 w-3.5" />
             {format(new Date(), "MMM d, yyyy")}
           </div>
@@ -364,7 +361,7 @@ export default function TeacherOverview() {
 
             {/* Welcome */}
             <div>
-              <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+              <h2 className="text-2xl font-bold tracking-tight text-foreground">
                 Welcome, {firstName}!
               </h2>
               <p className="text-muted-foreground mt-0.5">
@@ -386,24 +383,24 @@ export default function TeacherOverview() {
                 title="Total Students"
                 value={stats?.totalStudents}
                 icon={Users}
-                color="text-blue-600"
-                bg="bg-blue-100"
+                color="text-primary"
+                bg="bg-primary/10"
                 loading={statsLoading}
               />
               <StatCard
                 title="Pending Grading"
                 value={stats?.pendingGrading}
                 icon={ClipboardList}
-                color="text-amber-600"
-                bg="bg-amber-100"
+                color="text-warning"
+                bg="bg-warning/10"
                 loading={statsLoading}
               />
               <StatCard
                 title="Upcoming Classes"
                 value={stats?.upcomingClasses}
                 icon={Calendar}
-                color="text-green-600"
-                bg="bg-green-100"
+                color="text-success"
+                bg="bg-success/10"
                 loading={statsLoading}
               />
             </div>
@@ -414,7 +411,7 @@ export default function TeacherOverview() {
               {/* Left: Course cards */}
               <div className="lg:col-span-2 space-y-6">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">My Courses</h3>
+                  <h3 className="text-lg font-semibold text-foreground">My Courses</h3>
                   <Link href="/dashboard/teacher/assignments">
                     <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1">
                       View Assignments <ArrowRight className="h-3 w-3" />
@@ -446,7 +443,7 @@ export default function TeacherOverview() {
                               </div>
                               <div className="flex gap-1.5">
                                 {isLive && (
-                                  <Badge className="bg-red-500 hover:bg-red-600 text-xs gap-1">
+                                  <Badge className="bg-destructive hover:bg-destructive/90 text-xs gap-1">
                                     <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
                                     Live
                                   </Badge>
@@ -482,7 +479,7 @@ export default function TeacherOverview() {
                             <div className="flex items-center justify-between pt-2 border-t">
                               <Button
                                 size="sm"
-                                className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700"
+                                className="h-7 text-xs gap-1 bg-success hover:bg-success/90"
                                 onClick={() => startLiveClass(course.id)}
                                 disabled={isStarting}
                               >
@@ -525,7 +522,7 @@ export default function TeacherOverview() {
               {/* Right: Recent submissions */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">Recent Submissions</h3>
+                  <h3 className="text-lg font-semibold text-foreground">Recent Submissions</h3>
                   <Link href="/dashboard/teacher/gradebook">
                     <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1">
                       Gradebook <ArrowRight className="h-3 w-3" />
@@ -546,12 +543,12 @@ export default function TeacherOverview() {
                           const assignmentTitle = sub.assignmentTitle || sub.assignment_title || "Assignment";
                           const submittedAt = sub.submittedAt || sub.submitted_at;
                           return (
-                            <div key={sub.id} className="p-3 flex items-start gap-3 hover:bg-gray-50 transition-colors">
-                              <div className="h-7 w-7 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
-                                <Clock className="h-3.5 w-3.5 text-amber-600" />
+                            <div key={sub.id} className="p-3 flex items-start gap-3 hover:bg-muted/50 transition-colors">
+                              <div className="h-7 w-7 rounded-full bg-warning/10 flex items-center justify-center shrink-0 mt-0.5">
+                                <Clock className="h-3.5 w-3.5 text-warning" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">{studentName}</p>
+                                <p className="text-sm font-medium text-foreground truncate">{studentName}</p>
                                 <p className="text-xs text-muted-foreground truncate">{assignmentTitle}</p>
                                 {submittedAt && (
                                   <p className="text-xs text-muted-foreground/60 mt-0.5">
@@ -574,7 +571,7 @@ export default function TeacherOverview() {
                       </div>
                     ) : (
                       <div className="p-8 text-center">
-                        <CheckCircle2 className="h-8 w-8 mx-auto text-green-500 mb-2" />
+                        <CheckCircle2 className="h-8 w-8 mx-auto text-success mb-2" />
                         <p className="text-sm text-muted-foreground">All caught up! No pending submissions.</p>
                       </div>
                     )}

@@ -271,9 +271,9 @@ export default function TeacherResources() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label>Course</Label>
+                  <Label htmlFor="teacherresources-course">Course</Label>
                   <Select value={resourceCourseId} onValueChange={setResourceCourseId}>
-                    <SelectTrigger>
+                    <SelectTrigger id="teacherresources-course">
                       <SelectValue placeholder="Select course..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -287,8 +287,8 @@ export default function TeacherResources() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Resource Title</Label>
-                  <Input
+                  <Label htmlFor="teacherresources-resource-title">Resource Title</Label>
+                  <Input id="teacherresources-resource-title"
                     placeholder="e.g. Chapter 1 Reading"
                     value={resourceTitle}
                     onChange={(e) => setResourceTitle(e.target.value)}
@@ -296,8 +296,8 @@ export default function TeacherResources() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Section (optional)</Label>
-                  <Input
+                  <Label htmlFor="teacherresources-section-optional">Section (optional)</Label>
+                  <Input id="teacherresources-section-optional"
                     placeholder="e.g. Week 1, Unit 2..."
                     value={resourceSection}
                     onChange={(e) => setResourceSection(e.target.value)}
@@ -328,8 +328,8 @@ export default function TeacherResources() {
                 {addType === "link" ? (
                   <>
                     <div className="space-y-1.5">
-                      <Label>URL</Label>
-                      <Input
+                      <Label htmlFor="teacherresources-url">URL</Label>
+                      <Input id="teacherresources-url"
                         placeholder="https://..."
                         value={resourceUrl}
                         onChange={(e) => setResourceUrl(e.target.value)}
@@ -473,14 +473,14 @@ export default function TeacherResources() {
                               className={cn(
                                 "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
                                 resource.type === "file"
-                                  ? "bg-blue-100 dark:bg-blue-900/30"
-                                  : "bg-green-100 dark:bg-green-900/30"
+                                  ? "bg-primary/10 "
+                                  : "bg-success/10 "
                               )}
                             >
                               {resource.type === "file" ? (
-                                <FileText className="h-4 w-4 text-blue-600" />
+                                <FileText className="h-4 w-4 text-primary" />
                               ) : (
-                                <Link2 className="h-4 w-4 text-green-600" />
+                                <Link2 className="h-4 w-4 text-success" />
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
@@ -495,7 +495,7 @@ export default function TeacherResources() {
                               </div>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                              <Button
+                              <Button aria-label="Open in new tab"
                                 variant="ghost"
                                 size="icon"
                                 className="h-7 w-7 text-muted-foreground hover:text-foreground"
@@ -503,7 +503,7 @@ export default function TeacherResources() {
                               >
                                 <ExternalLink className="h-3.5 w-3.5" />
                               </Button>
-                              <Button
+                              <Button aria-label="Delete"
                                 variant="ghost"
                                 size="icon"
                                 className="h-7 w-7 text-muted-foreground hover:text-destructive"

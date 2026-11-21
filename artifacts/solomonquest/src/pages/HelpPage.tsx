@@ -79,17 +79,17 @@ export default function HelpPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-muted/50">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-blue-600 text-white">
+      <div className="bg-brand text-white">
         <div className="max-w-4xl mx-auto px-4 py-12">
           <h1 className="text-3xl md:text-4xl font-bold mb-2">Help Center</h1>
           <p className="text-white/80 text-lg">{roleLabel} Guide · SolomonQuest LMS</p>
           <div className="mt-6 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
               placeholder="Search articles, guides, troubleshooting…"
-              className="pl-12 h-12 bg-white text-gray-900 border-0 shadow-lg text-base"
+              className="pl-12 h-12 bg-card text-foreground border-0 shadow-lg text-base"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -100,7 +100,7 @@ export default function HelpPage() {
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Breadcrumb */}
         {view.type !== "home" && (
-          <div className="flex items-center gap-2 mb-6 text-sm text-gray-500">
+          <div className="flex items-center gap-2 mb-6 text-sm text-muted-foreground">
             <button
               onClick={() => setView({ type: "home" })}
               className="hover:text-primary transition-colors"
@@ -121,13 +121,13 @@ export default function HelpPage() {
             {view.type === "article" && currentArticle && (
               <>
                 <ChevronRight className="h-4 w-4" />
-                <span className="text-gray-800 font-medium">{currentArticle.title}</span>
+                <span className="text-foreground font-medium">{currentArticle.title}</span>
               </>
             )}
             {view.type === "category" && currentCategory && (
               <>
                 <ChevronRight className="h-4 w-4" />
-                <span className="text-gray-800 font-medium">{currentCategory.title}</span>
+                <span className="text-foreground font-medium">{currentCategory.title}</span>
               </>
             )}
           </div>
@@ -136,13 +136,13 @@ export default function HelpPage() {
         {/* Search results */}
         {search.trim() && (
           <div className="mb-8">
-            <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
               Results for "{search}"
             </p>
             {searchResults.length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-xl border border-gray-100">
-                <HelpCircle className="h-8 w-8 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No articles found for "{search}"</p>
+              <div className="text-center py-12 bg-card rounded-xl border border-border">
+                <HelpCircle className="h-8 w-8 text-muted-foreground/60 mx-auto mb-3" />
+                <p className="text-muted-foreground">No articles found for "{search}"</p>
               </div>
             ) : (
               <div className="grid gap-3">
@@ -167,33 +167,33 @@ export default function HelpPage() {
             {/* Tour CTA */}
             <button
               onClick={handleReplayTour}
-              className="w-full flex items-center gap-4 bg-gradient-to-r from-primary/10 to-blue-50 border border-primary/20 rounded-2xl p-5 hover:from-primary/15 transition-colors text-left mb-8"
+              className="w-full flex items-center gap-4 bg-gradient-to-r from-primary/10 to-gold/10 border border-primary/20 rounded-2xl p-5 hover:from-primary/15 transition-colors text-left mb-8"
             >
               <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                 <PlayCircle className="h-6 w-6 text-primary" />
               </div>
               <div className="flex-1">
                 <p className="font-semibold text-primary text-lg">Take the guided tour</p>
-                <p className="text-sm text-gray-500">A step-by-step walkthrough of your entire dashboard — takes about 2 minutes.</p>
+                <p className="text-sm text-muted-foreground">A step-by-step walkthrough of your entire dashboard — takes about 2 minutes.</p>
               </div>
               <ChevronRight className="h-5 w-5 text-primary shrink-0" />
             </button>
 
             {/* Categories grid */}
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Browse Topics</p>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-4">Browse Topics</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
               {categories.map((cat) => (
                 <button
                   key={cat.id}
                   onClick={() => setView({ type: "category", categoryId: cat.id })}
-                  className="flex items-start gap-4 bg-white border border-gray-100 rounded-2xl p-5 hover:shadow-md hover:border-primary/20 transition-all text-left group"
+                  className="flex items-start gap-4 bg-card border border-border rounded-2xl p-5 hover:shadow-md hover:border-primary/20 transition-all text-left group"
                 >
                   <span className="text-3xl shrink-0">{cat.icon}</span>
                   <div className="flex-1">
-                    <p className="font-semibold text-gray-800 group-hover:text-primary transition-colors">{cat.title}</p>
-                    <p className="text-sm text-gray-400 mt-1">{cat.articles.length} article{cat.articles.length !== 1 ? "s" : ""}</p>
+                    <p className="font-semibold text-foreground group-hover:text-primary transition-colors">{cat.title}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{cat.articles.length} article{cat.articles.length !== 1 ? "s" : ""}</p>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-primary transition-colors mt-1" />
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary transition-colors mt-1" />
                 </button>
               ))}
             </div>
@@ -205,7 +205,7 @@ export default function HelpPage() {
           <>
             <div className="flex items-center gap-4 mb-6">
               <span className="text-4xl">{currentCategory.icon}</span>
-              <h2 className="text-2xl font-bold text-gray-800">{currentCategory.title}</h2>
+              <h2 className="text-2xl font-bold text-foreground">{currentCategory.title}</h2>
             </div>
             <div className="grid gap-3">
               {currentCategory.articles.map((art) => (
@@ -223,13 +223,13 @@ export default function HelpPage() {
 
         {/* Article view */}
         {!search.trim() && view.type === "article" && currentArticle && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
             <div className="p-6 border-b">
               <div className="flex items-start gap-4">
                 <span className="text-4xl shrink-0">{currentArticle.icon}</span>
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900">{currentArticle.title}</h2>
-                  <p className="text-gray-500 mt-1">{currentArticle.summary}</p>
+                  <h2 className="text-2xl font-bold text-foreground">{currentArticle.title}</h2>
+                  <p className="text-muted-foreground mt-1">{currentArticle.summary}</p>
                 </div>
               </div>
             </div>
@@ -237,19 +237,19 @@ export default function HelpPage() {
             <div className="p-6 flex flex-col gap-8">
               {/* Steps */}
               <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-4">
                   Step-by-step instructions
                 </p>
                 <ol className="flex flex-col gap-4">
                   {currentArticle.steps.map((step, i) => (
                     <li key={i} className="flex gap-4">
-                      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-primary text-white text-sm font-bold flex items-center justify-center mt-0.5">
+                      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-primary text-primary-foreground text-sm font-bold flex items-center justify-center mt-0.5">
                         {i + 1}
                       </div>
                       <div>
-                        <p className="text-gray-800">{step.text}</p>
+                        <p className="text-foreground">{step.text}</p>
                         {step.detail && (
-                          <p className="text-sm text-gray-500 mt-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                          <p className="text-sm text-muted-foreground mt-2 bg-muted/50 rounded-lg px-3 py-2 border border-border">
                             💡 {step.detail}
                           </p>
                         )}
@@ -262,19 +262,19 @@ export default function HelpPage() {
               {/* Troubleshooting */}
               {currentArticle.troubleshoot && currentArticle.troubleshoot.length > 0 && (
                 <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-4">
                     Troubleshooting
                   </p>
                   <div className="flex flex-col gap-4">
                     {currentArticle.troubleshoot.map((item, i) => (
-                      <div key={i} className="border border-orange-100 bg-orange-50 rounded-xl p-5">
+                      <div key={i} className="border border-warning/30 bg-warning/10 rounded-xl p-5">
                         <div className="flex items-start gap-3 mb-2">
-                          <AlertCircle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
-                          <p className="font-semibold text-orange-800">{item.problem}</p>
+                          <AlertCircle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                          <p className="font-semibold text-warning">{item.problem}</p>
                         </div>
                         <div className="flex items-start gap-3">
-                          <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
-                          <p className="text-gray-700">{item.solution}</p>
+                          <CheckCircle2 className="h-5 w-5 text-success shrink-0 mt-0.5" />
+                          <p className="text-foreground/80">{item.solution}</p>
                         </div>
                       </div>
                     ))}
@@ -283,10 +283,10 @@ export default function HelpPage() {
               )}
 
               {/* Still stuck */}
-              <div className="border border-gray-100 rounded-xl p-5 bg-gray-50 text-center">
-                <HelpCircle className="h-7 w-7 text-gray-400 mx-auto mb-2" />
-                <p className="font-semibold text-gray-700">Still need help?</p>
-                <p className="text-sm text-gray-400 mt-1">
+              <div className="border border-border rounded-xl p-5 bg-muted/50 text-center">
+                <HelpCircle className="h-7 w-7 text-muted-foreground mx-auto mb-2" />
+                <p className="font-semibold text-foreground/80">Still need help?</p>
+                <p className="text-sm text-muted-foreground mt-1">
                   Post a question in the Forum or send a message to your school administrator.
                 </p>
               </div>
@@ -327,19 +327,19 @@ function ArticleCard({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-4 bg-white border border-gray-100 rounded-xl p-4 hover:shadow-md hover:border-primary/20 transition-all text-left group w-full"
+      className="flex items-center gap-4 bg-card border border-border rounded-xl p-4 hover:shadow-md hover:border-primary/20 transition-all text-left group w-full"
     >
       <span className="text-2xl shrink-0">{article.icon}</span>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-gray-800 group-hover:text-primary transition-colors">
+        <p className="font-semibold text-foreground group-hover:text-primary transition-colors">
           {article.title}
         </p>
-        <p className="text-sm text-gray-400 truncate mt-0.5">{article.summary}</p>
+        <p className="text-sm text-muted-foreground truncate mt-0.5">{article.summary}</p>
         {article.categoryTitle && (
           <p className="text-xs text-primary/60 mt-0.5">{article.categoryTitle}</p>
         )}
       </div>
-      <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-primary transition-colors shrink-0" />
+      <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary transition-colors shrink-0" />
     </button>
   );
 }

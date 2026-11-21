@@ -49,6 +49,7 @@ import { ArrowLeft, Layers, Plus, Search, Pencil, Trash2, Loader2, BookOpen } fr
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Program } from "@workspace/api-client-react";
+import { LoadingRows } from "@/components/common/States";
 
 interface ProgramFormData {
   name: string;
@@ -87,7 +88,7 @@ function ProgramRosterTab({ programId }: { programId: string }) {
       .finally(() => setLoading(false));
   }, [programId]);
 
-  if (loading) return <div className="text-sm text-gray-400">Loading…</div>;
+  if (loading) return <LoadingRows rows={3} />;
 
   return (
     <div>
@@ -98,14 +99,14 @@ function ProgramRosterTab({ programId }: { programId: string }) {
           {students.map((s) => (
             <li key={s.id}>
               <button
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-muted/50"
                 onClick={() => setViewStudentId(s.id)}
               >
                 <div className="h-7 w-7 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center shrink-0">
                   {`${s.firstName?.[0] ?? ""}${s.lastName?.[0] ?? ""}`.toUpperCase() || "S"}
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-900">
+                  <p className="text-sm font-medium text-foreground">
                     {s.firstName} {s.lastName}
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -209,7 +210,7 @@ function ProgramTuitionTab({ programId }: { programId: string }) {
     }
   };
 
-  if (loading) return <div className="text-sm text-gray-400">Loading…</div>;
+  if (loading) return <LoadingRows rows={3} />;
 
   return (
     <div className="space-y-4">
@@ -218,8 +219,8 @@ function ProgramTuitionTab({ programId }: { programId: string }) {
         aren't blocked on payment while this is being tested.
       </p>
       <div className="space-y-1.5">
-        <Label>Tuition Amount (USD)</Label>
-        <Input type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        <Label htmlFor="adminprograms-tuition-amount-usd">Tuition Amount (USD)</Label>
+        <Input id="adminprograms-tuition-amount-usd" type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
       </div>
       <div className="flex items-center justify-between rounded-lg border p-3">
         <div>
@@ -237,8 +238,8 @@ function ProgramTuitionTab({ programId }: { programId: string }) {
       </div>
       {allowInstallments && (
         <div className="space-y-1.5 pl-3 border-l-2">
-          <Label>Number of Installments</Label>
-          <Input
+          <Label htmlFor="adminprograms-number-of-installments">Number of Installments</Label>
+          <Input id="adminprograms-number-of-installments"
             type="number"
             min="2"
             value={installmentCount}
@@ -337,16 +338,16 @@ function ProgramFormDialog({
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label>Program Name *</Label>
-            <Input
+            <Label htmlFor="adminprograms-program-name">Program Name *</Label>
+            <Input id="adminprograms-program-name"
               placeholder="Bachelor of Science in Nursing"
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea
+            <Label htmlFor="adminprograms-description">Description</Label>
+            <Textarea id="adminprograms-description"
               placeholder="Brief description of the program..."
               rows={3}
               value={form.description}
@@ -354,16 +355,16 @@ function ProgramFormDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Program Code</Label>
-            <Input
+            <Label htmlFor="adminprograms-program-code">Program Code</Label>
+            <Input id="adminprograms-program-code"
               placeholder="BSN"
               value={form.code}
               onChange={(e) => set("code", e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Level</Label>
-            <Input
+            <Label htmlFor="adminprograms-level">Level</Label>
+            <Input id="adminprograms-level"
               placeholder="Undergraduate, Graduate, etc."
               value={form.level}
               onChange={(e) => set("level", e.target.value)}
@@ -452,7 +453,7 @@ export default function AdminPrograms() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Programs</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Programs</h1>
             <p className="text-muted-foreground mt-0.5">
               Group courses into a program. Enrolling in one course auto-enrolls students into
               every course in the same program, and gives them a shared program chat.
@@ -505,7 +506,7 @@ export default function AdminPrograms() {
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50">
+                  <TableRow className="bg-muted/30">
                     <TableHead className="font-semibold">Program</TableHead>
                     <TableHead className="font-semibold">Code & Level</TableHead>
                     <TableHead className="font-semibold">Courses</TableHead>
@@ -515,14 +516,14 @@ export default function AdminPrograms() {
                 </TableHeader>
                 <TableBody>
                   {filtered.map((program) => (
-                    <TableRow key={program.id} className="hover:bg-gray-50/50">
+                    <TableRow key={program.id} className="hover:bg-muted/30">
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <div className="h-9 w-9 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
-                            <Layers className="h-4 w-4 text-indigo-600" />
+                          <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                            <Layers className="h-4 w-4 text-primary" />
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900 text-sm">{program.name}</p>
+                            <p className="font-medium text-foreground text-sm">{program.name}</p>
                             {program.description && (
                               <p className="text-xs text-muted-foreground line-clamp-1 max-w-xs">
                                 {program.description}
@@ -556,8 +557,8 @@ export default function AdminPrograms() {
                         <Badge
                           className={
                             program.isActive
-                              ? "bg-green-100 text-green-700 border-green-200 border"
-                              : "bg-gray-100 text-gray-600 border-gray-200 border"
+                              ? "bg-success/10 text-success border-success/30 border"
+                              : "bg-muted text-muted-foreground border-border border"
                           }
                         >
                           {program.isActive ? "Active" : "Inactive"}
@@ -578,7 +579,7 @@ export default function AdminPrograms() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/20"
                                 disabled={deleteProgram.isPending}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -596,7 +597,7 @@ export default function AdminPrograms() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
-                                  className="bg-red-600 hover:bg-red-700"
+                                  className="bg-destructive hover:bg-destructive/90"
                                   onClick={() => handleDelete(program.id, program.name)}
                                 >
                                   Delete

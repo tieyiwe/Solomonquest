@@ -42,7 +42,9 @@ import {
   Trash2,
   Pencil,
   Search,
+  Receipt,
 } from "lucide-react";
+import { EmptyState } from "@/components/common/States";
 
 async function apiFetch(path: string, options: RequestInit = {}) {
   const {
@@ -111,9 +113,9 @@ interface StudentBalance {
 }
 
 const STATUS_STYLE: Record<StudentBalance["paymentStatus"], string> = {
-  paid: "bg-green-500/15 text-green-400 border-green-500/30",
-  partial: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  owing: "bg-red-500/15 text-red-400 border-red-500/30",
+  paid: "bg-success/10 text-success border-success/30",
+  partial: "bg-warning/10 text-warning border-warning/30",
+  owing: "bg-destructive/10 text-destructive border-destructive/30",
 };
 const STATUS_LABEL: Record<StudentBalance["paymentStatus"], string> = {
   paid: "Paid in full",
@@ -304,17 +306,17 @@ export default function AdminAccounting() {
                   <Card>
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
-                        <TrendingUp className="h-4 w-4 text-green-400" /> Revenue
+                        <TrendingUp className="h-4 w-4 text-success" /> Revenue
                       </div>
-                      <div className="text-2xl font-bold text-green-400">{money(summary.revenueCents)}</div>
+                      <div className="text-2xl font-bold text-success tabular-nums">{money(summary.revenueCents)}</div>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
-                        <TrendingDown className="h-4 w-4 text-red-400" /> Expenses
+                        <TrendingDown className="h-4 w-4 text-destructive" /> Expenses
                       </div>
-                      <div className="text-2xl font-bold text-red-400">{money(summary.expensesCents)}</div>
+                      <div className="text-2xl font-bold text-destructive tabular-nums">{money(summary.expensesCents)}</div>
                     </CardContent>
                   </Card>
                   <Card>
@@ -322,7 +324,7 @@ export default function AdminAccounting() {
                       <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
                         <DollarSign className="h-4 w-4 text-primary" /> Net
                       </div>
-                      <div className={`text-2xl font-bold ${summary.netCents >= 0 ? "text-green-400" : "text-red-400"}`}>{money(summary.netCents)}</div>
+                      <div className={`text-2xl font-bold tabular-nums ${summary.netCents >= 0 ? "text-success" : "text-destructive"}`}>{money(summary.netCents)}</div>
                     </CardContent>
                   </Card>
                 </div>
@@ -342,12 +344,12 @@ export default function AdminAccounting() {
                             <div key={m.month} className="grid grid-cols-[80px_1fr_1fr] items-center gap-3 text-xs">
                               <span className="text-muted-foreground">{m.month}</span>
                               <div className="flex items-center gap-2">
-                                <div className="h-2 rounded-full bg-green-500" style={{ width: `${(m.revenueCents / max) * 100}%`, minWidth: m.revenueCents ? "4px" : 0 }} />
-                                <span className="text-green-400">{money(m.revenueCents)}</span>
+                                <div className="h-2 rounded-full bg-success" style={{ width: `${(m.revenueCents / max) * 100}%`, minWidth: m.revenueCents ? "4px" : 0 }} />
+                                <span className="text-success tabular-nums">{money(m.revenueCents)}</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <div className="h-2 rounded-full bg-red-500" style={{ width: `${(m.expensesCents / max) * 100}%`, minWidth: m.expensesCents ? "4px" : 0 }} />
-                                <span className="text-red-400">{money(m.expensesCents)}</span>
+                                <div className="h-2 rounded-full bg-destructive" style={{ width: `${(m.expensesCents / max) * 100}%`, minWidth: m.expensesCents ? "4px" : 0 }} />
+                                <span className="text-destructive tabular-nums">{money(m.expensesCents)}</span>
                               </div>
                             </div>
                           );
@@ -391,7 +393,7 @@ export default function AdminAccounting() {
                 {expensesLoading ? (
                   <Skeleton className="h-40" />
                 ) : expenses.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">No expenses recorded yet.</p>
+                  <EmptyState compact icon={Receipt} title="No expenses in this range" description="Add an expense to see it in your P&L." />
                 ) : (
                   <Table>
                     <TableHeader>
@@ -399,7 +401,7 @@ export default function AdminAccounting() {
                         <TableHead>Date</TableHead>
                         <TableHead>Category</TableHead>
                         <TableHead>Description</TableHead>
-                        <TableHead>Amount</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
                         <TableHead>Added by</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -412,14 +414,14 @@ export default function AdminAccounting() {
                             <Badge variant="outline">{e.category}</Badge>
                           </TableCell>
                           <TableCell>{e.description}</TableCell>
-                          <TableCell className="text-red-400 font-medium">{money(e.amountCents)}</TableCell>
+                          <TableCell className="text-destructive font-medium text-right tabular-nums">{money(e.amountCents)}</TableCell>
                           <TableCell className="text-muted-foreground text-sm">{e.createdByName || "—"}</TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" onClick={() => openEditExpense(e)}>
+                            <Button aria-label="Edit" variant="ghost" size="icon" onClick={() => openEditExpense(e)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => deleteExpense(e.id)}>
-                              <Trash2 className="h-4 w-4 text-red-400" />
+                            <Button aria-label="Delete" variant="ghost" size="icon" onClick={() => deleteExpense(e.id)}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -462,9 +464,9 @@ export default function AdminAccounting() {
                       <TableRow>
                         <TableHead>Student</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Owed</TableHead>
-                        <TableHead>Paid</TableHead>
-                        <TableHead>Balance</TableHead>
+                        <TableHead className="text-right">Owed</TableHead>
+                        <TableHead className="text-right">Paid</TableHead>
+                        <TableHead className="text-right">Balance</TableHead>
                         <TableHead>Last payment</TableHead>
                         <TableHead>Next due</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -482,9 +484,9 @@ export default function AdminAccounting() {
                               {STATUS_LABEL[s.paymentStatus]}
                             </Badge>
                           </TableCell>
-                          <TableCell>{money(s.totalOwedCents)}</TableCell>
-                          <TableCell className="text-green-400">{money(s.totalPaidCents)}</TableCell>
-                          <TableCell className={s.balanceCents > 0 ? "text-red-400 font-medium" : "text-muted-foreground"}>{money(s.balanceCents)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{money(s.totalOwedCents)}</TableCell>
+                          <TableCell className="text-success text-right tabular-nums">{money(s.totalPaidCents)}</TableCell>
+                          <TableCell className={`text-right tabular-nums ${s.balanceCents > 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}>{money(s.balanceCents)}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{s.lastPaymentAt ? new Date(s.lastPaymentAt).toLocaleDateString() : "—"}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{s.nextDueDate ?? "—"}</TableCell>
                           <TableCell className="text-right">
@@ -513,9 +515,9 @@ export default function AdminAccounting() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Category</Label>
+              <Label htmlFor="adminaccounting-category">Category</Label>
               <Select value={expenseForm.category} onValueChange={(v) => setExpenseForm((f) => ({ ...f, category: v }))}>
-                <SelectTrigger>
+                <SelectTrigger id="adminaccounting-category">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -529,17 +531,17 @@ export default function AdminAccounting() {
               </Select>
             </div>
             <div>
-              <Label>Description</Label>
-              <Input value={expenseForm.description} onChange={(e) => setExpenseForm((f) => ({ ...f, description: e.target.value }))} placeholder="e.g. Classroom supplies" />
+              <Label htmlFor="adminaccounting-description">Description</Label>
+              <Input id="adminaccounting-description" value={expenseForm.description} onChange={(e) => setExpenseForm((f) => ({ ...f, description: e.target.value }))} placeholder="e.g. Classroom supplies" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Amount ($)</Label>
-                <Input type="number" step="0.01" min="0" value={expenseForm.amount} onChange={(e) => setExpenseForm((f) => ({ ...f, amount: e.target.value }))} />
+                <Label htmlFor="adminaccounting-amount">Amount ($)</Label>
+                <Input id="adminaccounting-amount" type="number" step="0.01" min="0" value={expenseForm.amount} onChange={(e) => setExpenseForm((f) => ({ ...f, amount: e.target.value }))} />
               </div>
               <div>
-                <Label>Date</Label>
-                <Input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm((f) => ({ ...f, date: e.target.value }))} />
+                <Label htmlFor="adminaccounting-date">Date</Label>
+                <Input id="adminaccounting-date" type="date" value={expenseForm.date} onChange={(e) => setExpenseForm((f) => ({ ...f, date: e.target.value }))} />
               </div>
             </div>
           </div>

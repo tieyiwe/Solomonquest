@@ -70,6 +70,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { EmptyState } from "@/components/common/States";
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
   return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U";
@@ -79,13 +80,13 @@ function roleBadge(role?: string | null) {
   switch (role) {
     case "admin":
     case "super_admin":
-      return <Badge className="bg-violet-100 text-violet-700 border-violet-200 border">{role?.replace("_", " ")}</Badge>;
+      return <Badge className="bg-chart-5/10 text-chart-5 border-chart-5/30 border">{role?.replace("_", " ")}</Badge>;
     case "teacher":
-      return <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Teacher</Badge>;
+      return <Badge className="bg-primary/10 text-primary border-primary/30 border">Teacher</Badge>;
     case "student":
-      return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 border">Student</Badge>;
+      return <Badge className="bg-success/10 text-success border-success/30 border">Student</Badge>;
     case "staff":
-      return <Badge className="bg-orange-100 text-orange-700 border-orange-200 border">Staff</Badge>;
+      return <Badge className="bg-warning/10 text-warning border-warning/30 border">Staff</Badge>;
     default:
       return <Badge variant="outline" className="capitalize">{role || "No role"}</Badge>;
   }
@@ -114,7 +115,7 @@ function PasswordResetButton({ userId, userName }: { userId: string; userName: s
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-gray-900">
+        <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-foreground">
           <KeyRound className="h-3.5 w-3.5 mr-1.5" />
           Reset Password
         </Button>
@@ -235,7 +236,7 @@ function ViewAsButton({ userId, userName, role }: { userId: string; userName: st
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-gray-900">
+        <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-foreground">
           <Eye className="h-3.5 w-3.5 mr-1.5" />
           View As
         </Button>
@@ -296,7 +297,7 @@ function AddToProgramButton({ studentId, studentName }: { studentId: string; stu
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-gray-900">
+        <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-foreground">
           <GraduationCap className="h-3.5 w-3.5 mr-1.5" />
           Add to Program
         </Button>
@@ -390,10 +391,12 @@ function UserTable({
 
   if (filtered.length === 0) {
     return (
-      <div className="text-center py-16 text-muted-foreground">
-        <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">{search ? "No users match your search." : "No users found."}</p>
-      </div>
+      <EmptyState
+        icon={Users}
+        title={search ? "No users match your search" : "No users here yet"}
+        description={search ? "Check the spelling or try a different name or email." : "Invite people with the button above, or import a CSV."}
+        className="m-4"
+      />
     );
   }
 
@@ -438,7 +441,7 @@ function UserTable({
     </div>
     <Table>
       <TableHeader>
-        <TableRow className="bg-gray-50/50">
+        <TableRow className="bg-muted/30">
           <TableHead className="font-semibold">Name</TableHead>
           <TableHead className="font-semibold">Email</TableHead>
           <TableHead className="font-semibold">Role</TableHead>
@@ -449,7 +452,7 @@ function UserTable({
       </TableHeader>
       <TableBody>
         {filtered.map((user) => (
-          <TableRow key={user.id} className="hover:bg-gray-50/50">
+          <TableRow key={user.id} className="hover:bg-muted/30">
             <TableCell>
               {user.role === "student" || user.role === "teacher" ? (
                 <button
@@ -464,7 +467,7 @@ function UserTable({
                       {getInitials(user.firstName, user.lastName)}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="font-medium text-gray-900 text-sm">
+                  <span className="font-medium text-foreground text-sm">
                     {user.firstName} {user.lastName}
                   </span>
                 </button>
@@ -476,7 +479,7 @@ function UserTable({
                       {getInitials(user.firstName, user.lastName)}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="font-medium text-gray-900 text-sm">
+                  <span className="font-medium text-foreground text-sm">
                     {user.firstName} {user.lastName}
                   </span>
                 </div>
@@ -632,8 +635,8 @@ function InviteButton({
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label>Email Address</Label>
-            <Input
+            <Label htmlFor="adminusers-email-address">Email Address</Label>
+            <Input id="adminusers-email-address"
               type="email"
               placeholder={placeholder}
               value={email}
@@ -644,9 +647,9 @@ function InviteButton({
           </div>
           {role === "student" && (
             <div className="space-y-1.5">
-              <Label>Program *</Label>
+              <Label htmlFor="adminusers-program">Program *</Label>
               <Select value={programId} onValueChange={setProgramId}>
-                <SelectTrigger>
+                <SelectTrigger id="adminusers-program">
                   <SelectValue placeholder="Select a program..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -664,9 +667,9 @@ function InviteButton({
           )}
           {role === "parent" && (
             <div className="space-y-1.5">
-              <Label>Student *</Label>
+              <Label htmlFor="adminusers-student">Student *</Label>
               <Select value={studentId} onValueChange={setStudentId}>
-                <SelectTrigger>
+                <SelectTrigger id="adminusers-student">
                   <SelectValue placeholder="Select the student..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -887,7 +890,7 @@ function BulkImportButton({ onImported }: { onImported: () => void }) {
                 <div key={r.email} className="flex items-center justify-between text-xs gap-2">
                   <span className="truncate">{r.email}</span>
                   {r.success ? (
-                    <Badge variant="outline" className="text-green-700 border-green-200 bg-green-50 shrink-0">Invited</Badge>
+                    <Badge variant="outline" className="text-success border-success/30 bg-success/10 shrink-0">Invited</Badge>
                   ) : (
                     <Badge variant="outline" className="text-destructive border-destructive/30 bg-destructive/5 shrink-0" title={r.error}>
                       Failed
@@ -926,11 +929,11 @@ interface Invitation {
 function statusBadge(status: string) {
   switch (status) {
     case "accepted":
-      return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 border">Accepted</Badge>;
+      return <Badge className="bg-success/10 text-success border-success/30 border">Accepted</Badge>;
     case "expired":
-      return <Badge className="bg-red-100 text-red-700 border-red-200 border">Expired</Badge>;
+      return <Badge className="bg-destructive/10 text-destructive border-destructive/30 border">Expired</Badge>;
     default:
-      return <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 border">Pending</Badge>;
+      return <Badge className="bg-warning/10 text-warning border-warning/30 border">Pending</Badge>;
   }
 }
 
@@ -983,7 +986,7 @@ function InvitationsTab({
   if (fetchError) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        <p className="text-sm text-red-500">{fetchError}</p>
+        <p className="text-sm text-destructive">{fetchError}</p>
       </div>
     );
   }
@@ -1001,7 +1004,7 @@ function InvitationsTab({
   return (
     <Table>
       <TableHeader>
-        <TableRow className="bg-gray-50/50">
+        <TableRow className="bg-muted/30">
           <TableHead className="font-semibold">Email</TableHead>
           <TableHead className="font-semibold">Role</TableHead>
           <TableHead className="font-semibold">Status</TableHead>
@@ -1016,14 +1019,14 @@ function InvitationsTab({
             <TableCell>
               <div className="flex items-center gap-1.5 flex-wrap">
                 {inv.role === "teacher" ? (
-                  <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Teacher</Badge>
+                  <Badge className="bg-primary/10 text-primary border-primary/30 border">Teacher</Badge>
                 ) : inv.role === "staff" ? (
-                  <Badge className="bg-orange-100 text-orange-700 border-orange-200 border">Staff</Badge>
+                  <Badge className="bg-warning/10 text-warning border-warning/30 border">Staff</Badge>
                 ) : (
                   <Badge variant="outline" className="capitalize">{inv.role}</Badge>
                 )}
                 {inv.programName && (
-                  <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 border text-xs">
+                  <Badge className="bg-primary/10 text-primary border-primary/30 border text-xs">
                     {inv.programName}
                   </Badge>
                 )}
@@ -1067,7 +1070,7 @@ export default function AdminUsers() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">User Management</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">User Management</h1>
             <p className="text-muted-foreground mt-0.5">
               Manage all users, roles, and invitations.
             </p>
@@ -1111,9 +1114,9 @@ export default function AdminUsers() {
 
           <TabsContent value="teachers" className="mt-0 space-y-4">
             <Card className="border-0 shadow-sm">
-              <div className="flex items-center justify-between px-4 py-3 border-b">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">Teachers enrolled in your school.</p>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <BulkImportButton onImported={addInvite} />
                   <InviteButton role="teacher" onSent={addInvite} />
                 </div>
@@ -1123,7 +1126,7 @@ export default function AdminUsers() {
               </CardContent>
             </Card>
             <Card className="border-0 shadow-sm overflow-hidden">
-              <div className="px-4 py-2.5 border-b bg-gray-50/50">
+              <div className="px-4 py-2.5 border-b bg-muted/30">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pending Invitations</p>
               </div>
               <InvitationsTab refreshKey={inviteRefreshKey} roleFilter="teacher" hideAccepted />
@@ -1132,12 +1135,12 @@ export default function AdminUsers() {
 
           <TabsContent value="students" className="mt-0 space-y-4">
             <Card className="border-0 shadow-sm">
-              <div className="flex items-center justify-between px-4 py-3 border-b">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">
                   Students enrolled in your school. New applicants should still go through Admissions —
                   use Invite Student for students transferring in from another school who don't need to apply.
                 </p>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <BulkImportButton onImported={addInvite} />
                   <InviteButton role="student" onSent={addInvite} />
                 </div>
@@ -1147,7 +1150,7 @@ export default function AdminUsers() {
               </CardContent>
             </Card>
             <Card className="border-0 shadow-sm overflow-hidden">
-              <div className="px-4 py-2.5 border-b bg-gray-50/50">
+              <div className="px-4 py-2.5 border-b bg-muted/30">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pending Invitations</p>
               </div>
               <InvitationsTab refreshKey={inviteRefreshKey} roleFilter="student" hideAccepted />
@@ -1156,9 +1159,9 @@ export default function AdminUsers() {
 
           <TabsContent value="staff" className="mt-0 space-y-4">
             <Card className="border-0 shadow-sm">
-              <div className="flex items-center justify-between px-4 py-3 border-b">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">Staff members associated with your school.</p>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <BulkImportButton onImported={addInvite} />
                   <InviteButton role="staff" onSent={addInvite} />
                 </div>
@@ -1168,7 +1171,7 @@ export default function AdminUsers() {
               </CardContent>
             </Card>
             <Card className="border-0 shadow-sm overflow-hidden">
-              <div className="px-4 py-2.5 border-b bg-gray-50/50">
+              <div className="px-4 py-2.5 border-b bg-muted/30">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pending Invitations</p>
               </div>
               <InvitationsTab refreshKey={inviteRefreshKey} roleFilter="staff" hideAccepted />
@@ -1177,9 +1180,9 @@ export default function AdminUsers() {
 
           <TabsContent value="parents" className="mt-0 space-y-4">
             <Card className="border-0 shadow-sm">
-              <div className="flex items-center justify-between px-4 py-3 border-b">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-b">
                 <p className="text-sm text-muted-foreground">Parent/guardian accounts linked to your students.</p>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <BulkImportButton onImported={addInvite} />
                   <InviteButton role="parent" onSent={addInvite} />
                 </div>
@@ -1189,7 +1192,7 @@ export default function AdminUsers() {
               </CardContent>
             </Card>
             <Card className="border-0 shadow-sm overflow-hidden">
-              <div className="px-4 py-2.5 border-b bg-gray-50/50">
+              <div className="px-4 py-2.5 border-b bg-muted/30">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pending Invitations</p>
               </div>
               <InvitationsTab refreshKey={inviteRefreshKey} roleFilter="parent" hideAccepted />

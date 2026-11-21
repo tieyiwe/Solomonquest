@@ -46,6 +46,8 @@ import { format, isPast, isToday, isWithinInterval, addDays, isValid } from "dat
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/common/States";
+import PageHeader from "@/components/layout/PageHeader";
 
 type DuePriority = "overdue" | "today" | "soon" | "future" | "none";
 
@@ -67,8 +69,8 @@ function DueDateBadge({ dueDate }: { dueDate?: string | null }) {
 
   const colorMap: Record<DuePriority, string> = {
     overdue: "text-destructive",
-    today: "text-orange-600 dark:text-orange-400",
-    soon: "text-amber-600 dark:text-amber-400",
+    today: "text-warning ",
+    soon: "text-warning ",
     future: "text-muted-foreground",
     none: "text-muted-foreground",
   };
@@ -138,12 +140,12 @@ function SubmitDialog({
     return (
       <DialogContent className="max-w-md">
         <div className="flex flex-col items-center justify-center py-10 text-center gap-4">
-          <div className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center">
-            <CheckCircle2 className="h-10 w-10 text-green-500" />
+          <div className="h-20 w-20 rounded-full bg-success/10 flex items-center justify-center">
+            <CheckCircle2 className="h-10 w-10 text-success" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-gray-900">Submitted! 🎉</h3>
-            <p className="text-gray-500 mt-1 text-sm">
+            <h3 className="text-xl font-bold text-foreground">Submitted! 🎉</h3>
+            <p className="text-muted-foreground mt-1 text-sm">
               Your work for <strong>{assignment.title}</strong> has been sent to your teacher.
               You'll be notified when it's graded.
             </p>
@@ -157,8 +159,8 @@ function SubmitDialog({
     <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <div className="flex items-start gap-3">
-          <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${isVideoType ? "bg-blue-100" : "bg-primary/10"}`}>
-            {isVideoType ? <Video className="h-5 w-5 text-blue-600" /> : <FileText className="h-5 w-5 text-primary" />}
+          <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${isVideoType ? "bg-primary/10" : "bg-primary/10"}`}>
+            {isVideoType ? <Video className="h-5 w-5 text-primary" /> : <FileText className="h-5 w-5 text-primary" />}
           </div>
           <div>
             <DialogTitle className="leading-tight">{assignment.title}</DialogTitle>
@@ -177,7 +179,7 @@ function SubmitDialog({
             priority === "overdue"
               ? "bg-destructive/10 text-destructive"
               : priority === "today"
-              ? "bg-orange-50 text-orange-700"
+              ? "bg-warning/10 text-warning"
               : "bg-muted/50 text-muted-foreground"
           )}
         >
@@ -205,11 +207,11 @@ function SubmitDialog({
       {/* Video player for video assignments */}
       {isVideoType && videoUrl && (
         <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-            <Video className="h-4 w-4 text-blue-500" />
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground/80">
+            <Video className="h-4 w-4 text-primary" />
             Watch the video
             {requireFullWatch && (
-              <span className="flex items-center gap-1 text-xs text-orange-600 font-normal ml-auto">
+              <span className="flex items-center gap-1 text-xs text-warning font-normal ml-auto">
                 <Lock className="h-3 w-3" /> Must watch in full to submit
               </span>
             )}
@@ -225,7 +227,7 @@ function SubmitDialog({
             </p>
           )}
           {videoWatched && (
-            <div className="flex items-center gap-2 text-xs text-green-600 font-semibold bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 text-xs text-success font-semibold bg-success/10 border border-success/30 rounded-lg px-3 py-2">
               <CheckCircle2 className="h-4 w-4" />
               Video fully watched — you may now submit.
             </div>
@@ -310,7 +312,7 @@ function AssignmentRow({
     priority === "overdue"
       ? "border-destructive/40 bg-destructive/5"
       : priority === "today"
-      ? "border-orange-300 dark:border-orange-700 bg-orange-50/50 dark:bg-orange-900/10"
+      ? "border-warning/30 bg-warning/10 "
       : "";
 
   const submitted = assignment.hasSubmitted || assignment.submissionStatus;
@@ -323,17 +325,17 @@ function AssignmentRow({
           className={cn(
             "h-10 w-10 rounded-lg flex items-center justify-center shrink-0",
             submitted
-              ? "bg-green-100 dark:bg-green-900/30"
+              ? "bg-success/10 "
               : priority === "overdue"
               ? "bg-destructive/10"
               : priority === "today"
-              ? "bg-orange-100 dark:bg-orange-900/30"
+              ? "bg-warning/10 "
               : "bg-primary/10"
           )}
         >
           {submitted ? (
             <CheckCircle2
-              className={cn("h-5 w-5", graded ? "text-purple-600" : "text-green-600 dark:text-green-400")}
+              className={cn("h-5 w-5", graded ? "text-chart-5" : "text-success ")}
             />
           ) : (
             <CheckSquare
@@ -342,7 +344,7 @@ function AssignmentRow({
                 priority === "overdue"
                   ? "text-destructive"
                   : priority === "today"
-                  ? "text-orange-600 dark:text-orange-400"
+                  ? "text-warning "
                   : "text-primary"
               )}
             />
@@ -376,7 +378,7 @@ function AssignmentRow({
             {submitted ? (
               <div className="flex items-center gap-2">
                 {graded && assignment.grade != null ? (
-                  <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                  <span className="text-xs font-semibold text-chart-5 flex items-center gap-1">
                     <Star className="h-3 w-3" />
                     Grade: {assignment.grade}/{assignment.pointsPossible ?? "?"}
                   </span>
@@ -386,8 +388,8 @@ function AssignmentRow({
                   className={cn(
                     "text-xs",
                     graded
-                      ? "border-purple-300 text-purple-600 dark:text-purple-400"
-                      : "border-green-300 text-green-600 dark:text-green-400"
+                      ? "border-chart-5/30 text-chart-5 "
+                      : "border-success/30 text-success "
                   )}
                 >
                   {graded ? "Graded" : "Submitted"} ✓
@@ -430,7 +432,7 @@ function CourseAssignmentsList({ courseId, courseName }: { courseId: string; cou
   if (!assignments || assignments.length === 0) {
     return (
       <div className="text-center py-4 border border-dashed rounded-lg">
-        <p className="text-sm text-muted-foreground">No assignments yet.</p>
+        <EmptyState compact icon={FileText} title="No assignments yet" description="When your teachers post work, it will show up here." />
       </div>
     );
   }
@@ -490,12 +492,11 @@ export default function StudentAssignments() {
         </Link>
       </div>
       <div className="space-y-6 max-w-5xl mx-auto">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">My Assignments</h1>
-          <p className="text-muted-foreground mt-0.5">
-            View and submit your coursework across all enrolled courses.
-          </p>
-        </div>
+        <PageHeader
+          icon={FileText}
+          title="My Assignments"
+          description="View and submit your coursework across all enrolled courses."
+        />
 
         {/* Summary Stats */}
         <div className="grid grid-cols-3 gap-4">
@@ -505,9 +506,9 @@ export default function StudentAssignments() {
               <p className="text-xs text-muted-foreground mt-0.5">Overdue</p>
             </CardContent>
           </Card>
-          <Card className="border-orange-200 bg-orange-50/50 dark:border-orange-900/30 dark:bg-orange-900/5">
+          <Card className="border-warning/30 bg-warning/10  ">
             <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+              <p className="text-2xl font-bold text-warning ">
                 {upcomingAssignments.length}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">Due This Week</p>
@@ -550,7 +551,7 @@ export default function StudentAssignments() {
 
             {upcomingAssignments.length > 0 && (
               <section>
-                <h2 className="text-sm font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                <h2 className="text-sm font-semibold text-warning uppercase tracking-wide mb-3 flex items-center gap-1.5">
                   <Clock className="h-4 w-4" />
                   Due This Week
                 </h2>
@@ -594,7 +595,7 @@ export default function StudentAssignments() {
         ) : (
           <Card className="border-dashed bg-muted/20">
             <CardContent className="flex flex-col items-center justify-center p-16 text-center">
-              <CheckCircle2 className="h-14 w-14 text-green-500/60 mb-4" />
+              <CheckCircle2 className="h-14 w-14 text-success mb-4" />
               <h3 className="text-xl font-semibold text-foreground mb-1">All Caught Up!</h3>
               <p className="text-muted-foreground max-w-sm">
                 You have no pending assignments right now.

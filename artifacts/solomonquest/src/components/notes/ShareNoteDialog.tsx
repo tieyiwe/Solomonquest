@@ -132,7 +132,7 @@ export function ShareNoteDialog({
                   <button
                     key={r.id}
                     onClick={() => handleShare(r.id)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 flex items-center justify-between"
                   >
                     <span>
                       {r.first_name} {r.last_name}{" "}
@@ -165,7 +165,7 @@ export function ShareNoteDialog({
                   </span>
                   <button
                     onClick={() => handleUnshare(s.userId)}
-                    className="text-muted-foreground hover:text-red-600"
+                    className="text-muted-foreground hover:text-destructive"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>

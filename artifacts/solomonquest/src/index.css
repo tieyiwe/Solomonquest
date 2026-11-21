@@ -39,6 +39,13 @@
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --color-destructive-border: var(--destructive-border);
 
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-gold: hsl(var(--gold));
+  --color-gold-foreground: hsl(var(--gold-foreground));
+
   --color-chart-1: hsl(var(--chart-1));
   --color-chart-2: hsl(var(--chart-2));
   --color-chart-3: hsl(var(--chart-3));
@@ -105,53 +112,65 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 36 47% 95%;
-  --foreground: 25 25% 14%;
-  --border: 36 22% 80%;
-  --card: 36 40% 97%;
-  --card-foreground: 25 25% 14%;
-  --card-border: 36 22% 82%;
-  --sidebar: 36 40% 92%;
-  --sidebar-foreground: 25 25% 14%;
-  --sidebar-border: 36 22% 80%;
-  --sidebar-primary: 25 34% 33%;
-  --sidebar-primary-foreground: 36 47% 97%;
-  --sidebar-accent: 36 33% 88%;
-  --sidebar-accent-foreground: 25 25% 14%;
-  --sidebar-ring: 25 34% 33%;
-  --popover: 36 40% 97%;
-  --popover-foreground: 25 25% 14%;
-  --popover-border: 36 22% 82%;
-  --primary: 25 34% 33%;
-  --primary-foreground: 36 47% 97%;
-  --secondary: 33 38% 54%;
-  --secondary-foreground: 25 25% 14%;
-  --muted: 36 33% 88%;
-  --muted-foreground: 25 15% 40%;
-  --accent: 33 38% 54%;
-  --accent-foreground: 36 47% 97%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 0 0% 98%;
-  --input: 36 22% 78%;
-  --ring: 25 34% 33%;
-  --chart-1: 25 34% 33%;
-  --chart-2: 33 38% 54%;
-  --chart-3: 36 33% 88%;
-  --chart-4: 25 60% 45%;
-  --chart-5: 33 55% 65%;
+  /* ── SolomonQuest brand: deep indigo + scholar's gold on cool slate ── */
+  --background: 220 20% 98%;
+  --foreground: 224 32% 12%;
+  --border: 220 15% 88%;
+  --card: 0 0% 100%;
+  --card-foreground: 224 32% 12%;
+  --card-border: 220 15% 90%;
+  --sidebar: 234 48% 15%;
+  --sidebar-foreground: 228 30% 90%;
+  --sidebar-border: 234 34% 23%;
+  --sidebar-primary: 40 92% 50%;
+  --sidebar-primary-foreground: 234 48% 12%;
+  --sidebar-accent: 234 38% 23%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-ring: 40 92% 50%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 224 32% 12%;
+  --popover-border: 220 15% 88%;
+  --primary: 234 62% 40%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 20% 94%;
+  --secondary-foreground: 224 32% 16%;
+  --muted: 220 18% 95%;
+  --muted-foreground: 220 12% 40%;
+  /* --accent stays a subtle indigo tint: shadcn uses it for menu/hover states.
+     The brand gold lives in --gold (bg-gold, text-gold, border-gold). */
+  --accent: 232 60% 95%;
+  --accent-foreground: 234 62% 30%;
+  /* Brand gold: highlights, achievements, active-nav indicator, key CTAs.
+     Use as a fill (with text-gold-foreground) or an indicator, not as text on light surfaces. */
+  --gold: 40 92% 50%;
+  --gold-foreground: 30 70% 12%;
+  --destructive: 0 72% 43%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 72% 25%;
+  --success-foreground: 0 0% 100%;
+  --warning: 30 95% 30%;
+  --warning-foreground: 0 0% 100%;
+  --input: 220 14% 82%;
+  --ring: 234 62% 48%;
+  --chart-1: 234 62% 48%;
+  --chart-2: 40 92% 50%;
+  --chart-3: 173 64% 36%;
+  --chart-4: 340 68% 52%;
+  --chart-5: 262 52% 58%;
+  --primary-rgb: 39, 51, 165;
 
-  --app-font-sans: 'Inter', sans-serif;
+  --app-font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --app-font-serif: Georgia, serif;
-  --app-font-mono: Menlo, monospace;
+  --app-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --radius: .5rem; /* 8px */
-  --shadow-2xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00); /*replace with H S L */
-  --shadow-xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00); /*replace with H S L */
-  --shadow-sm: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 2px 4px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 4px 6px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 8px 10px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
+  --shadow-2xs: 0px 1px 0px 0px hsl(224 32% 12% / 0.03);
+  --shadow-xs: 0px 1px 2px 0px hsl(224 32% 12% / 0.05);
+  --shadow-sm: 0px 1px 2px 0px hsl(224 32% 12% / 0.06), 0px 1px 3px 0px hsl(224 32% 12% / 0.04);
+  --shadow: 0px 1px 3px 0px hsl(224 32% 12% / 0.08), 0px 1px 2px -1px hsl(224 32% 12% / 0.06);
+  --shadow-md: 0px 4px 6px -1px hsl(224 32% 12% / 0.08), 0px 2px 4px -2px hsl(224 32% 12% / 0.06);
+  --shadow-lg: 0px 10px 15px -3px hsl(224 32% 12% / 0.08), 0px 4px 6px -4px hsl(224 32% 12% / 0.06);
+  --shadow-xl: 0px 20px 25px -5px hsl(224 32% 12% / 0.10), 0px 8px 10px -6px hsl(224 32% 12% / 0.06);
+  --shadow-2xl: 0px 25px 50px -12px hsl(224 32% 12% / 0.20);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
@@ -196,49 +215,56 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 25 20% 10%;
-  --foreground: 36 47% 95%;
-  --border: 25 20% 25%;
-  --card: 25 20% 12%;
-  --card-foreground: 36 47% 95%;
-  --card-border: 25 20% 25%;
-  --sidebar: 25 20% 12%;
-  --sidebar-foreground: 36 47% 95%;
-  --sidebar-border: 25 20% 25%;
-  --sidebar-primary: 25 34% 33%;
-  --sidebar-primary-foreground: 36 47% 97%;
-  --sidebar-accent: 25 20% 25%;
-  --sidebar-accent-foreground: 36 47% 95%;
-  --sidebar-ring: 25 34% 33%;
-  --popover: 25 20% 12%;
-  --popover-foreground: 36 47% 95%;
-  --popover-border: 25 20% 25%;
-  --primary: 25 34% 33%;
-  --primary-foreground: 36 47% 97%;
-  --secondary: 33 38% 54%;
-  --secondary-foreground: 36 47% 95%;
-  --muted: 25 20% 20%;
-  --muted-foreground: 36 22% 70%;
-  --accent: 33 38% 54%;
-  --accent-foreground: 36 47% 97%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 0 0% 98%;
-  --input: 25 20% 30%;
-  --ring: 25 34% 33%;
-  --chart-1: 25 34% 33%;
-  --chart-2: 33 38% 54%;
-  --chart-3: 36 33% 88%;
-  --chart-4: 25 60% 45%;
-  --chart-5: 33 55% 65%;
+  --background: 224 30% 8%;
+  --foreground: 220 20% 94%;
+  --border: 224 20% 20%;
+  --card: 224 25% 12%;
+  --card-foreground: 220 20% 94%;
+  --card-border: 224 20% 19%;
+  --sidebar: 226 32% 10%;
+  --sidebar-foreground: 222 20% 88%;
+  --sidebar-border: 224 22% 18%;
+  --sidebar-primary: 42 95% 58%;
+  --sidebar-primary-foreground: 30 70% 10%;
+  --sidebar-accent: 228 30% 18%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-ring: 42 95% 58%;
+  --popover: 224 25% 13%;
+  --popover-foreground: 220 20% 94%;
+  --popover-border: 224 20% 22%;
+  --primary: 232 80% 72%;
+  --primary-foreground: 234 50% 12%;
+  --secondary: 224 20% 18%;
+  --secondary-foreground: 220 20% 92%;
+  --muted: 224 22% 16%;
+  --muted-foreground: 220 14% 68%;
+  --accent: 230 30% 20%;
+  --accent-foreground: 232 85% 86%;
+  --gold: 42 95% 58%;
+  --gold-foreground: 30 70% 10%;
+  --destructive: 0 82% 70%;
+  --destructive-foreground: 0 50% 10%;
+  --success: 152 55% 52%;
+  --success-foreground: 152 60% 8%;
+  --warning: 38 92% 58%;
+  --warning-foreground: 30 70% 10%;
+  --input: 224 18% 26%;
+  --ring: 232 80% 72%;
+  --chart-1: 232 80% 72%;
+  --chart-2: 42 95% 58%;
+  --chart-3: 170 55% 50%;
+  --chart-4: 340 75% 68%;
+  --chart-5: 262 70% 76%;
+  --primary-rgb: 126, 142, 241;
 
-  --shadow-2xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 2px 4px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 4px 6px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 8px 10px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
+  --shadow-2xs: 0px 1px 0px 0px hsl(0 0% 0% / 0.2);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.3);
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.3), 0px 1px 3px 0px hsl(0 0% 0% / 0.25);
+  --shadow: 0px 1px 3px 0px hsl(0 0% 0% / 0.35), 0px 1px 2px -1px hsl(0 0% 0% / 0.3);
+  --shadow-md: 0px 4px 6px -1px hsl(0 0% 0% / 0.35), 0px 2px 4px -2px hsl(0 0% 0% / 0.3);
+  --shadow-lg: 0px 10px 15px -3px hsl(0 0% 0% / 0.35), 0px 4px 6px -4px hsl(0 0% 0% / 0.3);
+  --shadow-xl: 0px 20px 25px -5px hsl(0 0% 0% / 0.4), 0px 8px 10px -6px hsl(0 0% 0% / 0.3);
+  --shadow-2xl: 0px 25px 50px -12px hsl(0 0% 0% / 0.5);
 
 }
 
@@ -247,8 +273,33 @@
     @apply border-border;
   }
 
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Consistent heading defaults (pages still set size with utilities) */
+  h1, h2, h3, h4 {
+    @apply tracking-tight;
+    text-wrap: balance;
+  }
+
+  /* Visible keyboard focus everywhere, without rings on mouse clicks */
+  :where(a, button, [role="button"], [role="tab"], [role="menuitem"], summary, [tabindex]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
   }
 }
 
@@ -362,6 +413,18 @@
   .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
     inset: -1px;
   }
+}
+
+/* Deep-indigo brand surface that stays dark in both themes, so white text on it
+   always passes contrast (heroes, AI assistant header, call-to-action banners). */
+@utility bg-brand {
+  background-color: hsl(234 62% 34%);
+  background-image: linear-gradient(135deg, hsl(234 62% 38%) 0%, hsl(238 58% 26%) 100%);
+}
+
+/* Money / numeric columns line up */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
 }
 
 /* ─── Mobile-native feel ──────────────────────────────────────────────────── */

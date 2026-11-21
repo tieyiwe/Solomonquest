@@ -16,7 +16,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { CheckCircle2, DollarSign, CreditCard, ExternalLink, Loader2 } from "lucide-react";
+import { CheckCircle2, DollarSign, CreditCard, ExternalLink, Loader2, Receipt } from "lucide-react";
+import { EmptyState } from "@/components/common/States";
+import PageHeader from "@/components/layout/PageHeader";
 
 async function apiFetch(path: string, options: RequestInit = {}) {
   const {
@@ -56,9 +58,9 @@ interface TuitionPayment {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  paid: "bg-green-100 text-green-700 hover:bg-green-100",
-  partial: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100",
-  pending: "bg-gray-100 text-gray-600 hover:bg-gray-100",
+  paid: "bg-success/10 text-success hover:bg-success/20",
+  partial: "bg-warning/10 text-warning hover:bg-warning/20",
+  pending: "bg-muted text-muted-foreground hover:bg-muted",
 };
 
 function formatCents(cents: number) {
@@ -75,10 +77,10 @@ const CONNECT_STATUS_LABEL: Record<ConnectStatus, string> = {
 };
 
 const CONNECT_STATUS_STYLE: Record<ConnectStatus, string> = {
-  not_connected: "bg-gray-100 text-gray-600",
-  pending: "bg-yellow-100 text-yellow-700",
-  connected: "bg-green-100 text-green-700",
-  restricted: "bg-red-100 text-red-700",
+  not_connected: "bg-muted text-muted-foreground",
+  pending: "bg-warning/10 text-warning",
+  connected: "bg-success/10 text-success",
+  restricted: "bg-destructive/10 text-destructive",
 };
 
 export default function AdminTuition() {
@@ -177,16 +179,19 @@ export default function AdminTuition() {
 
   return (
     <AdminLayout>
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Tuition</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Track tuition plans and payments across your school.{" "}
-            {connectStatus === "connected"
-              ? "Online payments go directly to your school's own Stripe account."
-              : "Connect Stripe below to take online payments, or record payments received outside the platform (cash, check, bank transfer) using \"Mark Paid\"."}
-          </p>
-        </div>
+      <div className="space-y-6">
+        <PageHeader
+          icon={DollarSign}
+          title="Tuition"
+          description={
+            <>
+              Track tuition plans and payments across your school.{" "}
+              {connectStatus === "connected"
+                ? "Online payments go directly to your school's own Stripe account."
+                : "Connect Stripe below to take online payments, or record payments received outside the platform (cash, check, bank transfer) using \"Mark Paid\"."}
+            </>
+          }
+        />
 
         <Card>
           <CardContent className="p-4 flex flex-wrap items-center gap-4">
@@ -231,7 +236,7 @@ export default function AdminTuition() {
           <Card>
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">Collected</p>
-              <p className="text-2xl font-bold mt-1 text-green-600">
+              <p className="text-2xl font-bold mt-1 text-success">
                 {payments === null ? <Skeleton className="h-8 w-20" /> : formatCents(totalCollected)}
               </p>
             </CardContent>
@@ -239,7 +244,7 @@ export default function AdminTuition() {
           <Card>
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">Outstanding</p>
-              <p className="text-2xl font-bold mt-1 text-orange-600">
+              <p className="text-2xl font-bold mt-1 text-warning">
                 {payments === null ? <Skeleton className="h-8 w-20" /> : formatCents(totalOutstanding)}
               </p>
             </CardContent>
@@ -261,13 +266,13 @@ export default function AdminTuition() {
                 <Skeleton className="h-8 w-full" />
               </div>
             ) : plans.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">No tuition plans set yet.</p>
+              <EmptyState compact icon={DollarSign} title="No tuition plans yet" description="Set a plan per program or grade to start tracking what each family owes." className="m-4" />
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Scope</TableHead>
-                    <TableHead>Amount</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
                     <TableHead>Payment Options</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -277,7 +282,7 @@ export default function AdminTuition() {
                       <TableCell className="text-xs font-mono text-muted-foreground">
                         {plan.courseId ? `Course ${plan.courseId.slice(0, 8)}…` : `Program ${plan.programId?.slice(0, 8)}…`}
                       </TableCell>
-                      <TableCell className="font-medium">{formatCents(plan.amountCents)}</TableCell>
+                      <TableCell className="font-medium text-right tabular-nums">{formatCents(plan.amountCents)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {[
                           plan.allowFullPayment && "Full payment",
@@ -305,13 +310,13 @@ export default function AdminTuition() {
                 <Skeleton className="h-8 w-full" />
               </div>
             ) : payments.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">No tuition payments yet.</p>
+              <EmptyState compact icon={Receipt} title="No payments recorded yet" description="Payments appear here as soon as they are recorded." className="m-4" />
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Student</TableHead>
-                    <TableHead>Amount</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
                     <TableHead>Method</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Started</TableHead>
@@ -322,7 +327,7 @@ export default function AdminTuition() {
                   {payments.map((payment) => (
                     <TableRow key={payment.id}>
                       <TableCell className="font-medium">{payment.studentName}</TableCell>
-                      <TableCell>{formatCents(payment.amountCents)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCents(payment.amountCents)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground capitalize">
                         {payment.paymentMethod === "installments"
                           ? `Installments (${payment.installmentCount})`
@@ -352,7 +357,7 @@ export default function AdminTuition() {
                               : "Mark Paid"}
                           </Button>
                         ) : (
-                          <span className="text-xs text-green-600 flex items-center gap-1">
+                          <span className="text-xs text-success flex items-center gap-1">
                             <CheckCircle2 className="h-3.5 w-3.5" /> Paid
                           </span>
                         )}

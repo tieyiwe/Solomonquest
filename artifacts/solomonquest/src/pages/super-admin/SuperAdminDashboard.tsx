@@ -13,6 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { EmptyState, LoadingRows, LoadingStats } from "@/components/common/States";
 import {
   BarChart,
   Bar,
@@ -270,20 +271,20 @@ const ADVANCED_FEATURE_LABELS: Record<string, string> = {
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  super_admin: "bg-red-700 text-red-100",
-  admin: "bg-blue-700 text-blue-100",
-  teacher: "bg-green-700 text-green-100",
-  student: "bg-purple-700 text-purple-100",
+  super_admin: "bg-destructive/10 text-destructive",
+  admin: "bg-primary/10 text-primary",
+  teacher: "bg-success/10 text-success",
+  student: "bg-gold/15 text-foreground",
 };
 
 const ACTION_COLORS: Record<string, string> = {
-  school_deleted: "text-red-400",
-  school_restored: "text-green-400",
-  user_suspended: "text-orange-400",
-  user_deleted: "text-red-400",
-  settings_updated: "text-blue-400",
-  school_created: "text-green-400",
-  role_changed: "text-yellow-400",
+  school_deleted: "text-destructive",
+  school_restored: "text-success",
+  user_suspended: "text-warning",
+  user_deleted: "text-destructive",
+  settings_updated: "text-primary",
+  school_created: "text-success",
+  role_changed: "text-warning",
 };
 
 export default function SuperAdminDashboard() {
@@ -997,47 +998,48 @@ export default function SuperAdminDashboard() {
   }, {});
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
+    <div className="flex flex-col md:flex-row h-screen bg-background text-foreground overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 bg-gray-900 flex flex-col flex-shrink-0 border-r border-gray-800">
-        <div className="p-4 border-b border-gray-800">
+      <aside className="w-full md:w-64 bg-sidebar text-sidebar-foreground flex flex-col flex-shrink-0 border-b md:border-b-0 md:border-r border-sidebar-border">
+        <div className="px-4 py-3 md:p-4 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
-            <Shield size={20} className="text-blue-400" />
-            <span className="font-bold text-sm text-white leading-tight">SolomonQuest Platform</span>
+            <span className="h-7 w-7 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground flex items-center justify-center shrink-0"><Shield size={16} aria-hidden="true" /></span>
+            <span className="font-bold text-sm text-sidebar-accent-foreground leading-tight">SolomonQuest Platform</span>
           </div>
-          <p className="text-xs text-gray-500 mt-1">Super Admin Console</p>
+          <p className="hidden md:block text-xs text-sidebar-foreground/60 mt-1">Super Admin Console</p>
         </div>
-        <nav className="flex-1 overflow-y-auto py-2">
+        <nav aria-label="Platform admin sections" className="flex md:block md:flex-1 overflow-x-auto md:overflow-y-auto py-2 px-2 md:px-0 gap-1">
           {groups.map((group) => {
             const items = navItems.filter((n) => n.group === group);
             if (!items.length) return null;
             return (
-              <div key={group} className="mb-4">
-                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider px-4 py-2">{group}</p>
+              <div key={group} className="flex md:block gap-1 md:mb-4">
+                <p className="hidden md:block text-[11px] text-sidebar-foreground/50 font-semibold uppercase tracking-wider px-4 py-2">{group}</p>
                 {items.map((item) => (
                   <button
                     key={item.section}
                     onClick={() => setActiveSection(item.section)}
-                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors relative ${
+                    aria-current={activeSection === item.section ? "page" : undefined}
+                    className={`md:w-full shrink-0 whitespace-nowrap flex items-center gap-3 px-3 md:px-4 py-2 md:py-2.5 text-sm rounded-md md:rounded-none transition-colors relative ${
                       activeSection === item.section
-                        ? "bg-gray-800 text-white"
-                        : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold md:shadow-[inset_3px_0_0_hsl(var(--sidebar-primary))]"
+                        : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
                     }`}
                   >
                     {item.icon}
                     <span>{item.label}</span>
                     {item.section === "deletion-requests" && pendingCount > 0 && (
-                      <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold">
+                      <span className="ml-auto bg-warning text-warning-foreground text-xs rounded-full px-1.5 py-0.5 font-bold">
                         {pendingCount}
                       </span>
                     )}
                     {item.section === "domain-requests" && pendingDomainCount > 0 && (
-                      <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold">
+                      <span className="ml-auto bg-warning text-warning-foreground text-xs rounded-full px-1.5 py-0.5 font-bold">
                         {pendingDomainCount}
                       </span>
                     )}
                     {item.section === "school-requests" && pendingSchoolRequestCount > 0 && (
-                      <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold">
+                      <span className="ml-auto bg-warning text-warning-foreground text-xs rounded-full px-1.5 py-0.5 font-bold">
                         {pendingSchoolRequestCount}
                       </span>
                     )}
@@ -1047,16 +1049,16 @@ export default function SuperAdminDashboard() {
             );
           })}
         </nav>
-        <div className="p-4 border-t border-gray-800 space-y-1">
+        <div className="hidden md:block p-4 border-t border-sidebar-border space-y-1">
           <Link href="/dashboard/admin">
-            <a className="flex items-center gap-2 text-gray-400 hover:text-white text-sm transition-colors w-full">
+            <a className="flex items-center gap-2 py-1.5 text-sidebar-foreground/70 hover:text-sidebar-accent-foreground text-sm transition-colors w-full">
               <ArrowLeftRight size={16} />
               Back to Regular Dashboard
             </a>
           </Link>
           <button
             onClick={() => signOut?.()}
-            className="flex items-center gap-2 text-gray-400 hover:text-red-400 text-sm transition-colors w-full"
+            className="flex items-center gap-2 py-1.5 text-sidebar-foreground/70 hover:text-destructive text-sm transition-colors w-full"
           >
             <LogOut size={16} />
             Sign Out
@@ -1067,8 +1069,8 @@ export default function SuperAdminDashboard() {
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between flex-shrink-0">
-          <h1 className="text-lg font-semibold capitalize text-white">
+        <header className="bg-card border-b border-border px-4 md:px-6 py-3 flex items-center justify-between flex-shrink-0">
+          <h1 className="text-lg font-semibold capitalize text-foreground tracking-tight">
             {activeSection.replace(/-/g, " ")}
           </h1>
           <button
@@ -1086,27 +1088,29 @@ export default function SuperAdminDashboard() {
               if (activeSection === "audit-log") fetchAuditLogs();
               if (activeSection === "platform-settings") fetchSettings();
             }}
-            className="text-gray-400 hover:text-white transition-colors"
+            aria-label="Refresh"
+            title="Refresh"
+            className="p-2 -mr-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
             <RefreshCw size={16} />
           </button>
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-y-auto p-6 bg-gray-950">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-background">
 
           {/* DASHBOARD */}
           {activeSection === "dashboard" && (
             <div>
-              {dashboardLoading && <p className="text-gray-400">Loading...</p>}
+              {dashboardLoading && <LoadingStats className="mb-6" />}
               {dashboardData && (
                 <>
                   {/* Big stats */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    <StatCard icon={<Building2 size={24} />} color="text-blue-400 bg-blue-900/30" label="Total Schools" value={dashboardData.totalSchools} />
-                    <StatCard icon={<Users size={24} />} color="text-green-400 bg-green-900/30" label="Total Users" value={dashboardData.totalUsers} />
-                    <StatCard icon={<BookOpen size={24} />} color="text-purple-400 bg-purple-900/30" label="Active Courses" value={dashboardData.activeCourses} />
-                    <StatCard icon={<AlertTriangle size={24} />} color="text-orange-400 bg-orange-900/30" label="Pending Deletions" value={dashboardData.pendingDeletions} />
+                    <StatCard icon={<Building2 size={24} />} color="text-primary bg-primary/10" label="Total Schools" value={dashboardData.totalSchools} />
+                    <StatCard icon={<Users size={24} />} color="text-success bg-success/10" label="Total Users" value={dashboardData.totalUsers} />
+                    <StatCard icon={<BookOpen size={24} />} color="text-foreground bg-gold/20" label="Active Courses" value={dashboardData.activeCourses} />
+                    <StatCard icon={<AlertTriangle size={24} />} color="text-warning bg-warning/10" label="Pending Deletions" value={dashboardData.pendingDeletions} />
                   </div>
 
                   {/* Smaller stats */}
@@ -1117,22 +1121,22 @@ export default function SuperAdminDashboard() {
                       { label: "Active Schools", value: dashboardData.activeSchools },
                       { label: "Schools in Archive", value: dashboardData.archivedSchools },
                     ].map((s) => (
-                      <div key={s.label} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-                        <p className="text-xs text-gray-400">{s.label}</p>
-                        <p className="text-2xl font-bold text-white mt-1">{s.value}</p>
+                      <div key={s.label} className="bg-card rounded-lg p-4 border border-border">
+                        <p className="text-xs text-muted-foreground">{s.label}</p>
+                        <p className="text-2xl font-bold text-foreground mt-1">{s.value}</p>
                       </div>
                     ))}
                   </div>
 
                   {/* Recent signups */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 mb-6">
-                    <div className="px-4 py-3 border-b border-gray-700">
-                      <h2 className="font-semibold text-white">Recent Sign-ups</h2>
+                  <div className="bg-card rounded-lg border border-border mb-6">
+                    <div className="px-4 py-3 border-b border-border">
+                      <h2 className="font-semibold text-foreground">Recent Sign-ups</h2>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="text-gray-400 border-b border-gray-700">
+                          <tr className="text-muted-foreground border-b border-border">
                             <th className="text-left px-4 py-2">Name</th>
                             <th className="text-left px-4 py-2">Role</th>
                             <th className="text-left px-4 py-2">School</th>
@@ -1141,13 +1145,13 @@ export default function SuperAdminDashboard() {
                         </thead>
                         <tbody>
                           {dashboardData.recentSignups.map((u) => (
-                            <tr key={u.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                              <td className="px-4 py-2 text-white">{u.name}</td>
+                            <tr key={u.id} className="border-b border-border/60 hover:bg-muted/30">
+                              <td className="px-4 py-2 text-foreground">{u.name}</td>
                               <td className="px-4 py-2">
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${ROLE_COLORS[u.role] ?? "bg-gray-700 text-gray-300"}`}>{u.role}</span>
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${ROLE_COLORS[u.role] ?? "bg-muted text-foreground/80"}`}>{u.role}</span>
                               </td>
-                              <td className="px-4 py-2 text-gray-300">{u.school}</td>
-                              <td className="px-4 py-2 text-gray-400">{new Date(u.joined).toLocaleDateString()}</td>
+                              <td className="px-4 py-2 text-foreground/80">{u.school}</td>
+                              <td className="px-4 py-2 text-muted-foreground">{new Date(u.joined).toLocaleDateString()}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1159,17 +1163,17 @@ export default function SuperAdminDashboard() {
                   <div className="flex flex-wrap gap-3">
                     <Button
                       onClick={() => setActiveSection("deletion-requests")}
-                      className="bg-orange-700 hover:bg-orange-600 text-white relative"
+                      className="bg-warning hover:bg-warning/90 text-warning-foreground relative"
                     >
                       View Deletion Requests
                       {dashboardData.pendingDeletions > 0 && (
-                        <span className="ml-2 bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5">{dashboardData.pendingDeletions}</span>
+                        <span className="ml-2 bg-warning text-warning-foreground text-xs rounded-full px-1.5 py-0.5">{dashboardData.pendingDeletions}</span>
                       )}
                     </Button>
-                    <Button onClick={() => setActiveSection("archive")} variant="outline" className="border-gray-600 text-gray-300 hover:bg-gray-700">
+                    <Button onClick={() => setActiveSection("archive")} variant="outline" className="border-input text-foreground/80 hover:bg-muted">
                       View Archived Schools
                     </Button>
-                    <Button onClick={() => setActiveSection("platform-settings")} variant="outline" className="border-gray-600 text-gray-300 hover:bg-gray-700">
+                    <Button onClick={() => setActiveSection("platform-settings")} variant="outline" className="border-input text-foreground/80 hover:bg-muted">
                       Platform Settings
                     </Button>
                   </div>
@@ -1181,52 +1185,52 @@ export default function SuperAdminDashboard() {
           {/* ANALYTICS */}
           {activeSection === "analytics" && (
             <div>
-              {analyticsLoading && <p className="text-gray-400">Loading...</p>}
+              {analyticsLoading && <LoadingRows />}
               {analyticsData && (
                 <div className="space-y-6">
                   {/* Schools Growth */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                    <h2 className="font-semibold text-white mb-4">Schools Growth</h2>
+                  <div className="bg-card rounded-lg border border-border p-4">
+                    <h2 className="font-semibold text-foreground mb-4">Schools Growth</h2>
                     <ResponsiveContainer width="100%" height={220}>
                       <BarChart data={analyticsData.schoolsGrowth}>
-                        <XAxis dataKey="month" stroke="#9ca3af" />
-                        <YAxis stroke="#9ca3af" />
-                        <Tooltip contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", color: "#fff" }} />
-                        <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                        <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
+                        <YAxis stroke="hsl(var(--muted-foreground))" />
+                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", color: "hsl(var(--popover-foreground))", borderRadius: 8 }} />
+                        <Bar dataKey="count" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
 
                   {/* Users Growth */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                    <h2 className="font-semibold text-white mb-4">Users Growth</h2>
+                  <div className="bg-card rounded-lg border border-border p-4">
+                    <h2 className="font-semibold text-foreground mb-4">Users Growth</h2>
                     <ResponsiveContainer width="100%" height={220}>
                       <LineChart data={analyticsData.usersGrowth}>
-                        <XAxis dataKey="month" stroke="#9ca3af" />
-                        <YAxis stroke="#9ca3af" />
-                        <Tooltip contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", color: "#fff" }} />
+                        <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
+                        <YAxis stroke="hsl(var(--muted-foreground))" />
+                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", color: "hsl(var(--popover-foreground))", borderRadius: 8 }} />
                         <Legend />
-                        <Line type="monotone" dataKey="students" stroke="#a78bfa" strokeWidth={2} dot={false} />
-                        <Line type="monotone" dataKey="teachers" stroke="#34d399" strokeWidth={2} dot={false} />
-                        <Line type="monotone" dataKey="admins" stroke="#60a5fa" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="students" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="teachers" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="admins" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={false} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
 
                   {/* Top Schools */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                    <h2 className="font-semibold text-white mb-4">Top Schools by Enrollment</h2>
+                  <div className="bg-card rounded-lg border border-border p-4">
+                    <h2 className="font-semibold text-foreground mb-4">Top Schools by Enrollment</h2>
                     <div className="space-y-3">
                       {analyticsData.topSchools.map((s) => {
                         const max = Math.max(...analyticsData.topSchools.map((x) => x.students));
                         const pct = max > 0 ? (s.students / max) * 100 : 0;
                         return (
                           <div key={s.name} className="flex items-center gap-3">
-                            <span className="text-sm text-gray-300 w-40 truncate">{s.name}</span>
-                            <div className="flex-1 h-4 bg-gray-700 rounded-full overflow-hidden">
-                              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+                            <span className="text-sm text-foreground/80 w-40 truncate">{s.name}</span>
+                            <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
                             </div>
-                            <span className="text-sm text-white w-12 text-right">{s.students}</span>
+                            <span className="text-sm text-foreground w-12 text-right">{s.students}</span>
                           </div>
                         );
                       })}
@@ -1234,20 +1238,20 @@ export default function SuperAdminDashboard() {
                   </div>
 
                   {/* Application Stats */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                    <h2 className="font-semibold text-white mb-4">Application Stats</h2>
+                  <div className="bg-card rounded-lg border border-border p-4">
+                    <h2 className="font-semibold text-foreground mb-4">Application Stats</h2>
                     <div className="flex gap-6">
                       <div className="text-center">
-                        <p className="text-3xl font-bold text-green-400">{analyticsData.applicationStats.approved}</p>
-                        <p className="text-sm text-gray-400 mt-1">Approved</p>
+                        <p className="text-3xl font-bold text-success">{analyticsData.applicationStats.approved}</p>
+                        <p className="text-sm text-muted-foreground mt-1">Approved</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-3xl font-bold text-red-400">{analyticsData.applicationStats.rejected}</p>
-                        <p className="text-sm text-gray-400 mt-1">Rejected</p>
+                        <p className="text-3xl font-bold text-destructive">{analyticsData.applicationStats.rejected}</p>
+                        <p className="text-sm text-muted-foreground mt-1">Rejected</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-3xl font-bold text-yellow-400">{analyticsData.applicationStats.pending}</p>
-                        <p className="text-sm text-gray-400 mt-1">Pending</p>
+                        <p className="text-3xl font-bold text-warning">{analyticsData.applicationStats.pending}</p>
+                        <p className="text-sm text-muted-foreground mt-1">Pending</p>
                       </div>
                     </div>
                   </div>
@@ -1264,23 +1268,23 @@ export default function SuperAdminDashboard() {
                   placeholder="Search schools or owner..."
                   value={schoolSearch}
                   onChange={(e) => setSchoolSearch(e.target.value)}
-                  className="w-64 bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+                  className="w-full sm:w-64 bg-card border-border text-foreground placeholder:text-muted-foreground"
                 />
                 <select
                   value={schoolStatusFilter}
                   onChange={(e) => setSchoolStatusFilter(e.target.value)}
-                  className="bg-gray-800 border border-gray-700 text-white rounded px-3 py-2 text-sm"
+                  className="bg-card border border-input text-foreground rounded-md px-3 py-2 text-sm"
                 >
                   <option value="all">All Status</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
-              {schoolsLoading && <p className="text-gray-400">Loading...</p>}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              {schoolsLoading && <LoadingRows />}
+              <div className="bg-card rounded-lg border border-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                    <tr className="text-muted-foreground border-b border-border bg-background/50">
                       <th className="text-left px-4 py-3">School Name</th>
                       <th className="text-left px-4 py-3">Created By</th>
                       <th className="text-left px-4 py-3">Creator Email</th>
@@ -1295,35 +1299,35 @@ export default function SuperAdminDashboard() {
                   <tbody>
                     {filteredSchools.map((school) => (
                       <Fragment key={school.id}>
-                        <tr className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                          <td className="px-4 py-3 text-white font-medium">{school.name}</td>
-                          <td className="px-4 py-3 text-gray-300">{school.owner}</td>
-                          <td className="px-4 py-3 text-gray-300">
+                        <tr className="border-b border-border/60 hover:bg-muted/30">
+                          <td className="px-4 py-3 text-foreground font-medium">{school.name}</td>
+                          <td className="px-4 py-3 text-foreground/80">{school.owner}</td>
+                          <td className="px-4 py-3 text-foreground/80">
                             {school.ownerEmail ? (
-                              <a href={`mailto:${school.ownerEmail}`} className="text-blue-300 hover:underline font-mono text-xs">
+                              <a href={`mailto:${school.ownerEmail}`} className="text-primary hover:underline font-mono text-xs">
                                 {school.ownerEmail}
                               </a>
                             ) : (
-                              <span className="text-gray-500">—</span>
+                              <span className="text-muted-foreground">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-gray-300">
-                            <p className="text-white font-medium">{school.totalUsers ?? 0} total</p>
-                            <p className="text-gray-500 text-xs">
+                          <td className="px-4 py-3 text-foreground/80">
+                            <p className="text-foreground font-medium">{school.totalUsers ?? 0} total</p>
+                            <p className="text-muted-foreground text-xs">
                               {Object.entries(school.roleCounts ?? {})
                                 .map(([role, count]) => `${count} ${role}`)
                                 .join(", ") || "no users yet"}
                             </p>
                           </td>
-                          <td className="px-4 py-3 text-gray-300">{school.courses}</td>
+                          <td className="px-4 py-3 text-foreground/80">{school.courses}</td>
                           <td className="px-4 py-3">
                             <span
                               className={`text-xs px-2 py-0.5 rounded-full ${
                                 school.stripeConnectStatus === "connected"
-                                  ? "bg-green-900 text-green-300"
+                                  ? "bg-success/10 text-success"
                                   : school.stripeConnectStatus === "pending" || school.stripeConnectStatus === "restricted"
-                                  ? "bg-yellow-900 text-yellow-300"
-                                  : "bg-gray-700 text-gray-400"
+                                  ? "bg-warning/10 text-warning"
+                                  : "bg-muted text-muted-foreground"
                               }`}
                             >
                               {school.stripeConnectStatus === "connected"
@@ -1336,20 +1340,20 @@ export default function SuperAdminDashboard() {
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${school.status === "active" ? "bg-green-900 text-green-300" : "bg-gray-700 text-gray-400"}`}>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${school.status === "active" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>
                               {school.status === "active" ? "Active" : "Inactive"}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
+                          <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                             {new Date(school.created).toLocaleDateString()}{" "}
-                            <span className="text-gray-500">{new Date(school.created).toLocaleTimeString()}</span>
+                            <span className="text-muted-foreground">{new Date(school.created).toLocaleTimeString()}</span>
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="border-gray-600 text-gray-300 hover:bg-gray-700 h-7 text-xs"
+                                className="border-input text-foreground/80 hover:bg-muted h-7 text-xs"
                                 onClick={() => setExpandedSchool(expandedSchool === school.id ? null : school.id)}
                               >
                                 {expandedSchool === school.id ? "Hide" : "View"}
@@ -1357,7 +1361,7 @@ export default function SuperAdminDashboard() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-7 text-xs border-gray-600 text-blue-300 hover:bg-blue-900/30"
+                                className="h-7 text-xs border-input text-primary hover:bg-primary/20"
                                 onClick={() => openFeatureFlags(school.id, school.name)}
                               >
                                 <ToggleLeft size={12} className="mr-1" />
@@ -1366,7 +1370,7 @@ export default function SuperAdminDashboard() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className={`h-7 text-xs border-gray-600 ${school.status === "active" ? "text-orange-400 hover:bg-orange-900/30" : "text-green-400 hover:bg-green-900/30"}`}
+                                className={`h-7 text-xs border-input ${school.status === "active" ? "text-warning hover:bg-warning/20" : "text-success hover:bg-success/20"}`}
                                 onClick={() => setToggleSchoolDialog(school)}
                               >
                                 {school.status === "active" ? "Deactivate" : "Activate"}
@@ -1375,7 +1379,7 @@ export default function SuperAdminDashboard() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-xs border-red-800 text-red-400 hover:bg-red-900/30"
+                                  className="h-7 text-xs border-destructive text-destructive hover:bg-destructive/20"
                                   onClick={() => setQuickDeleteDialog({ id: school.id, name: school.name })}
                                 >
                                   Delete
@@ -1384,7 +1388,7 @@ export default function SuperAdminDashboard() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-xs border-red-800 text-red-400 hover:bg-red-900/30"
+                                  className="h-7 text-xs border-destructive text-destructive hover:bg-destructive/20"
                                   onClick={() => setDirectDeleteDialog({ id: school.id, name: school.name })}
                                 >
                                   Delete &amp; Archive
@@ -1394,42 +1398,42 @@ export default function SuperAdminDashboard() {
                           </td>
                         </tr>
                         {expandedSchool === school.id && (
-                          <tr className="bg-gray-900/60">
+                          <tr className="bg-background/60">
                             <td colSpan={9} className="px-6 py-4">
                               <div className="grid grid-cols-2 gap-4 text-sm">
                                 <div>
-                                  <p className="text-gray-400 text-xs mb-1">School ID</p>
-                                  <p className="text-white font-mono">{school.id}</p>
+                                  <p className="text-muted-foreground text-xs mb-1">School ID</p>
+                                  <p className="text-foreground font-mono">{school.id}</p>
                                 </div>
                                 <div>
-                                  <p className="text-gray-400 text-xs mb-1">Created By</p>
-                                  <p className="text-white">{school.owner}</p>
-                                  <p className="text-gray-500 text-xs mt-0.5">
+                                  <p className="text-muted-foreground text-xs mb-1">Created By</p>
+                                  <p className="text-foreground">{school.owner}</p>
+                                  <p className="text-muted-foreground text-xs mt-0.5">
                                     The account that originally created this school — not necessarily its only admin.
                                   </p>
                                 </div>
                                 <div>
-                                  <p className="text-gray-400 text-xs mb-1">Creator Email</p>
+                                  <p className="text-muted-foreground text-xs mb-1">Creator Email</p>
                                   {school.ownerEmail ? (
-                                    <a href={`mailto:${school.ownerEmail}`} className="text-blue-300 hover:underline">
+                                    <a href={`mailto:${school.ownerEmail}`} className="text-primary hover:underline">
                                       {school.ownerEmail}
                                     </a>
                                   ) : (
-                                    <p className="text-gray-500">Not available</p>
+                                    <p className="text-muted-foreground">Not available</p>
                                   )}
                                 </div>
                                 <div>
-                                  <p className="text-gray-400 text-xs mb-1">Created</p>
-                                  <p className="text-white">{new Date(school.created).toLocaleString()}</p>
+                                  <p className="text-muted-foreground text-xs mb-1">Created</p>
+                                  <p className="text-foreground">{new Date(school.created).toLocaleString()}</p>
                                 </div>
                                 <div className="col-span-2">
-                                  <p className="text-gray-400 text-xs mb-1">Users ({school.totalUsers ?? 0} total)</p>
+                                  <p className="text-muted-foreground text-xs mb-1">Users ({school.totalUsers ?? 0} total)</p>
                                   <div className="flex flex-wrap gap-1.5">
                                     {Object.entries(school.roleCounts ?? {}).length === 0 && (
-                                      <span className="text-gray-500 text-xs">No users yet</span>
+                                      <span className="text-muted-foreground text-xs">No users yet</span>
                                     )}
                                     {Object.entries(school.roleCounts ?? {}).map(([role, count]) => (
-                                      <span key={role} className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-200">
+                                      <span key={role} className="text-xs px-2 py-0.5 rounded-full bg-muted text-foreground">
                                         {count} {role}
                                       </span>
                                     ))}
@@ -1437,8 +1441,8 @@ export default function SuperAdminDashboard() {
                                 </div>
                                 {school.details && Object.entries(school.details).map(([k, v]) => (
                                   <div key={k}>
-                                    <p className="text-gray-400 text-xs mb-1 capitalize">{k.replace(/_/g, " ")}</p>
-                                    <p className="text-white">{String(v)}</p>
+                                    <p className="text-muted-foreground text-xs mb-1 capitalize">{k.replace(/_/g, " ")}</p>
+                                    <p className="text-foreground">{String(v)}</p>
                                   </div>
                                 ))}
                               </div>
@@ -1450,7 +1454,7 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
                 {filteredSchools.length === 0 && !schoolsLoading && (
-                  <p className="text-gray-500 text-sm text-center py-8">No schools found.</p>
+                  <EmptyState compact icon={Building2} title="No schools found" description="Try a different search or filter." className="m-4" />
                 )}
               </div>
             </div>
@@ -1459,11 +1463,11 @@ export default function SuperAdminDashboard() {
           {/* SCHOOL REQUESTS */}
           {activeSection === "school-requests" && (
             <div>
-              {schoolRequestsLoading && <p className="text-gray-400">Loading...</p>}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              {schoolRequestsLoading && <LoadingRows />}
+              <div className="bg-card rounded-lg border border-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                    <tr className="text-muted-foreground border-b border-border bg-background/50">
                       <th className="text-left px-4 py-3">Suggested School Name</th>
                       <th className="text-left px-4 py-3">Requester</th>
                       <th className="text-left px-4 py-3">Contact</th>
@@ -1475,37 +1479,37 @@ export default function SuperAdminDashboard() {
                   </thead>
                   <tbody>
                     {schoolRequests.map((r) => (
-                      <tr key={r.id} className="border-b border-gray-700/50 hover:bg-gray-700/30 align-top">
-                        <td className="px-4 py-3 text-white font-medium">{r.suggestedSchoolName}</td>
-                        <td className="px-4 py-3 text-gray-300">{r.requesterName}</td>
-                        <td className="px-4 py-3 text-gray-300">
+                      <tr key={r.id} className="border-b border-border/60 hover:bg-muted/30 align-top">
+                        <td className="px-4 py-3 text-foreground font-medium">{r.suggestedSchoolName}</td>
+                        <td className="px-4 py-3 text-foreground/80">{r.requesterName}</td>
+                        <td className="px-4 py-3 text-foreground/80">
                           <div className="flex flex-col gap-0.5">
                             {r.requesterEmail && (
-                              <a href={`mailto:${r.requesterEmail}`} className="text-blue-300 hover:underline text-xs font-mono">
+                              <a href={`mailto:${r.requesterEmail}`} className="text-primary hover:underline text-xs font-mono">
                                 {r.requesterEmail}
                               </a>
                             )}
-                            {r.requesterPhone && <span className="text-xs text-gray-400">{r.requesterPhone}</span>}
+                            {r.requesterPhone && <span className="text-xs text-muted-foreground">{r.requesterPhone}</span>}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-gray-400 max-w-xs">{r.reason || "—"}</td>
+                        <td className="px-4 py-3 text-muted-foreground max-w-xs">{r.reason || "—"}</td>
                         <td className="px-4 py-3">
                           <StatusBadge status={r.status} />
                         </td>
-                        <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{new Date(r.createdAt).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{new Date(r.createdAt).toLocaleString()}</td>
                         <td className="px-4 py-3">
                           {r.status === "pending" && (
                             <div className="flex gap-2">
                               <Button
                                 size="sm"
-                                className="h-7 text-xs bg-green-800 hover:bg-green-700 text-white"
+                                className="h-7 text-xs bg-success hover:bg-success/90 text-success-foreground"
                                 onClick={() => setApproveSchoolRequestDialog(r)}
                               >
                                 Approve
                               </Button>
                               <Button
                                 size="sm"
-                                className="h-7 text-xs bg-red-900/50 hover:bg-red-800 text-red-300 border border-red-800"
+                                className="h-7 text-xs bg-destructive/10 hover:bg-destructive/90 text-destructive border border-destructive"
                                 onClick={() => setRejectSchoolRequestDialog(r)}
                               >
                                 Reject
@@ -1518,7 +1522,7 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
                 {schoolRequests.length === 0 && !schoolRequestsLoading && (
-                  <p className="text-gray-500 text-sm text-center py-8">No school requests.</p>
+                  <p className="text-muted-foreground text-sm text-center py-8">No school requests.</p>
                 )}
               </div>
             </div>
@@ -1528,9 +1532,9 @@ export default function SuperAdminDashboard() {
           {activeSection === "users" && (
             <div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-                <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
-                  <p className="text-xs text-gray-400">Total Users</p>
-                  <p className="text-xl font-bold text-white mt-0.5">{users.length}</p>
+                <div className="bg-card rounded-lg p-3 border border-border">
+                  <p className="text-xs text-muted-foreground">Total Users</p>
+                  <p className="text-xl font-bold text-foreground mt-0.5">{users.length}</p>
                 </div>
                 {[
                   { role: "super_admin", label: "Super Admins" },
@@ -1540,9 +1544,9 @@ export default function SuperAdminDashboard() {
                   { role: "student", label: "Students" },
                   { role: "parent", label: "Parents" },
                 ].map(({ role, label }) => (
-                  <div key={role} className="bg-gray-800 rounded-lg p-3 border border-gray-700">
-                    <p className="text-xs text-gray-400">{label}</p>
-                    <p className="text-xl font-bold text-white mt-0.5">{userRoleCounts[role] ?? 0}</p>
+                  <div key={role} className="bg-card rounded-lg p-3 border border-border">
+                    <p className="text-xs text-muted-foreground">{label}</p>
+                    <p className="text-xl font-bold text-foreground mt-0.5">{userRoleCounts[role] ?? 0}</p>
                   </div>
                 ))}
               </div>
@@ -1551,12 +1555,12 @@ export default function SuperAdminDashboard() {
                   placeholder="Search users..."
                   value={userSearch}
                   onChange={(e) => setUserSearch(e.target.value)}
-                  className="w-64 bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+                  className="w-full sm:w-64 bg-card border-border text-foreground placeholder:text-muted-foreground"
                 />
                 <select
                   value={userRoleFilter}
                   onChange={(e) => setUserRoleFilter(e.target.value)}
-                  className="bg-gray-800 border border-gray-700 text-white rounded px-3 py-2 text-sm"
+                  className="bg-card border border-input text-foreground rounded-md px-3 py-2 text-sm"
                 >
                   <option value="all">All Roles</option>
                   <option value="super_admin">Super Admin</option>
@@ -1569,17 +1573,17 @@ export default function SuperAdminDashboard() {
                 <select
                   value={userSchoolFilter}
                   onChange={(e) => setUserSchoolFilter(e.target.value)}
-                  className="bg-gray-800 border border-gray-700 text-white rounded px-3 py-2 text-sm"
+                  className="bg-card border border-input text-foreground rounded-md px-3 py-2 text-sm"
                 >
                   <option value="all">All Schools</option>
                   {uniqueSchools.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
-              {usersLoading && <p className="text-gray-400">Loading...</p>}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              {usersLoading && <LoadingRows />}
+              <div className="bg-card rounded-lg border border-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                    <tr className="text-muted-foreground border-b border-border bg-background/50">
                       <th className="text-left px-4 py-3">Name</th>
                       <th className="text-left px-4 py-3">Email</th>
                       <th className="text-left px-4 py-3">Role</th>
@@ -1590,19 +1594,19 @@ export default function SuperAdminDashboard() {
                   </thead>
                   <tbody>
                     {filteredUsers.map((user) => (
-                      <tr key={user.id} className={`border-b border-gray-700/50 hover:bg-gray-700/30 ${user.suspended ? "opacity-60" : ""}`}>
-                        <td className="px-4 py-3 text-white">{user.name}</td>
-                        <td className="px-4 py-3 text-gray-300 font-mono text-xs">{user.email}</td>
+                      <tr key={user.id} className={`border-b border-border/60 hover:bg-muted/30 ${user.suspended ? "opacity-60" : ""}`}>
+                        <td className="px-4 py-3 text-foreground">{user.name}</td>
+                        <td className="px-4 py-3 text-foreground/80 font-mono text-xs">{user.email}</td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${ROLE_COLORS[user.role] ?? "bg-gray-700 text-gray-300"}`}>{user.role}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${ROLE_COLORS[user.role] ?? "bg-muted text-foreground/80"}`}>{user.role}</span>
                         </td>
-                        <td className="px-4 py-3 text-gray-300">{user.school}</td>
-                        <td className="px-4 py-3 text-gray-400">{new Date(user.joined).toLocaleDateString()}</td>
+                        <td className="px-4 py-3 text-foreground/80">{user.school}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{new Date(user.joined).toLocaleDateString()}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             <select
                               defaultValue={user.role}
-                              className="bg-gray-700 border border-gray-600 text-white rounded px-2 py-1 text-xs"
+                              className="bg-muted border border-input text-foreground rounded px-2 py-1 text-xs"
                               onChange={(e) => setChangeRoleUser({ user, role: e.target.value })}
                             >
                               <option value="super_admin">super_admin</option>
@@ -1614,7 +1618,7 @@ export default function SuperAdminDashboard() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-7 text-xs border-gray-600 text-blue-300 hover:bg-blue-900/30"
+                                className="h-7 text-xs border-input text-primary hover:bg-primary/20"
                                 disabled={viewingAsId === user.id}
                                 onClick={() => handleViewAs(user)}
                               >
@@ -1624,14 +1628,14 @@ export default function SuperAdminDashboard() {
                             <Button
                               size="sm"
                               variant="outline"
-                              className={`h-7 text-xs border-gray-600 ${user.suspended ? "text-green-400 hover:bg-green-900/30" : "text-orange-400 hover:bg-orange-900/30"}`}
+                              className={`h-7 text-xs border-input ${user.suspended ? "text-success hover:bg-success/20" : "text-warning hover:bg-warning/20"}`}
                               onClick={() => handleSuspendUser(user)}
                             >
                               {user.suspended ? "Unsuspend" : "Suspend"}
                             </Button>
                             <Button
                               size="sm"
-                              className="h-7 text-xs bg-red-900/50 hover:bg-red-800 text-red-300 border border-red-800"
+                              className="h-7 text-xs bg-destructive/10 hover:bg-destructive/90 text-destructive border border-destructive"
                               onClick={() => setDeleteUserDialog(user)}
                             >
                               Delete
@@ -1643,7 +1647,7 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
                 {filteredUsers.length === 0 && !usersLoading && (
-                  <p className="text-gray-500 text-sm text-center py-8">No users found.</p>
+                  <EmptyState compact icon={Users} title="No users found" description="Try a different search or filter." className="m-4" />
                 )}
               </div>
             </div>
@@ -1652,11 +1656,11 @@ export default function SuperAdminDashboard() {
           {/* DELETION REQUESTS */}
           {activeSection === "deletion-requests" && (
             <div>
-              {deletionLoading && <p className="text-gray-400">Loading...</p>}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              {deletionLoading && <LoadingRows />}
+              <div className="bg-card rounded-lg border border-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                    <tr className="text-muted-foreground border-b border-border bg-background/50">
                       <th className="text-left px-4 py-3">School</th>
                       <th className="text-left px-4 py-3">Requester</th>
                       <th className="text-left px-4 py-3">Reason</th>
@@ -1667,28 +1671,28 @@ export default function SuperAdminDashboard() {
                   </thead>
                   <tbody>
                     {deletionRequests.map((req) => (
-                      <tr key={req.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                        <td className="px-4 py-3 text-white font-medium">{req.school}</td>
-                        <td className="px-4 py-3 text-gray-300">{req.requester}</td>
-                        <td className="px-4 py-3 text-gray-400 max-w-xs truncate">{req.reason}</td>
+                      <tr key={req.id} className="border-b border-border/60 hover:bg-muted/30">
+                        <td className="px-4 py-3 text-foreground font-medium">{req.school}</td>
+                        <td className="px-4 py-3 text-foreground/80">{req.requester}</td>
+                        <td className="px-4 py-3 text-muted-foreground max-w-xs truncate">{req.reason}</td>
                         <td className="px-4 py-3">
                           <StatusBadge status={req.status} />
                         </td>
-                        <td className="px-4 py-3 text-gray-400">{new Date(req.requestedAt).toLocaleDateString()}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{new Date(req.requestedAt).toLocaleDateString()}</td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
                             {req.status === "pending" && (
                               <>
-                                <Button size="sm" className="h-7 text-xs bg-green-800 hover:bg-green-700 text-white" onClick={() => setApproveDialog(req)}>
+                                <Button size="sm" className="h-7 text-xs bg-success hover:bg-success/90 text-success-foreground" onClick={() => setApproveDialog(req)}>
                                   Approve
                                 </Button>
-                                <Button size="sm" className="h-7 text-xs bg-red-900/50 hover:bg-red-800 text-red-300 border border-red-800" onClick={() => setRejectDialog(req)}>
+                                <Button size="sm" className="h-7 text-xs bg-destructive/10 hover:bg-destructive/90 text-destructive border border-destructive" onClick={() => setRejectDialog(req)}>
                                   Reject
                                 </Button>
                               </>
                             )}
                             {req.status === "approved" && (
-                              <Button size="sm" className="h-7 text-xs bg-red-800 hover:bg-red-700 text-white" onClick={() => setExecuteDeletionDialog(req)}>
+                              <Button size="sm" className="h-7 text-xs bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => setExecuteDeletionDialog(req)}>
                                 Execute Deletion
                               </Button>
                             )}
@@ -1699,7 +1703,7 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
                 {deletionRequests.length === 0 && !deletionLoading && (
-                  <p className="text-gray-500 text-sm text-center py-8">No deletion requests.</p>
+                  <p className="text-muted-foreground text-sm text-center py-8">No deletion requests.</p>
                 )}
               </div>
             </div>
@@ -1708,28 +1712,28 @@ export default function SuperAdminDashboard() {
           {/* SUBSCRIPTIONS */}
           {activeSection === "subscriptions" && (
             <div>
-              <p className="text-gray-400 text-sm mb-4">
+              <p className="text-muted-foreground text-sm mb-4">
                 No payment processor is connected yet — plan, status, and price are managed manually here as the
                 sales/billing source of truth.
               </p>
               {subscriptionsSummary && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                    <p className="text-xs text-gray-400">Monthly Recurring Revenue</p>
-                    <p className="text-2xl font-bold text-white mt-0.5">
+                  <div className="bg-card rounded-lg border border-border p-4">
+                    <p className="text-xs text-muted-foreground">Monthly Recurring Revenue</p>
+                    <p className="text-2xl font-bold text-foreground mt-0.5">
                       ${(subscriptionsSummary.mrr_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </p>
                   </div>
-                  <StatCard icon={<CheckCircle size={20} />} color="text-green-400 bg-green-900/30" label="Active" value={subscriptionsSummary.by_status.active ?? 0} />
-                  <StatCard icon={<Clock size={20} />} color="text-blue-400 bg-blue-900/30" label="Trialing" value={subscriptionsSummary.by_status.trialing ?? 0} />
-                  <StatCard icon={<AlertTriangle size={20} />} color="text-red-400 bg-red-900/30" label="Past Due / Canceled" value={(subscriptionsSummary.by_status.past_due ?? 0) + (subscriptionsSummary.by_status.canceled ?? 0)} />
+                  <StatCard icon={<CheckCircle size={20} />} color="text-success bg-success/10" label="Active" value={subscriptionsSummary.by_status.active ?? 0} />
+                  <StatCard icon={<Clock size={20} />} color="text-primary bg-primary/10" label="Trialing" value={subscriptionsSummary.by_status.trialing ?? 0} />
+                  <StatCard icon={<AlertTriangle size={20} />} color="text-destructive bg-destructive/10" label="Past Due / Canceled" value={(subscriptionsSummary.by_status.past_due ?? 0) + (subscriptionsSummary.by_status.canceled ?? 0)} />
                 </div>
               )}
-              {subscriptionsLoading && <p className="text-gray-400">Loading...</p>}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              {subscriptionsLoading && <LoadingRows />}
+              <div className="bg-card rounded-lg border border-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                    <tr className="text-muted-foreground border-b border-border bg-background/50">
                       <th className="text-left px-4 py-3">School</th>
                       <th className="text-left px-4 py-3">Plan</th>
                       <th className="text-left px-4 py-3">Status</th>
@@ -1740,18 +1744,18 @@ export default function SuperAdminDashboard() {
                   </thead>
                   <tbody>
                     {subscriptionSchools.map((s) => (
-                      <tr key={s.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                        <td className="px-4 py-3 text-white font-medium">{s.name}</td>
+                      <tr key={s.id} className="border-b border-border/60 hover:bg-muted/30">
+                        <td className="px-4 py-3 text-foreground font-medium">{s.name}</td>
                         <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900 text-indigo-300 capitalize">{s.plan}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">{s.plan}</span>
                         </td>
                         <td className="px-4 py-3">
                           <StatusBadge status={s.subscription_status} />
                         </td>
-                        <td className="px-4 py-3 text-gray-300">${(s.billing_amount_cents / 100).toFixed(2)}/mo</td>
-                        <td className="px-4 py-3 text-gray-400">{s.trial_ends_at ? new Date(s.trial_ends_at).toLocaleDateString() : "—"}</td>
+                        <td className="px-4 py-3 text-foreground/80">${(s.billing_amount_cents / 100).toFixed(2)}/mo</td>
+                        <td className="px-4 py-3 text-muted-foreground">{s.trial_ends_at ? new Date(s.trial_ends_at).toLocaleDateString() : "—"}</td>
                         <td className="px-4 py-3">
-                          <Button size="sm" variant="outline" className="h-7 text-xs border-gray-600 text-gray-300 hover:bg-gray-700" onClick={() => openEditSubscription(s)}>
+                          <Button size="sm" variant="outline" className="h-7 text-xs border-input text-foreground/80 hover:bg-muted" onClick={() => openEditSubscription(s)}>
                             Edit
                           </Button>
                         </td>
@@ -1760,7 +1764,7 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
                 {subscriptionSchools.length === 0 && !subscriptionsLoading && (
-                  <p className="text-gray-500 text-sm text-center py-8">No schools yet.</p>
+                  <EmptyState compact icon={Building2} title="No schools yet" className="m-4" />
                 )}
               </div>
             </div>
@@ -1769,15 +1773,15 @@ export default function SuperAdminDashboard() {
           {/* DOMAIN REQUESTS */}
           {activeSection === "domain-requests" && (
             <div>
-              <p className="text-gray-400 text-sm mb-4">
+              <p className="text-muted-foreground text-sm mb-4">
                 When a school admin submits a domain, add it in your hosting provider's domain settings first, then
                 click Approve — this generates the DNS records and notifies the school admin to finish connecting it.
               </p>
-              {domainRequestsLoading && <p className="text-gray-400">Loading...</p>}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              {domainRequestsLoading && <LoadingRows />}
+              <div className="bg-card rounded-lg border border-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                    <tr className="text-muted-foreground border-b border-border bg-background/50">
                       <th className="text-left px-4 py-3">School</th>
                       <th className="text-left px-4 py-3">Domain</th>
                       <th className="text-left px-4 py-3">Status</th>
@@ -1787,20 +1791,20 @@ export default function SuperAdminDashboard() {
                   </thead>
                   <tbody>
                     {domainRequests.map((req) => (
-                      <tr key={req.schoolId} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                        <td className="px-4 py-3 text-white font-medium">{req.schoolName}</td>
-                        <td className="px-4 py-3 text-gray-300 font-mono">{req.domain}</td>
+                      <tr key={req.schoolId} className="border-b border-border/60 hover:bg-muted/30">
+                        <td className="px-4 py-3 text-foreground font-medium">{req.schoolName}</td>
+                        <td className="px-4 py-3 text-foreground/80 font-mono">{req.domain}</td>
                         <td className="px-4 py-3">
                           <StatusBadge status={req.status} />
                         </td>
-                        <td className="px-4 py-3 text-gray-400">
+                        <td className="px-4 py-3 text-muted-foreground">
                           {req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : "—"}
                         </td>
                         <td className="px-4 py-3">
                           {req.status === "requested" && (
                             <Button
                               size="sm"
-                              className="h-7 text-xs bg-green-800 hover:bg-green-700 text-white"
+                              className="h-7 text-xs bg-success hover:bg-success/90 text-success-foreground"
                               disabled={approvingDomainId === req.schoolId}
                               onClick={() => handleApproveDomain(req.schoolId)}
                             >
@@ -1813,7 +1817,7 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
                 {domainRequests.length === 0 && !domainRequestsLoading && (
-                  <p className="text-gray-500 text-sm text-center py-8">No domain requests.</p>
+                  <p className="text-muted-foreground text-sm text-center py-8">No domain requests.</p>
                 )}
               </div>
             </div>
@@ -1823,14 +1827,14 @@ export default function SuperAdminDashboard() {
           {activeSection === "usage" && (
             <div>
               <div className="flex flex-wrap items-center gap-3 mb-4">
-                <p className="text-gray-400 text-sm">
+                <p className="text-muted-foreground text-sm">
                   AI message counts are exact; dollar figures are a rough estimate from published per-token
                   pricing, not a billing record.
                 </p>
                 <select
                   value={usageDays}
                   onChange={(e) => { setUsageDays(e.target.value); fetchUsage(e.target.value); }}
-                  className="ml-auto bg-gray-800 border border-gray-700 text-white rounded px-3 py-2 text-sm"
+                  className="ml-auto bg-card border border-input text-foreground rounded-md px-3 py-2 text-sm"
                 >
                   <option value="7">Last 7 days</option>
                   <option value="30">Last 30 days</option>
@@ -1838,12 +1842,12 @@ export default function SuperAdminDashboard() {
                 </select>
               </div>
 
-              {usageLoading && <p className="text-gray-400">Loading...</p>}
+              {usageLoading && <LoadingRows />}
 
-              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              <div className="bg-card rounded-lg border border-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                    <tr className="text-muted-foreground border-b border-border bg-background/50">
                       <th className="text-left px-4 py-3">School</th>
                       <th className="text-left px-4 py-3">AI Messages</th>
                       <th className="text-left px-4 py-3">AI Tokens (in/out)</th>
@@ -1859,24 +1863,24 @@ export default function SuperAdminDashboard() {
                   </thead>
                   <tbody>
                     {usageSchools.map((s) => (
-                      <tr key={s.schoolId} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                        <td className="px-4 py-3 text-white font-medium">{s.schoolName}</td>
-                        <td className="px-4 py-3 text-gray-300">{s.aiMessages}</td>
-                        <td className="px-4 py-3 text-gray-400 text-xs">
+                      <tr key={s.schoolId} className="border-b border-border/60 hover:bg-muted/30">
+                        <td className="px-4 py-3 text-foreground font-medium">{s.schoolName}</td>
+                        <td className="px-4 py-3 text-foreground/80">{s.aiMessages}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">
                           {s.aiInputTokens.toLocaleString()} / {s.aiOutputTokens.toLocaleString()}
                         </td>
-                        <td className="px-4 py-3 text-white font-medium">${(s.estimatedCostCents / 100).toFixed(2)}</td>
-                        <td className="px-4 py-3 text-gray-300">{s.chatMessages}</td>
-                        <td className="px-4 py-3 text-gray-300">{s.forumPosts}</td>
-                        <td className="px-4 py-3 text-gray-300">{s.videoCalls}</td>
-                        <td className="px-4 py-3 text-green-400 font-medium">${(s.tuitionRevenueCents / 100).toFixed(2)}</td>
-                        <td className="px-4 py-3 text-red-400">${(s.expensesCents / 100).toFixed(2)}</td>
-                        <td className={`px-4 py-3 font-medium ${s.netCents >= 0 ? "text-green-400" : "text-red-400"}`}>${(s.netCents / 100).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-foreground font-medium">${(s.estimatedCostCents / 100).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-foreground/80">{s.chatMessages}</td>
+                        <td className="px-4 py-3 text-foreground/80">{s.forumPosts}</td>
+                        <td className="px-4 py-3 text-foreground/80">{s.videoCalls}</td>
+                        <td className="px-4 py-3 text-success font-medium">${(s.tuitionRevenueCents / 100).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-destructive">${(s.expensesCents / 100).toFixed(2)}</td>
+                        <td className={`px-4 py-3 font-medium ${s.netCents >= 0 ? "text-success" : "text-destructive"}`}>${(s.netCents / 100).toFixed(2)}</td>
                         <td className="px-4 py-3">
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 text-xs border-gray-600 text-gray-300 hover:bg-gray-700"
+                            className="h-7 text-xs border-input text-foreground/80 hover:bg-muted"
                             onClick={() => openUsageDrilldown(s.schoolId, s.schoolName)}
                           >
                             By User
@@ -1887,7 +1891,7 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
                 {usageSchools.length === 0 && !usageLoading && (
-                  <p className="text-gray-500 text-sm text-center py-8">No usage recorded in this period.</p>
+                  <p className="text-muted-foreground text-sm text-center py-8">No usage recorded in this period.</p>
                 )}
               </div>
             </div>
@@ -1896,11 +1900,11 @@ export default function SuperAdminDashboard() {
           {/* ARCHIVE */}
           {activeSection === "archive" && (
             <div>
-              {archiveLoading && <p className="text-gray-400">Loading...</p>}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              {archiveLoading && <LoadingRows />}
+              <div className="bg-card rounded-lg border border-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                    <tr className="text-muted-foreground border-b border-border bg-background/50">
                       <th className="text-left px-4 py-3">School Name</th>
                       <th className="text-left px-4 py-3">Deleted At</th>
                       <th className="text-left px-4 py-3">Days Remaining</th>
@@ -1909,14 +1913,14 @@ export default function SuperAdminDashboard() {
                   </thead>
                   <tbody>
                     {archive.map((entry) => (
-                      <tr key={entry.id} className={`border-b border-gray-700/50 hover:bg-gray-700/30 ${entry.expired ? "opacity-50" : ""}`}>
-                        <td className="px-4 py-3 text-white font-medium">{entry.schoolName}</td>
-                        <td className="px-4 py-3 text-gray-400">{new Date(entry.deletedAt).toLocaleDateString()}</td>
+                      <tr key={entry.id} className={`border-b border-border/60 hover:bg-muted/30 ${entry.expired ? "opacity-50" : ""}`}>
+                        <td className="px-4 py-3 text-foreground font-medium">{entry.schoolName}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{new Date(entry.deletedAt).toLocaleDateString()}</td>
                         <td className="px-4 py-3">
                           {entry.expired ? (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">Expired</span>
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Expired</span>
                           ) : (
-                            <span className={`font-semibold ${entry.daysRemaining < 7 ? "text-red-400" : "text-gray-300"}`}>
+                            <span className={`font-semibold ${entry.daysRemaining < 7 ? "text-destructive" : "text-foreground/80"}`}>
                               {entry.daysRemaining} days
                             </span>
                           )}
@@ -1925,7 +1929,7 @@ export default function SuperAdminDashboard() {
                           {!entry.expired && (
                             <Button
                               size="sm"
-                              className="h-7 text-xs bg-blue-800 hover:bg-blue-700 text-white"
+                              className="h-7 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
                               onClick={() => setRestoreDialog(entry)}
                             >
                               Restore
@@ -1937,7 +1941,7 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
                 {archive.length === 0 && !archiveLoading && (
-                  <p className="text-gray-500 text-sm text-center py-8">Archive is empty.</p>
+                  <p className="text-muted-foreground text-sm text-center py-8">Archive is empty.</p>
                 )}
               </div>
             </div>
@@ -1951,18 +1955,18 @@ export default function SuperAdminDashboard() {
                   type="date"
                   value={auditDateFrom}
                   onChange={(e) => setAuditDateFrom(e.target.value)}
-                  className="bg-gray-800 border-gray-700 text-white w-44"
+                  className="bg-card border-border text-foreground w-44"
                 />
                 <Input
                   type="date"
                   value={auditDateTo}
                   onChange={(e) => setAuditDateTo(e.target.value)}
-                  className="bg-gray-800 border-gray-700 text-white w-44"
+                  className="bg-card border-border text-foreground w-44"
                 />
                 <select
                   value={auditActionFilter}
                   onChange={(e) => setAuditActionFilter(e.target.value)}
-                  className="bg-gray-800 border border-gray-700 text-white rounded px-3 py-2 text-sm"
+                  className="bg-card border border-input text-foreground rounded-md px-3 py-2 text-sm"
                 >
                   <option value="all">All Actions</option>
                   <option value="school_deleted">school_deleted</option>
@@ -1973,15 +1977,15 @@ export default function SuperAdminDashboard() {
                   <option value="school_created">school_created</option>
                   <option value="role_changed">role_changed</option>
                 </select>
-                <Button onClick={fetchAuditLogs} className="bg-gray-700 hover:bg-gray-600 text-white">
+                <Button onClick={fetchAuditLogs} className="bg-muted hover:bg-muted-foreground/30 text-foreground">
                   Apply Filters
                 </Button>
               </div>
-              {auditLoading && <p className="text-gray-400">Loading...</p>}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              {auditLoading && <LoadingRows />}
+              <div className="bg-card rounded-lg border border-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-gray-400 border-b border-gray-700 bg-gray-900/50">
+                    <tr className="text-muted-foreground border-b border-border bg-background/50">
                       <th className="text-left px-4 py-3">Actor</th>
                       <th className="text-left px-4 py-3">Action</th>
                       <th className="text-left px-4 py-3">Target</th>
@@ -1992,26 +1996,26 @@ export default function SuperAdminDashboard() {
                   <tbody>
                     {auditLogs.map((log) => (
                       <>
-                        <tr key={log.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                          <td className="px-4 py-3 text-gray-300">{log.actor}</td>
+                        <tr key={log.id} className="border-b border-border/60 hover:bg-muted/30">
+                          <td className="px-4 py-3 text-foreground/80">{log.actor}</td>
                           <td className="px-4 py-3">
-                            <span className={`font-mono text-xs ${ACTION_COLORS[log.action] ?? "text-gray-300"}`}>{log.action}</span>
+                            <span className={`font-mono text-xs ${ACTION_COLORS[log.action] ?? "text-foreground/80"}`}>{log.action}</span>
                           </td>
-                          <td className="px-4 py-3 text-gray-300">{log.target}</td>
+                          <td className="px-4 py-3 text-foreground/80">{log.target}</td>
                           <td className="px-4 py-3">
                             <button
-                              className="text-xs text-blue-400 hover:text-blue-300"
+                              className="text-xs text-primary hover:text-primary"
                               onClick={() => setExpandedAudit(expandedAudit === log.id ? null : log.id)}
                             >
                               {expandedAudit === log.id ? "Hide" : "Show"}
                             </button>
                           </td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{new Date(log.timestamp).toLocaleString()}</td>
+                          <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(log.timestamp).toLocaleString()}</td>
                         </tr>
                         {expandedAudit === log.id && (
-                          <tr key={`${log.id}-detail`} className="bg-gray-900/60">
+                          <tr key={`${log.id}-detail`} className="bg-background/60">
                             <td colSpan={5} className="px-6 py-3">
-                              <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono">{log.details}</pre>
+                              <pre className="text-xs text-foreground/80 whitespace-pre-wrap font-mono">{log.details}</pre>
                             </td>
                           </tr>
                         )}
@@ -2020,7 +2024,7 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
                 {auditLogs.length === 0 && !auditLoading && (
-                  <p className="text-gray-500 text-sm text-center py-8">No audit logs found.</p>
+                  <EmptyState compact icon={FileText} title="No audit logs found" description="Try a different search or filter." className="m-4" />
                 )}
               </div>
             </div>
@@ -2029,7 +2033,7 @@ export default function SuperAdminDashboard() {
           {/* PLATFORM SETTINGS */}
           {activeSection === "platform-settings" && (
             <div>
-              {settingsLoading && <p className="text-gray-400">Loading...</p>}
+              {settingsLoading && <LoadingRows />}
               {settings && (
                 <div className="space-y-4 max-w-2xl">
                   <SettingNumberCard
@@ -2053,11 +2057,11 @@ export default function SuperAdminDashboard() {
                     onSave={() => handleSaveSetting("maxCoursesPerSchool", settings.maxCoursesPerSchool)}
                     saving={savingField === "maxCoursesPerSchool"}
                   />
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                  <div className="bg-card rounded-lg border border-border p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-white font-medium">Allow School Registration</p>
-                        <p className="text-xs text-gray-400 mt-0.5">Enable or disable new school sign-ups</p>
+                        <p className="text-foreground font-medium">Allow School Registration</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Enable or disable new school sign-ups</p>
                       </div>
                       <Switch
                         checked={settings.allowSchoolRegistration}
@@ -2066,18 +2070,18 @@ export default function SuperAdminDashboard() {
                     </div>
                     <Button
                       size="sm"
-                      className="bg-blue-700 hover:bg-blue-600 text-white"
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground"
                       onClick={() => handleSaveSetting("allowSchoolRegistration", settings.allowSchoolRegistration)}
                       disabled={savingField === "allowSchoolRegistration"}
                     >
                       {savingField === "allowSchoolRegistration" ? "Saving..." : "Save"}
                     </Button>
                   </div>
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                  <div className="bg-card rounded-lg border border-border p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-white font-medium">Maintenance Mode</p>
-                        <p className="text-xs text-gray-400 mt-0.5">Show maintenance page to all users</p>
+                        <p className="text-foreground font-medium">Maintenance Mode</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Show maintenance page to all users</p>
                       </div>
                       <Switch
                         checked={settings.maintenanceMode}
@@ -2090,12 +2094,12 @@ export default function SuperAdminDashboard() {
                         onChange={(e) => setSettings({ ...settings, maintenanceMessage: e.target.value })}
                         placeholder="Maintenance message shown to users..."
                         rows={3}
-                        className="w-full bg-gray-700 border border-gray-600 rounded text-white text-sm p-2 mb-3 resize-none"
+                        className="w-full bg-muted border border-input rounded text-foreground text-sm p-2 mb-3 resize-none"
                       />
                     )}
                     <Button
                       size="sm"
-                      className="bg-blue-700 hover:bg-blue-600 text-white"
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground"
                       onClick={() => handleSaveSetting("maintenanceMode", { mode: settings.maintenanceMode, message: settings.maintenanceMessage })}
                       disabled={savingField === "maintenanceMode"}
                     >
@@ -2110,40 +2114,40 @@ export default function SuperAdminDashboard() {
           {/* ADVANCED SETTINGS */}
           {activeSection === "advanced-settings" && (
             <div>
-              {advSettingsLoading && <p className="text-gray-400">Loading...</p>}
+              {advSettingsLoading && <LoadingRows />}
               {advSettings && (
                 <div className="space-y-6 max-w-2xl">
                   {/* Integrations status */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                    <p className="text-white font-medium mb-3 flex items-center gap-2">
+                  <div className="bg-card rounded-lg border border-border p-4">
+                    <p className="text-foreground font-medium mb-3 flex items-center gap-2">
                       <Bot size={16} /> Integrations
                     </p>
                     <div className="flex flex-wrap gap-3">
-                      <span className={`text-xs px-3 py-1.5 rounded-full border ${advSettings.integrations.smtpConfigured ? "bg-green-500/15 text-green-400 border-green-500/30" : "bg-gray-700 text-gray-400 border-gray-600"}`}>
+                      <span className={`text-xs px-3 py-1.5 rounded-full border ${advSettings.integrations.smtpConfigured ? "bg-success/10 text-success border-success/30" : "bg-muted text-muted-foreground border-input"}`}>
                         SMTP {advSettings.integrations.smtpConfigured ? "connected" : "not configured"}
                       </span>
-                      <span className={`text-xs px-3 py-1.5 rounded-full border ${advSettings.integrations.stripeConfigured ? "bg-green-500/15 text-green-400 border-green-500/30" : "bg-gray-700 text-gray-400 border-gray-600"}`}>
+                      <span className={`text-xs px-3 py-1.5 rounded-full border ${advSettings.integrations.stripeConfigured ? "bg-success/10 text-success border-success/30" : "bg-muted text-muted-foreground border-input"}`}>
                         Stripe {advSettings.integrations.stripeConfigured ? "connected" : "not configured"}
                       </span>
                     </div>
                   </div>
 
                   {/* General */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3">
-                    <p className="text-white font-medium flex items-center gap-2">
+                  <div className="bg-card rounded-lg border border-border p-4 space-y-3">
+                    <p className="text-foreground font-medium flex items-center gap-2">
                       <SlidersHorizontal size={16} /> General
                     </p>
                     <div>
-                      <label className="text-xs text-gray-400">Platform Name</label>
+                      <label className="text-xs text-muted-foreground">Platform Name</label>
                       <div className="flex gap-2 mt-1">
                         <Input
                           value={advSettings.platformName}
                           onChange={(e) => setAdvSettings({ ...advSettings, platformName: e.target.value })}
-                          className="bg-gray-700 border-gray-600 text-white"
+                          className="bg-muted border-input text-foreground"
                         />
                         <Button
                           size="sm"
-                          className="bg-blue-700 hover:bg-blue-600 text-white shrink-0"
+                          className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
                           onClick={() => handleSaveAdvSetting("platformName", advSettings.platformName)}
                           disabled={savingAdvField === "platformName"}
                         >
@@ -2152,17 +2156,17 @@ export default function SuperAdminDashboard() {
                       </div>
                     </div>
                     <div>
-                      <label className="text-xs text-gray-400">Support Email</label>
+                      <label className="text-xs text-muted-foreground">Support Email</label>
                       <div className="flex gap-2 mt-1">
                         <Input
                           value={advSettings.supportEmail}
                           onChange={(e) => setAdvSettings({ ...advSettings, supportEmail: e.target.value })}
                           placeholder="support@yourdomain.com"
-                          className="bg-gray-700 border-gray-600 text-white"
+                          className="bg-muted border-input text-foreground"
                         />
                         <Button
                           size="sm"
-                          className="bg-blue-700 hover:bg-blue-600 text-white shrink-0"
+                          className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
                           onClick={() => handleSaveAdvSetting("supportEmail", advSettings.supportEmail)}
                           disabled={savingAdvField === "supportEmail"}
                         >
@@ -2173,8 +2177,8 @@ export default function SuperAdminDashboard() {
                   </div>
 
                   {/* Security */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3">
-                    <p className="text-white font-medium flex items-center gap-2">
+                  <div className="bg-card rounded-lg border border-border p-4 space-y-3">
+                    <p className="text-foreground font-medium flex items-center gap-2">
                       <Lock size={16} /> Security
                     </p>
                     <SettingNumberCard
@@ -2193,8 +2197,8 @@ export default function SuperAdminDashboard() {
                     />
                     <div className="flex items-center justify-between pt-1">
                       <div>
-                        <p className="text-white text-sm">Require Email Verification</p>
-                        <p className="text-xs text-gray-400 mt-0.5">New accounts must verify email before accessing the platform</p>
+                        <p className="text-foreground text-sm">Require Email Verification</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">New accounts must verify email before accessing the platform</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <Switch
@@ -2209,8 +2213,8 @@ export default function SuperAdminDashboard() {
                   </div>
 
                   {/* Limits */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3">
-                    <p className="text-white font-medium flex items-center gap-2">
+                  <div className="bg-card rounded-lg border border-border p-4 space-y-3">
+                    <p className="text-foreground font-medium flex items-center gap-2">
                       <UploadCloud size={16} /> Limits
                     </p>
                     <SettingNumberCard
@@ -2230,17 +2234,17 @@ export default function SuperAdminDashboard() {
                   </div>
 
                   {/* Default features for new schools */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3">
-                    <p className="text-white font-medium flex items-center gap-2">
+                  <div className="bg-card rounded-lg border border-border p-4 space-y-3">
+                    <p className="text-foreground font-medium flex items-center gap-2">
                       <ToggleLeft size={16} /> Default Features for New Schools
                     </p>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-muted-foreground">
                       Applied to newly created schools. Doesn't affect existing schools (edit those from Schools -&gt; Feature Flags).
                     </p>
                     <div className="space-y-2">
                       {Object.entries(ADVANCED_FEATURE_LABELS).map(([key, label]) => (
                         <div key={key} className="flex items-center justify-between">
-                          <span className="text-sm text-gray-300">{label}</span>
+                          <span className="text-sm text-foreground/80">{label}</span>
                           <Switch
                             checked={advSettings.defaultEnabledFeatures[key] !== false}
                             onCheckedChange={(v) => {
@@ -2255,21 +2259,21 @@ export default function SuperAdminDashboard() {
                   </div>
 
                   {/* Email test */}
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3">
-                    <p className="text-white font-medium flex items-center gap-2">
+                  <div className="bg-card rounded-lg border border-border p-4 space-y-3">
+                    <p className="text-foreground font-medium flex items-center gap-2">
                       <Mail size={16} /> Send Test Email
                     </p>
-                    <p className="text-xs text-gray-400">Confirm SMTP is actually working without digging through server logs.</p>
+                    <p className="text-xs text-muted-foreground">Confirm SMTP is actually working without digging through server logs.</p>
                     <div className="flex gap-2">
                       <Input
                         value={testEmailTo}
                         onChange={(e) => setTestEmailTo(e.target.value)}
                         placeholder="you@example.com"
-                        className="bg-gray-700 border-gray-600 text-white"
+                        className="bg-muted border-input text-foreground"
                       />
                       <Button
                         size="sm"
-                        className="bg-blue-700 hover:bg-blue-600 text-white shrink-0"
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
                         onClick={handleSendTestEmail}
                         disabled={sendingTestEmail || !advSettings.integrations.smtpConfigured}
                       >
@@ -2277,7 +2281,7 @@ export default function SuperAdminDashboard() {
                       </Button>
                     </div>
                     {!advSettings.integrations.smtpConfigured && (
-                      <p className="text-xs text-amber-400">SMTP isn't configured on the server, so this will fail.</p>
+                      <p className="text-xs text-warning">SMTP isn't configured on the server, so this will fail.</p>
                     )}
                   </div>
                 </div>
@@ -2288,17 +2292,17 @@ export default function SuperAdminDashboard() {
           {/* PROFILE */}
           {activeSection === "profile" && (
             <div className="max-w-md">
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+              <div className="bg-card rounded-lg border border-border p-6">
                 <div className="flex items-center gap-4 mb-4">
-                  <div className="w-14 h-14 rounded-full bg-blue-700 flex items-center justify-center">
-                    <Shield size={28} className="text-white" />
+                  <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center">
+                    <Shield size={28} className="text-primary-foreground" aria-hidden="true" />
                   </div>
                   <div>
-                    <p className="text-white font-semibold text-lg">Super Admin</p>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-700 text-red-100">super_admin</span>
+                    <p className="text-foreground font-semibold text-lg">Super Admin</p>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-destructive text-destructive-foreground">super_admin</span>
                   </div>
                 </div>
-                <p className="text-gray-400 text-sm">You have full platform management access. Use this console to manage schools, users, and platform configuration.</p>
+                <p className="text-muted-foreground text-sm">You have full platform management access. Use this console to manage schools, users, and platform configuration.</p>
               </div>
             </div>
           )}
@@ -2310,19 +2314,19 @@ export default function SuperAdminDashboard() {
 
       {/* Toggle School */}
       <Dialog open={!!toggleSchoolDialog} onOpenChange={() => setToggleSchoolDialog(null)}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Confirm Status Change</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm">
+          <p className="text-foreground/80 text-sm">
             Are you sure you want to {toggleSchoolDialog?.status === "active" ? "deactivate" : "activate"}{" "}
             <strong>{toggleSchoolDialog?.name}</strong>?
           </p>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setToggleSchoolDialog(null)}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => setToggleSchoolDialog(null)}>
               Cancel
             </Button>
-            <Button className="bg-blue-700 hover:bg-blue-600 text-white" onClick={handleToggleSchool}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleToggleSchool}>
               Confirm
             </Button>
           </DialogFooter>
@@ -2331,17 +2335,17 @@ export default function SuperAdminDashboard() {
 
       {/* Edit Subscription */}
       <Dialog open={!!editSubscription} onOpenChange={() => setEditSubscription(null)}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Edit Subscription — {editSubscription?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Plan</label>
+              <label className="text-xs text-muted-foreground mb-1 block">Plan</label>
               <select
                 value={subscriptionForm.plan}
                 onChange={(e) => setSubscriptionForm((f) => ({ ...f, plan: e.target.value }))}
-                className="w-full bg-gray-900 border border-gray-700 text-white rounded px-3 py-2 text-sm"
+                className="w-full bg-background border border-input text-foreground rounded-md px-3 py-2 text-sm"
               >
                 <option value="free">Free</option>
                 <option value="basic">Basic</option>
@@ -2350,11 +2354,11 @@ export default function SuperAdminDashboard() {
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Status</label>
+              <label className="text-xs text-muted-foreground mb-1 block">Status</label>
               <select
                 value={subscriptionForm.subscription_status}
                 onChange={(e) => setSubscriptionForm((f) => ({ ...f, subscription_status: e.target.value }))}
-                className="w-full bg-gray-900 border border-gray-700 text-white rounded px-3 py-2 text-sm"
+                className="w-full bg-background border border-input text-foreground rounded-md px-3 py-2 text-sm"
               >
                 <option value="trialing">Trialing</option>
                 <option value="active">Active</option>
@@ -2363,31 +2367,31 @@ export default function SuperAdminDashboard() {
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Monthly Price (USD)</label>
+              <label className="text-xs text-muted-foreground mb-1 block">Monthly Price (USD)</label>
               <Input
                 type="number"
                 min="0"
                 step="0.01"
                 value={subscriptionForm.amount}
                 onChange={(e) => setSubscriptionForm((f) => ({ ...f, amount: e.target.value }))}
-                className="bg-gray-900 border-gray-700 text-white"
+                className="bg-background border-border text-foreground"
               />
             </div>
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Trial Ends</label>
+              <label className="text-xs text-muted-foreground mb-1 block">Trial Ends</label>
               <Input
                 type="date"
                 value={subscriptionForm.trialEndsAt}
                 onChange={(e) => setSubscriptionForm((f) => ({ ...f, trialEndsAt: e.target.value }))}
-                className="bg-gray-900 border-gray-700 text-white"
+                className="bg-background border-border text-foreground"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setEditSubscription(null)}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => setEditSubscription(null)}>
               Cancel
             </Button>
-            <Button className="bg-blue-700 hover:bg-blue-600 text-white" onClick={handleSaveSubscription} disabled={savingSubscription}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleSaveSubscription} disabled={savingSubscription}>
               {savingSubscription ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -2396,7 +2400,7 @@ export default function SuperAdminDashboard() {
 
       {/* Feature Flags */}
       <Dialog open={!!featureFlagsDialog} onOpenChange={() => setFeatureFlagsDialog(null)}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Feature Flags — {featureFlagsDialog?.name}</DialogTitle>
           </DialogHeader>
@@ -2411,7 +2415,7 @@ export default function SuperAdminDashboard() {
               { key: "tuition", label: "Tuition & Payments" },
             ].map((f) => (
               <div key={f.key} className="flex items-center justify-between py-1">
-                <span className="text-sm text-gray-300">{f.label}</span>
+                <span className="text-sm text-foreground/80">{f.label}</span>
                 <Switch
                   checked={featureFlagsDialog?.features[f.key] !== false}
                   onCheckedChange={(v) =>
@@ -2422,10 +2426,10 @@ export default function SuperAdminDashboard() {
             ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setFeatureFlagsDialog(null)}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => setFeatureFlagsDialog(null)}>
               Cancel
             </Button>
-            <Button className="bg-blue-700 hover:bg-blue-600 text-white" onClick={handleSaveFeatureFlags} disabled={savingFeatures}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleSaveFeatureFlags} disabled={savingFeatures}>
               {savingFeatures ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -2434,18 +2438,18 @@ export default function SuperAdminDashboard() {
 
       {/* Change Role */}
       <Dialog open={!!changeRoleUser} onOpenChange={() => setChangeRoleUser(null)}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Confirm Role Change</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm">
+          <p className="text-foreground/80 text-sm">
             Change role of <strong>{changeRoleUser?.user.name}</strong> to <strong>{changeRoleUser?.role}</strong>?
           </p>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setChangeRoleUser(null)}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => setChangeRoleUser(null)}>
               Cancel
             </Button>
-            <Button className="bg-blue-700 hover:bg-blue-600 text-white" onClick={handleChangeRole}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleChangeRole}>
               Confirm
             </Button>
           </DialogFooter>
@@ -2454,18 +2458,18 @@ export default function SuperAdminDashboard() {
 
       {/* Quick Delete Empty School */}
       <Dialog open={!!quickDeleteDialog} onOpenChange={() => setQuickDeleteDialog(null)}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Delete School</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm">
+          <p className="text-foreground/80 text-sm">
             Delete <strong>{quickDeleteDialog?.name}</strong>? This school has no students, teachers, or courses and will be permanently removed.
           </p>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setQuickDeleteDialog(null)}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => setQuickDeleteDialog(null)}>
               Cancel
             </Button>
-            <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleQuickDelete} disabled={quickDeleting}>
+            <Button className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleQuickDelete} disabled={quickDeleting}>
               {quickDeleting ? "Deleting…" : "Delete School"}
             </Button>
           </DialogFooter>
@@ -2477,11 +2481,11 @@ export default function SuperAdminDashboard() {
         open={!!directDeleteDialog}
         onOpenChange={() => { setDirectDeleteDialog(null); setDirectDeleteReason(""); }}
       >
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Delete &amp; Archive School</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm">
+          <p className="text-foreground/80 text-sm">
             Delete <strong>{directDeleteDialog?.name}</strong> and all its students, teachers, and courses?
             This is not permanent right away — it's archived and can be fully restored from the Archive tab
             within 30 days. After that, it's gone for good.
@@ -2491,17 +2495,17 @@ export default function SuperAdminDashboard() {
             onChange={(e) => setDirectDeleteReason(e.target.value)}
             placeholder="Reason (optional, kept in the audit log)..."
             rows={3}
-            className="w-full bg-gray-700 border border-gray-600 rounded text-white text-sm p-2 resize-none"
+            className="w-full bg-muted border border-input rounded text-foreground text-sm p-2 resize-none"
           />
           <DialogFooter>
             <Button
               variant="outline"
-              className="border-gray-600 text-gray-300"
+              className="border-input text-foreground/80"
               onClick={() => { setDirectDeleteDialog(null); setDirectDeleteReason(""); }}
             >
               Cancel
             </Button>
-            <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleDirectDelete} disabled={directDeleting}>
+            <Button className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleDirectDelete} disabled={directDeleting}>
               {directDeleting ? "Deleting…" : "Delete & Archive"}
             </Button>
           </DialogFooter>
@@ -2510,18 +2514,18 @@ export default function SuperAdminDashboard() {
 
       {/* Delete User */}
       <Dialog open={!!deleteUserDialog} onOpenChange={() => setDeleteUserDialog(null)}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Delete User</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm">
+          <p className="text-foreground/80 text-sm">
             Are you sure you want to permanently delete <strong>{deleteUserDialog?.name}</strong>? This cannot be undone.
           </p>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setDeleteUserDialog(null)}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => setDeleteUserDialog(null)}>
               Cancel
             </Button>
-            <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleDeleteUser}>
+            <Button className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleDeleteUser}>
               Delete
             </Button>
           </DialogFooter>
@@ -2530,18 +2534,18 @@ export default function SuperAdminDashboard() {
 
       {/* Approve Deletion Request */}
       <Dialog open={!!approveDialog} onOpenChange={() => setApproveDialog(null)}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Approve Deletion Request</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm">
+          <p className="text-foreground/80 text-sm">
             Approve the deletion request for <strong>{approveDialog?.school}</strong>? The school admin can then execute the deletion.
           </p>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setApproveDialog(null)}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => setApproveDialog(null)}>
               Cancel
             </Button>
-            <Button className="bg-green-700 hover:bg-green-600 text-white" onClick={handleApprove}>
+            <Button className="bg-success hover:bg-success/90 text-success-foreground" onClick={handleApprove}>
               Approve
             </Button>
           </DialogFooter>
@@ -2550,11 +2554,11 @@ export default function SuperAdminDashboard() {
 
       {/* Reject Deletion Request */}
       <Dialog open={!!rejectDialog} onOpenChange={() => { setRejectDialog(null); setRejectNotes(""); }}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Reject Deletion Request</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm mb-3">
+          <p className="text-foreground/80 text-sm mb-3">
             Reject the deletion request for <strong>{rejectDialog?.school}</strong>?
           </p>
           <textarea
@@ -2562,13 +2566,13 @@ export default function SuperAdminDashboard() {
             onChange={(e) => setRejectNotes(e.target.value)}
             placeholder="Review notes (required)..."
             rows={3}
-            className="w-full bg-gray-700 border border-gray-600 rounded text-white text-sm p-2 resize-none"
+            className="w-full bg-muted border border-input rounded text-foreground text-sm p-2 resize-none"
           />
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => { setRejectDialog(null); setRejectNotes(""); }}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => { setRejectDialog(null); setRejectNotes(""); }}>
               Cancel
             </Button>
-            <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleReject} disabled={!rejectNotes.trim()}>
+            <Button className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleReject} disabled={!rejectNotes.trim()}>
               Reject
             </Button>
           </DialogFooter>
@@ -2577,19 +2581,19 @@ export default function SuperAdminDashboard() {
 
       {/* Approve School Request */}
       <Dialog open={!!approveSchoolRequestDialog} onOpenChange={() => setApproveSchoolRequestDialog(null)}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Approve School Request</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm">
+          <p className="text-foreground/80 text-sm">
             Create <strong>"{approveSchoolRequestDialog?.suggestedSchoolName}"</strong> and make{" "}
             <strong>{approveSchoolRequestDialog?.requesterName}</strong> its admin? They'll be notified by email.
           </p>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setApproveSchoolRequestDialog(null)}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => setApproveSchoolRequestDialog(null)}>
               Cancel
             </Button>
-            <Button className="bg-green-700 hover:bg-green-600 text-white" onClick={handleApproveSchoolRequest} disabled={approvingSchoolRequest}>
+            <Button className="bg-success hover:bg-success/90 text-success-foreground" onClick={handleApproveSchoolRequest} disabled={approvingSchoolRequest}>
               {approvingSchoolRequest ? "Creating…" : "Approve & Create School"}
             </Button>
           </DialogFooter>
@@ -2601,11 +2605,11 @@ export default function SuperAdminDashboard() {
         open={!!rejectSchoolRequestDialog}
         onOpenChange={() => { setRejectSchoolRequestDialog(null); setRejectSchoolRequestNotes(""); }}
       >
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Reject School Request</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm mb-3">
+          <p className="text-foreground/80 text-sm mb-3">
             Reject the request for <strong>"{rejectSchoolRequestDialog?.suggestedSchoolName}"</strong>?
           </p>
           <textarea
@@ -2613,17 +2617,17 @@ export default function SuperAdminDashboard() {
             onChange={(e) => setRejectSchoolRequestNotes(e.target.value)}
             placeholder="Reason for the requester (optional)..."
             rows={3}
-            className="w-full bg-gray-700 border border-gray-600 rounded text-white text-sm p-2 resize-none"
+            className="w-full bg-muted border border-input rounded text-foreground text-sm p-2 resize-none"
           />
           <DialogFooter>
             <Button
               variant="outline"
-              className="border-gray-600 text-gray-300"
+              className="border-input text-foreground/80"
               onClick={() => { setRejectSchoolRequestDialog(null); setRejectSchoolRequestNotes(""); }}
             >
               Cancel
             </Button>
-            <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleRejectSchoolRequest} disabled={rejectingSchoolRequest}>
+            <Button className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleRejectSchoolRequest} disabled={rejectingSchoolRequest}>
               {rejectingSchoolRequest ? "Rejecting…" : "Reject"}
             </Button>
           </DialogFooter>
@@ -2632,16 +2636,16 @@ export default function SuperAdminDashboard() {
 
       {/* Usage drill-down: per-user breakdown for one school */}
       <Dialog open={!!usageDrilldown} onOpenChange={() => { setUsageDrilldown(null); setUsageDrilldownUsers(null); }}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white max-w-2xl">
+        <DialogContent className="bg-card border-border text-foreground max-w-2xl">
           <DialogHeader>
             <DialogTitle>Usage by User — {usageDrilldown?.schoolName}</DialogTitle>
           </DialogHeader>
           <div className="max-h-[60vh] overflow-y-auto">
-            {usageDrilldownLoading && <p className="text-gray-400 text-sm">Loading...</p>}
+            {usageDrilldownLoading && <LoadingRows rows={3} />}
             {!usageDrilldownLoading && (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-gray-400 border-b border-gray-700">
+                  <tr className="text-muted-foreground border-b border-border">
                     <th className="text-left px-2 py-2">User</th>
                     <th className="text-left px-2 py-2">Role</th>
                     <th className="text-left px-2 py-2">AI Msgs</th>
@@ -2653,25 +2657,25 @@ export default function SuperAdminDashboard() {
                 </thead>
                 <tbody>
                   {(usageDrilldownUsers ?? []).map((u) => (
-                    <tr key={u.userId} className="border-b border-gray-700/50">
-                      <td className="px-2 py-2 text-white">{u.userName}</td>
-                      <td className="px-2 py-2 text-gray-400 capitalize">{u.role ?? "—"}</td>
-                      <td className="px-2 py-2 text-gray-300">{u.aiMessages}</td>
-                      <td className="px-2 py-2 text-gray-300">${(u.estimatedCostCents / 100).toFixed(2)}</td>
-                      <td className="px-2 py-2 text-gray-300">{u.chatMessages}</td>
-                      <td className="px-2 py-2 text-gray-300">{u.forumPosts}</td>
-                      <td className="px-2 py-2 text-gray-300">{u.videoCalls}</td>
+                    <tr key={u.userId} className="border-b border-border/60">
+                      <td className="px-2 py-2 text-foreground">{u.userName}</td>
+                      <td className="px-2 py-2 text-muted-foreground capitalize">{u.role ?? "—"}</td>
+                      <td className="px-2 py-2 text-foreground/80">{u.aiMessages}</td>
+                      <td className="px-2 py-2 text-foreground/80">${(u.estimatedCostCents / 100).toFixed(2)}</td>
+                      <td className="px-2 py-2 text-foreground/80">{u.chatMessages}</td>
+                      <td className="px-2 py-2 text-foreground/80">{u.forumPosts}</td>
+                      <td className="px-2 py-2 text-foreground/80">{u.videoCalls}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
             {!usageDrilldownLoading && (usageDrilldownUsers ?? []).length === 0 && (
-              <p className="text-gray-500 text-sm text-center py-6">No usage recorded for this school in this period.</p>
+              <p className="text-muted-foreground text-sm text-center py-6">No usage recorded for this school in this period.</p>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => { setUsageDrilldown(null); setUsageDrilldownUsers(null); }}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => { setUsageDrilldown(null); setUsageDrilldownUsers(null); }}>
               Close
             </Button>
           </DialogFooter>
@@ -2680,18 +2684,18 @@ export default function SuperAdminDashboard() {
 
       {/* Execute Deletion */}
       <Dialog open={!!executeDeletionDialog} onOpenChange={() => setExecuteDeletionDialog(null)}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Execute School Deletion</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm">
+          <p className="text-foreground/80 text-sm">
             This will permanently delete <strong>{executeDeletionDialog?.school}</strong> and move it to the archive. Proceed?
           </p>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setExecuteDeletionDialog(null)}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => setExecuteDeletionDialog(null)}>
               Cancel
             </Button>
-            <Button className="bg-red-700 hover:bg-red-600 text-white" onClick={handleExecuteDeletion}>
+            <Button className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleExecuteDeletion}>
               Execute Deletion
             </Button>
           </DialogFooter>
@@ -2700,18 +2704,18 @@ export default function SuperAdminDashboard() {
 
       {/* Restore Archive */}
       <Dialog open={!!restoreDialog} onOpenChange={() => setRestoreDialog(null)}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
+        <DialogContent className="bg-card border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Restore School</DialogTitle>
           </DialogHeader>
-          <p className="text-gray-300 text-sm">
+          <p className="text-foreground/80 text-sm">
             Are you sure you want to restore <strong>{restoreDialog?.schoolName}</strong>?
           </p>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setRestoreDialog(null)}>
+            <Button variant="outline" className="border-input text-foreground/80" onClick={() => setRestoreDialog(null)}>
               Cancel
             </Button>
-            <Button className="bg-blue-700 hover:bg-blue-600 text-white" onClick={handleRestore}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleRestore}>
               Restore
             </Button>
           </DialogFooter>
@@ -2725,11 +2729,11 @@ export default function SuperAdminDashboard() {
 
 function StatCard({ icon, color, label, value }: { icon: React.ReactNode; color: string; label: string; value: number }) {
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex items-center gap-4">
+    <div className="bg-card rounded-lg border border-border p-4 flex items-center gap-4">
       <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${color}`}>{icon}</div>
       <div>
-        <p className="text-xs text-gray-400">{label}</p>
-        <p className="text-2xl font-bold text-white mt-0.5">{value.toLocaleString()}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-2xl font-bold text-foreground mt-0.5 tabular-nums">{value.toLocaleString()}</p>
       </div>
     </div>
   );
@@ -2737,15 +2741,15 @@ function StatCard({ icon, color, label, value }: { icon: React.ReactNode; color:
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
-    pending: "bg-yellow-900 text-yellow-300",
-    approved: "bg-green-900 text-green-300",
-    rejected: "bg-red-900 text-red-300",
-    requested: "bg-blue-900 text-blue-300",
-    verified: "bg-green-900 text-green-300",
-    failed: "bg-red-900 text-red-300",
+    pending: "bg-warning/10 text-warning",
+    approved: "bg-success/10 text-success",
+    rejected: "bg-destructive/10 text-destructive",
+    requested: "bg-primary/10 text-primary",
+    verified: "bg-success/10 text-success",
+    failed: "bg-destructive/10 text-destructive",
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full ${colors[status] ?? "bg-gray-700 text-gray-300"}`}>{status}</span>
+    <span className={`text-xs px-2 py-0.5 rounded-full ${colors[status] ?? "bg-muted text-foreground/80"}`}>{status}</span>
   );
 }
 
@@ -2763,19 +2767,19 @@ function SettingNumberCard({
   saving: boolean;
 }) {
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-      <p className="text-white font-medium mb-3">{label}</p>
+    <div className="bg-card rounded-lg border border-border p-4">
+      <p className="text-foreground font-medium mb-3">{label}</p>
       <div className="flex items-center gap-3">
         <Input
           type="number"
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-32 bg-gray-700 border-gray-600 text-white"
+          className="w-32 bg-muted border-input text-foreground"
           min={0}
         />
         <Button
           size="sm"
-          className="bg-blue-700 hover:bg-blue-600 text-white"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground"
           onClick={onSave}
           disabled={saving}
         >

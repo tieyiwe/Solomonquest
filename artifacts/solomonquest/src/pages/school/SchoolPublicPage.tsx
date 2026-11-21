@@ -360,13 +360,13 @@ function HeroCarousel({
       {/* Arrows */}
       {slides.length > 1 && (
         <>
-          <button
+          <button aria-label="Previous"
             onClick={prev_}
             className="absolute left-4 top-1/2 -translate-y-1/2 z-20 bg-black/40 hover:bg-black/60 text-white rounded-full p-2 transition-colors"
           >
             <ChevronLeft size={28} />
           </button>
-          <button
+          <button aria-label="Next"
             onClick={next}
             className="absolute right-4 top-1/2 -translate-y-1/2 z-20 bg-black/40 hover:bg-black/60 text-white rounded-full p-2 transition-colors"
           >

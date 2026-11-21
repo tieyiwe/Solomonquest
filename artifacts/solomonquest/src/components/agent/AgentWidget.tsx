@@ -123,7 +123,7 @@ function MarkdownLite({ content }: { content: string }) {
 
 function AgentAvatar() {
   return (
-    <div className="h-6 w-6 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center shrink-0 shadow-sm">
+    <div className="h-6 w-6 rounded-full bg-brand flex items-center justify-center shrink-0 shadow-sm">
       <Sparkles className="h-3 w-3 text-white" />
     </div>
   );
@@ -227,7 +227,7 @@ export function AgentWidget() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-20 md:bottom-6 right-4 md:right-24 z-40 h-14 w-14 rounded-full bg-gradient-to-br from-primary to-purple-500 text-white shadow-lg flex flex-col items-center justify-center gap-0.5 hover:scale-105 hover:shadow-xl transition-all duration-200"
+          className="fixed bottom-20 md:bottom-6 right-4 md:right-24 z-40 h-14 w-14 rounded-full bg-brand text-white shadow-lg flex flex-col items-center justify-center gap-0.5 hover:scale-105 hover:shadow-xl transition-all duration-200"
           title={`Chat with ${agentName}`}
         >
           <Sparkles className="h-4 w-4" />
@@ -237,8 +237,8 @@ export function AgentWidget() {
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-24 z-50 w-full md:w-96 h-[85vh] md:h-[600px] bg-white md:rounded-2xl shadow-2xl border border-black/5 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <div className="relative flex items-center justify-between px-4 py-3.5 shrink-0 bg-gradient-to-r from-primary to-purple-500 text-white overflow-hidden">
+        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-24 z-50 w-full md:w-96 h-[85vh] md:h-[600px] bg-card md:rounded-2xl shadow-2xl border border-black/5 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="relative flex items-center justify-between px-4 py-3.5 shrink-0 bg-brand text-white overflow-hidden">
             <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_20%_-20%,white,transparent_60%)]" />
             <div className="relative flex items-center gap-2.5">
               <div className="h-8 w-8 rounded-full bg-white/15 backdrop-blur flex items-center justify-center">
@@ -254,10 +254,10 @@ export function AgentWidget() {
             </button>
           </div>
 
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-gray-50/50 to-white">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-muted/30">
             {messages.length === 0 && (
               <div className="text-center text-sm text-muted-foreground mt-8 px-4">
-                <div className="h-12 w-12 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-primary/10 to-purple-500/10 flex items-center justify-center">
+                <div className="h-12 w-12 mx-auto mb-3 rounded-2xl bg-primary/10 flex items-center justify-center">
                   <Sparkles className="h-6 w-6 text-primary/60" />
                 </div>
                 <p className="leading-relaxed">
@@ -276,7 +276,7 @@ export function AgentWidget() {
                   className={`rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${
                     m.role === "user"
                       ? "bg-gradient-to-br from-primary to-primary/90 text-primary-foreground rounded-br-sm"
-                      : "bg-white border border-gray-100 text-gray-800 rounded-bl-sm"
+                      : "bg-card border border-border text-foreground rounded-bl-sm"
                   }`}
                 >
                   {m.role === "assistant" ? <MarkdownLite content={m.content} /> : (
@@ -288,7 +288,7 @@ export function AgentWidget() {
             {loading && (
               <div className="flex items-center gap-2 mr-auto">
                 <AgentAvatar />
-                <div className="rounded-2xl rounded-bl-sm bg-white border border-gray-100 px-3.5 py-2.5 shadow-sm flex items-center gap-1.5">
+                <div className="rounded-2xl rounded-bl-sm bg-card border border-border px-3.5 py-2.5 shadow-sm flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-bounce [animation-delay:-0.3s]" />
                   <span className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-bounce [animation-delay:-0.15s]" />
                   <span className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-bounce" />
@@ -296,12 +296,12 @@ export function AgentWidget() {
               </div>
             )}
             {pendingAction && (
-              <div className="mr-auto max-w-[92%] rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-orange-50/50 p-3.5 text-sm shadow-sm">
-                <p className="font-semibold text-amber-900 mb-1.5 flex items-center gap-1.5">
+              <div className="mr-auto max-w-[92%] rounded-2xl border border-warning/30 bg-gradient-to-br from-warning/10 to-gold/5 p-3.5 text-sm shadow-sm">
+                <p className="font-semibold text-warning mb-1.5 flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5" />
                   Confirm this action
                 </p>
-                <p className="text-amber-800/90 mb-3 leading-relaxed">{actionLabel(pendingAction)}</p>
+                <p className="text-warning mb-3 leading-relaxed">{actionLabel(pendingAction)}</p>
                 <div className="flex gap-2">
                   <Button size="sm" onClick={handleConfirmAction} disabled={actionLoading} className="shadow-sm">
                     {actionLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
@@ -316,20 +316,20 @@ export function AgentWidget() {
             )}
           </div>
 
-          <div className="p-3 border-t border-black/5 flex items-center gap-2 shrink-0 bg-white">
+          <div className="p-3 border-t border-black/5 flex items-center gap-2 shrink-0 bg-card">
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               placeholder={`Message ${agentName}...`}
               disabled={loading}
-              className="rounded-full border-gray-200 focus-visible:ring-primary/30"
+              className="rounded-full border-border focus-visible:ring-primary/30"
             />
-            <Button
+            <Button aria-label="Send"
               size="icon"
               onClick={handleSend}
               disabled={loading || !input.trim()}
-              className="rounded-full shrink-0 bg-gradient-to-br from-primary to-purple-500 hover:opacity-90"
+              className="rounded-full shrink-0 bg-brand hover:opacity-90"
             >
               <Send className="h-4 w-4" />
             </Button>

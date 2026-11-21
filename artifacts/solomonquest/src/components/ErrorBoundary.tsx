@@ -50,7 +50,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="min-h-screen flex items-center justify-center p-4">
           <div className="text-center max-w-sm">
-            <h1 className="text-xl font-semibold text-gray-900 mb-2">Something went wrong</h1>
+            <h1 className="text-xl font-semibold text-foreground mb-2">Something went wrong</h1>
             <p className="text-sm text-muted-foreground mb-6">
               This page couldn't load. This can happen after an app update — please refresh to continue.
             </p>

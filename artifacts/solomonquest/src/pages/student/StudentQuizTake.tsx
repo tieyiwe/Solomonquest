@@ -83,7 +83,7 @@ function TimerDisplay({ seconds }: { seconds: number }) {
         isDanger
           ? "bg-destructive/20 text-destructive animate-pulse"
           : isWarning
-          ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+          ? "bg-warning/10 text-warning  "
           : "bg-muted text-muted-foreground"
       )}
     >
@@ -113,7 +113,7 @@ function MultipleChoiceInput({
         const isCorrect = opt.is_correct;
         let optStyle = "border-border hover:border-primary/60 hover:bg-muted/40";
         if (showResults && result) {
-          if (isCorrect) optStyle = "border-green-500 bg-green-50 dark:bg-green-900/20";
+          if (isCorrect) optStyle = "border-success bg-success/10 ";
           else if (isSelected && !isCorrect) optStyle = "border-destructive bg-destructive/10";
         } else if (isSelected) {
           optStyle = "border-primary bg-primary/5";
@@ -139,7 +139,7 @@ function MultipleChoiceInput({
             />
             <span className="text-sm flex-1">{opt.text}</span>
             {showResults && result && isCorrect && (
-              <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
             )}
             {showResults && result && isSelected && !isCorrect && (
               <XCircle className="h-4 w-4 text-destructive shrink-0" />
@@ -181,7 +181,7 @@ function TrueFalseInput({
               "flex-1 py-4 rounded-xl border-2 text-sm font-semibold transition-all",
               showResults
                 ? isCorrect
-                  ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                  ? "border-success bg-success/10 text-success  "
                   : isWrong
                   ? "border-destructive bg-destructive/10 text-destructive"
                   : "border-border text-muted-foreground"
@@ -380,16 +380,16 @@ export default function StudentQuizTake() {
                 "h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4",
                 showScore
                   ? passed
-                    ? "bg-green-100 dark:bg-green-900/30"
-                    : "bg-orange-100 dark:bg-orange-900/30"
+                    ? "bg-success/10 "
+                    : "bg-warning/10 "
                   : "bg-primary/10"
               )}
             >
               {showScore ? (
                 passed ? (
-                  <Award className="h-10 w-10 text-green-600" />
+                  <Award className="h-10 w-10 text-success" />
                 ) : (
-                  <AlertTriangle className="h-10 w-10 text-orange-500" />
+                  <AlertTriangle className="h-10 w-10 text-warning" />
                 )
               ) : (
                 <CheckCircle2 className="h-10 w-10 text-primary" />
@@ -411,8 +411,8 @@ export default function StudentQuizTake() {
                   className={cn(
                     "text-sm px-4 py-1",
                     passed
-                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                      : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                      ? "bg-success/10 text-success  "
+                      : "bg-warning/10 text-warning  "
                   )}
                 >
                   {passed ? "Passed" : "Needs Improvement"}
@@ -439,7 +439,7 @@ export default function StudentQuizTake() {
                     className={cn(
                       "border-l-4",
                       qResult?.is_correct === true
-                        ? "border-l-green-500"
+                        ? "border-l-success"
                         : qResult?.is_correct === false
                         ? "border-l-destructive"
                         : "border-l-muted"
@@ -457,7 +457,7 @@ export default function StudentQuizTake() {
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-xs text-muted-foreground">{q.points} pts</span>
                             {qResult?.is_correct === true && (
-                              <span className="text-xs text-green-600 font-medium flex items-center gap-0.5">
+                              <span className="text-xs text-success font-medium flex items-center gap-0.5">
                                 <CheckCircle2 className="h-3 w-3" /> Correct
                               </span>
                             )}
@@ -498,11 +498,11 @@ export default function StudentQuizTake() {
                             <p className="text-sm">{userAnswer || "(no answer)"}</p>
                           </div>
                           {qResult?.correct_answer && (
-                            <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
-                              <p className="text-xs text-green-700 dark:text-green-400 mb-1 font-medium">
+                            <div className="bg-success/10 rounded-lg p-3">
+                              <p className="text-xs text-success mb-1 font-medium">
                                 Correct answer:
                               </p>
-                              <p className="text-sm text-green-800 dark:text-green-300">
+                              <p className="text-sm text-success ">
                                 {qResult.correct_answer}
                               </p>
                             </div>
@@ -510,11 +510,11 @@ export default function StudentQuizTake() {
                         </div>
                       )}
                       {(qResult?.explanation || q.explanation) && (
-                        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 mt-2">
-                          <p className="text-xs text-blue-700 dark:text-blue-400 font-medium mb-1">
+                        <div className="bg-primary/10 rounded-lg p-3 mt-2">
+                          <p className="text-xs text-primary font-medium mb-1">
                             Explanation:
                           </p>
-                          <p className="text-sm text-blue-800 dark:text-blue-300">
+                          <p className="text-sm text-primary ">
                             {qResult?.explanation || q.explanation}
                           </p>
                         </div>
@@ -592,7 +592,7 @@ export default function StudentQuizTake() {
 
               {attemptInfo && attemptInfo.attempts_used > 0 && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">
-                  <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
+                  <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
                   You have used {attemptInfo.attempts_used} attempt
                   {attemptInfo.attempts_used !== 1 ? "s" : ""}.
                   {attemptInfo.remaining_attempts != null &&
@@ -601,7 +601,7 @@ export default function StudentQuizTake() {
               )}
 
               {quiz.time_limit_minutes && (
-                <div className="flex items-start gap-2 text-sm text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 rounded-lg px-4 py-3">
+                <div className="flex items-start gap-2 text-sm text-warning bg-warning/10 rounded-lg px-4 py-3">
                   <Clock className="h-4 w-4 shrink-0 mt-0.5" />
                   <p>
                     Once you start, the timer begins immediately and cannot be paused. Make sure you
@@ -689,7 +689,7 @@ export default function StudentQuizTake() {
                     idx === currentIndex
                       ? "bg-primary text-primary-foreground border-primary"
                       : answers[q.id]
-                      ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700"
+                      ? "bg-success/10 text-success border-success/30   "
                       : "bg-background border-border hover:bg-muted/50"
                   )}
                 >

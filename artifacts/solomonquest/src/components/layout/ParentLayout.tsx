@@ -24,13 +24,13 @@ export function ParentLayout({ children }: ParentLayoutProps) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="h-16 border-b bg-card flex items-center justify-between px-4 sticky top-0 z-10">
+      <header className="h-16 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 flex items-center justify-between gap-3 px-4 md:px-6 sticky top-0 z-20">
         <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
-            <GraduationCap className="h-4 w-4 text-primary-foreground" />
+          <div className="h-8 w-8 rounded-lg bg-brand flex items-center justify-center shrink-0 shadow-sm" aria-hidden="true">
+            <GraduationCap className="h-4 w-4 text-gold" />
           </div>
           <Link href="/dashboard/parent">
-            <span className="text-base font-bold text-primary tracking-tight">SolomonQuest</span>
+            <span className="text-base font-bold text-foreground tracking-tight">SolomonQuest</span>
           </Link>
         </div>
 
@@ -52,13 +52,13 @@ export function ParentLayout({ children }: ParentLayoutProps) {
             </div>
           </div>
           <ProfileMenu />
-          <Button variant="ghost" size="icon" onClick={signOut} title="Sign Out">
+          <Button variant="ghost" size="icon" onClick={signOut} title="Sign Out" aria-label="Sign out">
             <LogOut className="h-5 w-5 text-muted-foreground" />
           </Button>
         </div>
       </header>
 
-      <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background max-w-5xl w-full mx-auto">
+      <main className="flex-1 px-4 py-5 md:p-6 lg:p-8 overflow-y-auto bg-background max-w-5xl w-full mx-auto">
         {children}
       </main>
 
