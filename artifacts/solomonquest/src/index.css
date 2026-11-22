@@ -469,3 +469,11 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .hero-kenburns, .hero-rise > *, .hero-progress { animation: none !important; }
 }
+
+/* Native-feeling horizontal swipe rows (home page on phones) */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar { display: none; }
+}
+.swipe-row { touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }

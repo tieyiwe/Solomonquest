@@ -20,7 +20,7 @@ export function PublicLayout({ children, showFeatured = false }: { children: Rea
 
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans">
-      <header className="border-b border-border/70 bg-background/90 backdrop-blur-md supports-[backdrop-filter]:bg-background/75 sticky top-0 z-30">
+      <header className="border-b border-border/70 bg-background/90 backdrop-blur-md supports-[backdrop-filter]:bg-background/75 sticky top-0 z-30 pt-[env(safe-area-inset-top,0px)]">
         <div className="container mx-auto max-w-6xl px-5 sm:px-6 h-16 md:h-[72px] flex items-center justify-between gap-3">
           <Link href="/" className="flex items-center gap-3 min-w-0 rounded-md">
             <span className="h-9 w-9 rounded-full bg-brand text-gold ring-1 ring-gold/40 flex items-center justify-center font-serif font-semibold text-lg shrink-0 shadow-sm" aria-hidden="true">S</span>
@@ -29,7 +29,8 @@ export function PublicLayout({ children, showFeatured = false }: { children: Rea
               <span className="hidden sm:block mt-1 text-[9px] text-muted-foreground tracking-[0.3em] uppercase">Powered by TIBLOGICS</span>
             </span>
           </Link>
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* On the home page, phones get these actions in the bottom bar instead. */}
+          <div className={`items-center gap-2 sm:gap-3 shrink-0 ${showFeatured ? "hidden sm:flex" : "flex"}`}>
             {!isLoading && (
               <>
                 {user ? (
@@ -52,7 +53,27 @@ export function PublicLayout({ children, showFeatured = false }: { children: Rea
         </div>
       </header>
       <main className="flex-1 flex flex-col">{children}</main>
-      <footer className="bg-[hsl(224_50%_5%)] text-[hsl(40_20%_88%)] mt-auto">
+      {showFeatured && !isLoading && (
+        <div className="sm:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/90 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 pb-[env(safe-area-inset-bottom,0px)]">
+          <div className="flex gap-2.5 px-4 py-3">
+            {user ? (
+              <Button onClick={handleDashboardRedirect} className="flex-1 h-12 text-base active:scale-[0.98] transition-transform">
+                Go to Dashboard
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" asChild className="flex-1 h-12 text-base active:scale-[0.98] transition-transform">
+                  <Link href="/auth/login">Sign In</Link>
+                </Button>
+                <Button asChild className="flex-1 h-12 text-base bg-gold text-gold-foreground border-gold hover:bg-gold/90 active:scale-[0.98] transition-transform">
+                  <Link href="/auth/register">Get Started</Link>
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      <footer className={`bg-[hsl(224_50%_5%)] text-[hsl(40_20%_88%)] mt-auto ${showFeatured ? "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))] sm:pb-0" : ""}`}>
         <div className="container mx-auto max-w-6xl px-5 sm:px-6 py-14 grid gap-10 md:grid-cols-3">
           <div className="space-y-3">
             <p className="font-serif text-2xl font-semibold text-[hsl(40_30%_97%)]">SolomonQuest</p>

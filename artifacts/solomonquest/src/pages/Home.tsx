@@ -180,15 +180,15 @@ export default function Home() {
       <HeroSlideshow slides={slides} />
 
       {/* ── HSMM feature ─────────────────────────────────────────────────── */}
-      <section id="hsmm" className="relative py-24 md:py-32 bg-background scroll-mt-16">
+      <section id="hsmm" className="relative py-16 sm:py-24 md:py-32 bg-background scroll-mt-16">
         <div className="container mx-auto max-w-6xl px-5 sm:px-6">
           <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-14 lg:gap-20 items-center">
             <div className="relative order-2 lg:order-1">
-              <div className="relative aspect-square max-w-[460px] mx-auto rounded-[28px] bg-brand overflow-hidden shadow-2xl ring-1 ring-black/5">
+              <div className="relative aspect-square max-w-[300px] sm:max-w-[460px] mx-auto rounded-[24px] sm:rounded-[28px] bg-brand overflow-hidden shadow-2xl ring-1 ring-black/5">
                 <div aria-hidden="true" className="absolute inset-0 hero-grain opacity-[0.06] mix-blend-overlay" />
                 <div aria-hidden="true" className="absolute -bottom-24 -left-24 h-80 w-80 rounded-full bg-[radial-gradient(circle,hsl(39_55%_62%/0.22),transparent_65%)]" />
                 <div className="absolute inset-0 flex items-center justify-center p-10">
-                  <HsmmCrest className="w-full h-full max-w-[340px]" />
+                  <HsmmCrest className="w-full max-w-[340px] aspect-square" />
                 </div>
               </div>
               <div className="hidden sm:flex absolute -bottom-6 -right-2 lg:-right-8 items-center gap-3 rounded-2xl bg-card px-5 py-4 shadow-xl ring-1 ring-border">
@@ -212,9 +212,9 @@ export default function Home() {
                 and the call to missions. Through SolomonQuest, its students learn, connect, and grow, from their first application to
                 their final course.
               </p>
-              <ul className="grid sm:grid-cols-3 gap-5 pt-2">
+              <ul className="flex sm:grid sm:grid-cols-3 gap-4 sm:gap-5 pt-2 overflow-x-auto sm:overflow-visible snap-x snap-mandatory scroll-px-5 sm:scroll-px-0 no-scrollbar swipe-row -mx-5 px-5 sm:mx-0 sm:px-0">
                 {hsmmPillars.map(({ icon: Icon, title, body }) => (
-                  <li key={title} className="space-y-2.5 border-t border-gold/40 pt-4">
+                  <li key={title} className="snap-start shrink-0 w-[72%] sm:w-auto space-y-2.5 border-t border-gold/40 pt-4">
                     <Icon className="h-5 w-5 text-[hsl(36_48%_36%)] dark:text-gold" aria-hidden="true" />
                     <p className="font-serif text-xl font-semibold text-foreground leading-snug">{title}</p>
                     <p className="text-sm text-muted-foreground leading-relaxed">{body}</p>
@@ -241,7 +241,7 @@ export default function Home() {
       </section>
 
       {/* ── Scripture band ───────────────────────────────────────────────── */}
-      <section className="relative bg-brand text-[hsl(40_30%_97%)] py-20 md:py-24 overflow-hidden">
+      <section className="relative bg-brand text-[hsl(40_30%_97%)] py-14 sm:py-20 md:py-24 overflow-hidden">
         <div aria-hidden="true" className="absolute inset-0 hero-grain opacity-[0.06] mix-blend-overlay" />
         <figure className="relative container mx-auto max-w-4xl px-5 sm:px-6 text-center space-y-6">
           <span aria-hidden="true" className="block font-serif text-7xl leading-none text-gold/80">&ldquo;</span>
@@ -253,7 +253,7 @@ export default function Home() {
       </section>
 
       {/* ── Platform pillars ─────────────────────────────────────────────── */}
-      <section className="py-24 md:py-32 bg-background">
+      <section className="py-16 sm:py-24 md:py-32 bg-background">
         <div className="container mx-auto max-w-6xl px-5 sm:px-6">
           <div className="max-w-2xl space-y-5 mb-14 md:mb-20">
             <SectionEyebrow>The Platform</SectionEyebrow>
@@ -261,9 +261,9 @@ export default function Home() {
               Everything a school needs, crafted with restraint.
             </h2>
           </div>
-          <div className="grid md:grid-cols-3 gap-px bg-border rounded-2xl overflow-hidden ring-1 ring-border">
+          <div className="flex md:grid md:grid-cols-3 gap-3 md:gap-px md:bg-border md:rounded-2xl md:overflow-hidden md:ring-1 md:ring-border overflow-x-auto md:overflow-visible snap-x snap-mandatory scroll-px-5 md:scroll-px-0 no-scrollbar swipe-row -mx-5 px-5 md:mx-0 md:px-0 pb-1">
             {pillars.map(({ icon: Icon, n, title, body }) => (
-              <div key={title} className="group bg-card p-8 md:p-10 space-y-5 transition-colors hover:bg-accent/40">
+              <div key={title} className="group snap-start shrink-0 w-[82%] md:w-auto bg-card p-7 md:p-10 space-y-5 rounded-2xl md:rounded-none ring-1 ring-border md:ring-0 transition-colors hover:bg-accent/40">
                 <div className="flex items-center justify-between">
                   <span className="font-serif text-3xl text-[hsl(36_48%_36%)] dark:text-gold tabular">{n}</span>
                   <Icon className="h-6 w-6 text-foreground/70 group-hover:text-foreground transition-colors" aria-hidden="true" />
@@ -277,7 +277,7 @@ export default function Home() {
       </section>
 
       {/* ── Explore schools ──────────────────────────────────────────────── */}
-      <section id="explore" className="py-24 md:py-28 bg-muted/50 border-y border-border scroll-mt-16">
+      <section id="explore" className="py-16 sm:py-24 md:py-28 bg-muted/50 border-y border-border scroll-mt-16">
         <div className="container mx-auto max-w-6xl px-5 sm:px-6">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-12">
             <div className="space-y-4">
@@ -304,12 +304,12 @@ export default function Home() {
               ))}
             </div>
           ) : hsmm || otherSchools.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 overflow-x-auto md:overflow-visible snap-x snap-mandatory scroll-px-5 md:scroll-px-0 no-scrollbar swipe-row -mx-5 px-5 md:mx-0 md:px-0 pb-3">
               {[...(hsmm ? [hsmm] : []), ...otherSchools].map((school) => {
                 const featured = school.id === hsmm?.id;
                 const banner = (school as { bannerUrl?: string | null }).bannerUrl;
                 return (
-                  <Link key={school.id} href={`/${school.slug}`} className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <Link key={school.id} href={`/${school.slug}`} className="group block snap-start shrink-0 w-[82%] md:w-auto active:scale-[0.98] transition-transform rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     <article
                       className={`h-full rounded-2xl overflow-hidden bg-card ring-1 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl ${
                         featured ? "ring-gold/60 shadow-lg" : "ring-border"
@@ -371,7 +371,7 @@ export default function Home() {
       <section className="relative bg-brand text-[hsl(40_30%_97%)] overflow-hidden">
         <div aria-hidden="true" className="absolute inset-0 hero-grain opacity-[0.06] mix-blend-overlay" />
         <div aria-hidden="true" className="absolute -top-32 right-0 h-96 w-96 rounded-full bg-[radial-gradient(circle,hsl(39_55%_62%/0.18),transparent_65%)]" />
-        <div className="relative container mx-auto max-w-6xl px-5 sm:px-6 py-20 md:py-24 grid md:grid-cols-[1.4fr_1fr] gap-10 items-center">
+        <div className="relative container mx-auto max-w-6xl px-5 sm:px-6 py-14 sm:py-20 md:py-24 grid md:grid-cols-[1.4fr_1fr] gap-8 sm:gap-10 items-center">
           <div className="space-y-5">
             <SectionEyebrow onDark>Begin</SectionEyebrow>
             <h2 className="font-serif text-4xl sm:text-5xl font-semibold leading-[1.08] tracking-tight text-balance">

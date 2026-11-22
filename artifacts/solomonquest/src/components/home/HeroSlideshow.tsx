@@ -45,6 +45,22 @@ export function HeroSlideshow({ slides }: { slides: HeroSlide[] }) {
     return () => window.clearTimeout(t);
   }, [autoplay, index, go]);
 
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    // Horizontal, deliberate swipes only, so vertical page scrolling never flips slides.
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) go(index + (dx < 0 ? 1 : -1));
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowRight") go(index + 1);
     if (e.key === "ArrowLeft") go(index - 1);
@@ -55,7 +71,9 @@ export function HeroSlideshow({ slides }: { slides: HeroSlide[] }) {
       ref={rootRef}
       aria-roledescription="carousel"
       aria-label="Highlights"
-      className="relative isolate overflow-hidden bg-brand text-[hsl(40_30%_97%)] min-h-[560px] md:min-h-[640px] lg:min-h-[700px] flex"
+      className="relative isolate overflow-hidden bg-brand text-[hsl(40_30%_97%)] min-h-[max(520px,calc(100svh-8.75rem-env(safe-area-inset-bottom,0px)))] sm:min-h-[560px] md:min-h-[640px] lg:min-h-[700px] flex"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
@@ -88,7 +106,7 @@ export function HeroSlideshow({ slides }: { slides: HeroSlide[] }) {
             <div aria-hidden="true" className="absolute -top-40 -right-40 h-[520px] w-[520px] rounded-full bg-[radial-gradient(circle,hsl(39_55%_62%/0.18),transparent_65%)]" />
             <div aria-hidden="true" className="absolute inset-0 hero-grain opacity-[0.07] mix-blend-overlay" />
 
-            <div className="relative z-10 container mx-auto max-w-6xl px-5 sm:px-6 flex items-center pt-20 pb-32 md:py-28 w-full">
+            <div className="relative z-10 container mx-auto max-w-6xl px-5 sm:px-6 flex items-end sm:items-center pt-16 pb-28 sm:pt-20 sm:pb-32 md:py-28 w-full">
               <div className="grid lg:grid-cols-[1.25fr_0.75fr] gap-12 items-center w-full">
                 <div className={`max-w-2xl space-y-6 ${active && !reducedMotion ? "hero-rise" : ""}`}>
                   <div className="space-y-2.5">
@@ -116,7 +134,7 @@ export function HeroSlideshow({ slides }: { slides: HeroSlide[] }) {
       })}
 
       {slides.length > 1 && (
-        <div className="absolute bottom-6 sm:bottom-8 inset-x-0 z-20">
+        <div className="absolute bottom-[calc(1.25rem+env(safe-area-inset-bottom,0px))] sm:bottom-8 inset-x-0 z-20">
           <div className="container mx-auto max-w-6xl px-5 sm:px-6 flex items-center justify-between gap-6">
             <div className="flex items-center gap-2 sm:gap-3" role="tablist" aria-label="Choose slide">
               {slides.map((s, i) => (
@@ -127,9 +145,9 @@ export function HeroSlideshow({ slides }: { slides: HeroSlide[] }) {
                   aria-selected={i === index}
                   aria-label={`Show slide ${i + 1}: ${s.eyebrow}`}
                   onClick={() => go(i)}
-                  className="group relative h-8 flex items-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  className="group relative h-11 sm:h-8 flex items-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
-                  <span className="block h-[2px] w-10 sm:w-16 bg-white/20 overflow-hidden rounded-full">
+                  <span className="block h-[3px] sm:h-[2px] w-12 sm:w-16 bg-white/20 overflow-hidden rounded-full">
                     <span
                       key={i === index ? `active-${index}` : `idle-${i}`}
                       className={`block h-full bg-gold origin-left ${
@@ -150,7 +168,7 @@ export function HeroSlideshow({ slides }: { slides: HeroSlide[] }) {
                 {String(index + 1).padStart(2, "0")} / {String(slides.length).padStart(2, "0")}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => go(index - 1)}
