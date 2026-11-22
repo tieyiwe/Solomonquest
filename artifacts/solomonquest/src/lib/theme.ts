@@ -25,7 +25,7 @@ export function applyTheme(pref: ThemePreference = getThemePreference()) {
   const dark = pref === "dark" || (pref === "system" && systemPrefersDark());
   document.documentElement.classList.toggle("dark", !!dark);
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", dark ? "#0e121b" : "#2733a5");
+  if (meta) meta.setAttribute("content", dark ? "#0e121b" : "#141d33");
 }
 
 export function setThemePreference(pref: ThemePreference) {

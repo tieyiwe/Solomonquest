@@ -2,7 +2,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 
-export function PublicLayout({ children }: { children: React.ReactNode }) {
+export function PublicLayout({ children, showFeatured = false }: { children: React.ReactNode; showFeatured?: boolean }) {
   const { user, isLoading } = useAuth();
   const [_, setLocation] = useLocation();
 
@@ -20,13 +20,13 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans">
-      <header className="border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 sticky top-0 z-30">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-3">
-          <Link href="/" className="flex items-center gap-2.5 min-w-0 rounded-md">
-            <span className="h-8 w-8 rounded-lg bg-brand text-gold flex items-center justify-center font-bold text-sm shrink-0 shadow-sm" aria-hidden="true">S</span>
-            <span className="flex flex-col leading-tight min-w-0">
-              <span className="text-lg font-bold text-foreground tracking-tight truncate">SolomonQuest</span>
-              <span className="hidden sm:block text-[10px] text-muted-foreground tracking-widest uppercase">Powered by TIBLOGICS</span>
+      <header className="border-b border-border/70 bg-background/90 backdrop-blur-md supports-[backdrop-filter]:bg-background/75 sticky top-0 z-30">
+        <div className="container mx-auto max-w-6xl px-5 sm:px-6 h-16 md:h-[72px] flex items-center justify-between gap-3">
+          <Link href="/" className="flex items-center gap-3 min-w-0 rounded-md">
+            <span className="h-9 w-9 rounded-full bg-brand text-gold ring-1 ring-gold/40 flex items-center justify-center font-serif font-semibold text-lg shrink-0 shadow-sm" aria-hidden="true">S</span>
+            <span className="flex flex-col leading-none min-w-0">
+              <span className="font-serif text-xl sm:text-[1.4rem] font-semibold text-foreground tracking-tight truncate">SolomonQuest</span>
+              <span className="hidden sm:block mt-1 text-[9px] text-muted-foreground tracking-[0.3em] uppercase">Powered by TIBLOGICS</span>
             </span>
           </Link>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -52,10 +52,35 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <main className="flex-1 flex flex-col">{children}</main>
-      <footer className="border-t py-8 bg-card mt-auto">
-        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground space-y-1">
-          <div>&copy; {new Date().getFullYear()} SolomonQuest LMS. Crafted for education.</div>
-          <div className="text-xs tracking-widest uppercase opacity-60">Powered by TIBLOGICS</div>
+      <footer className="bg-[hsl(224_50%_5%)] text-[hsl(40_20%_88%)] mt-auto">
+        <div className="container mx-auto max-w-6xl px-5 sm:px-6 py-14 grid gap-10 md:grid-cols-3">
+          <div className="space-y-3">
+            <p className="font-serif text-2xl font-semibold text-[hsl(40_30%_97%)]">SolomonQuest</p>
+            <p className="text-sm text-[hsl(40_20%_88%/0.7)] max-w-xs leading-relaxed">A refined learning platform for schools that take formation seriously.</p>
+          </div>
+          {showFeatured ? (
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold tracking-[0.28em] uppercase text-gold">Featured Institution</p>
+              <a href="/#hsmm" className="block font-serif text-xl text-[hsl(40_30%_97%)] hover:text-gold transition-colors">Harvest School of Ministries and Missions</a>
+              <p className="text-sm text-[hsl(40_20%_88%/0.7)]">HSMM: equipping for ministry and missions.</p>
+            </div>
+          ) : (
+            <div aria-hidden="true" className="hidden md:block" />
+          )}
+          <nav aria-label="Footer" className="space-y-3 md:justify-self-end">
+            <p className="text-[11px] font-semibold tracking-[0.28em] uppercase text-gold">Get started</p>
+            <ul className="space-y-2 text-sm">
+              <li><Link href="/auth/login" className="hover:text-gold transition-colors">Sign in</Link></li>
+              <li><Link href="/auth/register" className="hover:text-gold transition-colors">Create a school</Link></li>
+              <li><Link href="/onboarding/join" className="hover:text-gold transition-colors">Join a school</Link></li>
+            </ul>
+          </nav>
+        </div>
+        <div className="border-t border-white/10">
+          <div className="container mx-auto max-w-6xl px-5 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[hsl(40_20%_88%/0.55)]">
+            <span>&copy; {new Date().getFullYear()} SolomonQuest LMS. Crafted for education.</span>
+            <span className="tracking-[0.3em] uppercase">Powered by TIBLOGICS</span>
+          </div>
         </div>
       </footer>
     </div>

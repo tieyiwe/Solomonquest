@@ -140,8 +140,8 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
       name,
       slug,
       owner_id: req.userId,
-      primary_color: primaryColor ?? "#2733a5",
-      secondary_color: secondaryColor ?? "#B58F5E",
+      primary_color: primaryColor ?? "#141d33",
+      secondary_color: secondaryColor ?? "#c9a054",
       is_active: true,
     })
     .select()

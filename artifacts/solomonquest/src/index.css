@@ -112,55 +112,55 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  /* ── SolomonQuest brand: deep indigo + scholar's gold on cool slate ── */
-  --background: 220 20% 98%;
-  --foreground: 224 32% 12%;
-  --border: 220 15% 88%;
+  /* ── SolomonQuest brand: midnight navy + champagne gold on warm ivory ── */
+  --background: 40 30% 98%;
+  --foreground: 222 35% 11%;
+  --border: 36 16% 86%;
   --card: 0 0% 100%;
-  --card-foreground: 224 32% 12%;
-  --card-border: 220 15% 90%;
-  --sidebar: 234 48% 15%;
-  --sidebar-foreground: 228 30% 90%;
-  --sidebar-border: 234 34% 23%;
-  --sidebar-primary: 40 92% 50%;
-  --sidebar-primary-foreground: 234 48% 12%;
-  --sidebar-accent: 234 38% 23%;
-  --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-ring: 40 92% 50%;
+  --card-foreground: 222 35% 11%;
+  --card-border: 36 16% 88%;
+  --sidebar: 222 44% 11%;
+  --sidebar-foreground: 40 20% 88%;
+  --sidebar-border: 222 30% 19%;
+  --sidebar-primary: 39 52% 58%;
+  --sidebar-primary-foreground: 222 44% 10%;
+  --sidebar-accent: 222 32% 18%;
+  --sidebar-accent-foreground: 40 30% 97%;
+  --sidebar-ring: 39 52% 58%;
   --popover: 0 0% 100%;
-  --popover-foreground: 224 32% 12%;
-  --popover-border: 220 15% 88%;
-  --primary: 234 62% 40%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 220 20% 94%;
-  --secondary-foreground: 224 32% 16%;
-  --muted: 220 18% 95%;
-  --muted-foreground: 220 12% 40%;
-  /* --accent stays a subtle indigo tint: shadcn uses it for menu/hover states.
+  --popover-foreground: 222 35% 11%;
+  --popover-border: 36 16% 86%;
+  --primary: 222 44% 14%;
+  --primary-foreground: 40 30% 97%;
+  --secondary: 40 22% 94%;
+  --secondary-foreground: 222 35% 14%;
+  --muted: 40 18% 95%;
+  --muted-foreground: 222 10% 40%;
+  /* --accent stays a subtle champagne tint: shadcn uses it for menu/hover states.
      The brand gold lives in --gold (bg-gold, text-gold, border-gold). */
-  --accent: 232 60% 95%;
-  --accent-foreground: 234 62% 30%;
+  --accent: 40 35% 93%;
+  --accent-foreground: 222 44% 14%;
   /* Brand gold: highlights, achievements, active-nav indicator, key CTAs.
      Use as a fill (with text-gold-foreground) or an indicator, not as text on light surfaces. */
-  --gold: 40 92% 50%;
-  --gold-foreground: 30 70% 12%;
+  --gold: 39 52% 56%;
+  --gold-foreground: 222 44% 10%;
   --destructive: 0 72% 43%;
   --destructive-foreground: 0 0% 100%;
   --success: 152 72% 25%;
   --success-foreground: 0 0% 100%;
   --warning: 30 95% 30%;
   --warning-foreground: 0 0% 100%;
-  --input: 220 14% 82%;
-  --ring: 234 62% 48%;
-  --chart-1: 234 62% 48%;
-  --chart-2: 40 92% 50%;
-  --chart-3: 173 64% 36%;
-  --chart-4: 340 68% 52%;
-  --chart-5: 262 52% 58%;
-  --primary-rgb: 39, 51, 165;
+  --input: 36 14% 80%;
+  --ring: 39 52% 48%;
+  --chart-1: 217 45% 36%;
+  --chart-2: 39 52% 52%;
+  --chart-3: 168 40% 34%;
+  --chart-4: 352 48% 42%;
+  --chart-5: 215 14% 55%;
+  --primary-rgb: 20, 29, 51;
 
   --app-font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --app-font-serif: Georgia, serif;
+  --app-font-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
   --app-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --radius: .5rem; /* 8px */
   --shadow-2xs: 0px 1px 0px 0px hsl(224 32% 12% / 0.03);
@@ -215,47 +215,47 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 224 30% 8%;
-  --foreground: 220 20% 94%;
-  --border: 224 20% 20%;
-  --card: 224 25% 12%;
-  --card-foreground: 220 20% 94%;
-  --card-border: 224 20% 19%;
-  --sidebar: 226 32% 10%;
-  --sidebar-foreground: 222 20% 88%;
-  --sidebar-border: 224 22% 18%;
-  --sidebar-primary: 42 95% 58%;
-  --sidebar-primary-foreground: 30 70% 10%;
-  --sidebar-accent: 228 30% 18%;
-  --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-ring: 42 95% 58%;
-  --popover: 224 25% 13%;
-  --popover-foreground: 220 20% 94%;
-  --popover-border: 224 20% 22%;
-  --primary: 232 80% 72%;
-  --primary-foreground: 234 50% 12%;
-  --secondary: 224 20% 18%;
-  --secondary-foreground: 220 20% 92%;
-  --muted: 224 22% 16%;
-  --muted-foreground: 220 14% 68%;
-  --accent: 230 30% 20%;
-  --accent-foreground: 232 85% 86%;
-  --gold: 42 95% 58%;
-  --gold-foreground: 30 70% 10%;
+  --background: 222 38% 6%;
+  --foreground: 40 20% 93%;
+  --border: 222 22% 17%;
+  --card: 222 32% 9%;
+  --card-foreground: 40 20% 93%;
+  --card-border: 222 22% 16%;
+  --sidebar: 222 40% 5%;
+  --sidebar-foreground: 40 15% 85%;
+  --sidebar-border: 222 24% 14%;
+  --sidebar-primary: 39 55% 62%;
+  --sidebar-primary-foreground: 222 44% 8%;
+  --sidebar-accent: 222 28% 14%;
+  --sidebar-accent-foreground: 40 30% 97%;
+  --sidebar-ring: 39 55% 62%;
+  --popover: 222 32% 10%;
+  --popover-foreground: 40 20% 93%;
+  --popover-border: 222 22% 19%;
+  --primary: 39 55% 64%;
+  --primary-foreground: 222 44% 8%;
+  --secondary: 222 24% 15%;
+  --secondary-foreground: 40 20% 92%;
+  --muted: 222 24% 13%;
+  --muted-foreground: 40 8% 66%;
+  --accent: 222 26% 16%;
+  --accent-foreground: 39 60% 78%;
+  --gold: 39 55% 62%;
+  --gold-foreground: 222 44% 8%;
   --destructive: 0 82% 70%;
   --destructive-foreground: 0 50% 10%;
   --success: 152 55% 52%;
   --success-foreground: 152 60% 8%;
   --warning: 38 92% 58%;
   --warning-foreground: 30 70% 10%;
-  --input: 224 18% 26%;
-  --ring: 232 80% 72%;
-  --chart-1: 232 80% 72%;
-  --chart-2: 42 95% 58%;
-  --chart-3: 170 55% 50%;
-  --chart-4: 340 75% 68%;
-  --chart-5: 262 70% 76%;
-  --primary-rgb: 126, 142, 241;
+  --input: 222 20% 22%;
+  --ring: 39 55% 62%;
+  --chart-1: 214 55% 64%;
+  --chart-2: 39 55% 62%;
+  --chart-3: 168 40% 52%;
+  --chart-4: 352 55% 66%;
+  --chart-5: 215 14% 68%;
+  --primary-rgb: 214, 178, 113;
 
   --shadow-2xs: 0px 1px 0px 0px hsl(0 0% 0% / 0.2);
   --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.3);
@@ -415,11 +415,11 @@
   }
 }
 
-/* Deep-indigo brand surface that stays dark in both themes, so white text on it
+/* Midnight brand surface that stays dark in both themes, so ivory/gold text on it
    always passes contrast (heroes, AI assistant header, call-to-action banners). */
 @utility bg-brand {
-  background-color: hsl(234 62% 34%);
-  background-image: linear-gradient(135deg, hsl(234 62% 38%) 0%, hsl(238 58% 26%) 100%);
+  background-color: hsl(222 44% 11%);
+  background-image: radial-gradient(120% 80% at 85% 0%, hsl(222 38% 20%) 0%, transparent 60%), linear-gradient(160deg, hsl(222 42% 14%) 0%, hsl(224 50% 6%) 100%);
 }
 
 /* Money / numeric columns line up */
@@ -442,4 +442,30 @@ html, body {
 /* Content area offset when bottom nav is shown */
 .has-bottom-nav {
   padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* ─── Home hero slideshow ─────────────────────────────────────────────────── */
+@keyframes hero-kenburns {
+  from { transform: scale(1.04) translate3d(0, 0, 0); }
+  to   { transform: scale(1.14) translate3d(-1.5%, -1%, 0); }
+}
+@keyframes hero-rise {
+  from { opacity: 0; transform: translate3d(0, 18px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes hero-progress {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+.hero-kenburns { animation: hero-kenburns 9s ease-out forwards; will-change: transform; }
+.hero-rise > * { animation: hero-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.hero-rise > *:nth-child(2) { animation-delay: 0.08s; }
+.hero-rise > *:nth-child(3) { animation-delay: 0.16s; }
+.hero-rise > *:nth-child(4) { animation-delay: 0.24s; }
+.hero-progress { animation-name: hero-progress; animation-timing-function: linear; animation-fill-mode: forwards; width: 0%; }
+.hero-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-kenburns, .hero-rise > *, .hero-progress { animation: none !important; }
 }

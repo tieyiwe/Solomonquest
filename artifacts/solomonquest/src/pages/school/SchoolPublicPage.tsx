@@ -430,8 +430,8 @@ export default function SchoolPublicPage() {
 
   // Derived values — prefer branding JSONB for rich fields, fall back to individual columns
   const b = school?.branding ?? {};
-  const primaryColor = (b.primary_color as string) ?? school?.primary_color ?? school?.primaryColor ?? "#6366f1";
-  const secondaryColor = (b.secondary_color as string) ?? school?.secondary_color ?? school?.secondaryColor ?? "#8b5cf6";
+  const primaryColor = (b.primary_color as string) ?? school?.primary_color ?? school?.primaryColor ?? "#141d33";
+  const secondaryColor = (b.secondary_color as string) ?? school?.secondary_color ?? school?.secondaryColor ?? "#c9a054";
   const accentColor = (b.accent_color as string) ?? "#f59e0b";
   const headingFont = (b.heading_font as string) ?? school?.heading_font ?? school?.headingFont;
   const headingColor = (b.heading_text_color as string) ?? school?.heading_color ?? school?.headingColor;

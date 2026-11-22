@@ -28,11 +28,11 @@ function getTransporter(): Transporter | null {
 
 const FROM = process.env.SMTP_FROM ?? 'SolomonQuest <solomonquest@tilogics.com>';
 
-// Brand colors (match the web app theme). PRIMARY = deep indigo hsl(234 62% 40%).
-// ACCENT = the brand gold, deepened to #a16207 so the white button text on it
-// passes WCAG AA (4.9:1); the bright UI gold #f5a70a is only 2:1 with white.
-const PRIMARY = '#2733a5';
-const ACCENT = '#a16207';
+// Brand colors (match the web app theme). PRIMARY = midnight navy hsl(222 44% 14%).
+// ACCENT = the champagne gold, deepened to #84602a so white button text on it
+// passes WCAG AA (5.7:1); the UI gold #c9a054 is too light for white text.
+const PRIMARY = '#141d33';
+const ACCENT = '#84602a';
 
 // Every template below interpolates user-controlled text (names, school and
 // course titles, forum topic titles, broadcast messages, notification
