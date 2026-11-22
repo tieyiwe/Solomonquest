@@ -4,6 +4,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 export interface HeroSlide {
   id: string;
   eyebrow: string;
+  /** Optional line shown right under the eyebrow (e.g. who the platform is by). */
+  byline?: ReactNode;
   title: ReactNode;
   body: string;
   /** Optional photo. Each slide is designed to look finished without one, so a
@@ -89,10 +91,15 @@ export function HeroSlideshow({ slides }: { slides: HeroSlide[] }) {
             <div className="relative z-10 container mx-auto max-w-6xl px-5 sm:px-6 flex items-center pt-20 pb-32 md:py-28 w-full">
               <div className="grid lg:grid-cols-[1.25fr_0.75fr] gap-12 items-center w-full">
                 <div className={`max-w-2xl space-y-6 ${active && !reducedMotion ? "hero-rise" : ""}`}>
-                  <p className="flex items-center gap-3 text-[11px] sm:text-xs font-semibold tracking-[0.28em] uppercase text-gold">
-                    <span aria-hidden="true" className="h-px w-10 bg-gold/70" />
-                    {slide.eyebrow}
-                  </p>
+                  <div className="space-y-2.5">
+                    <p className="flex items-center gap-3 text-[11px] sm:text-xs font-semibold tracking-[0.28em] uppercase text-gold">
+                      <span aria-hidden="true" className="h-px w-10 bg-gold/70" />
+                      {slide.eyebrow}
+                    </p>
+                    {slide.byline && (
+                      <p className="pl-[52px] font-serif italic text-base sm:text-lg text-[hsl(40_20%_88%/0.85)]">{slide.byline}</p>
+                    )}
+                  </div>
                   <h2 className="font-serif font-semibold text-[2.6rem] leading-[1.05] sm:text-6xl lg:text-7xl tracking-tight text-balance">
                     {slide.title}
                   </h2>

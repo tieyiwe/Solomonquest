@@ -51,7 +51,7 @@ export default function Home() {
     setPageMeta({
       title: "Home",
       description:
-        "SolomonQuest is a refined learning platform for schools, home of Harvest School of Ministries and Missions (HSMM).",
+        "SolomonQuest is a learning management platform by Harvest School of Ministries and Missions (HSMM).",
     });
   }, []);
 
@@ -69,6 +69,36 @@ export default function Home() {
   const otherSchools = (schools ?? []).filter((s) => s.id !== hsmm?.id);
 
   const slides: HeroSlide[] = [
+    {
+      id: "platform",
+      eyebrow: "SolomonQuest LMS",
+      byline: (
+        <>
+          A learning management platform by Harvest School of Ministries and{" "}
+          <span className="whitespace-nowrap">
+            Missions <span className="not-italic font-sans text-sm font-semibold tracking-[0.2em] text-gold">(HSMM)</span>
+          </span>
+        </>
+      ),
+      title: (
+        <>
+          Education, <span className="italic text-gold">Elevated.</span>
+        </>
+      ),
+      body:
+        "A refined home for your school: admissions, courses, grading, tuition, and community, beautifully organized in one place.",
+      image: LIBRARY_IMG,
+      actions: (
+        <>
+          <Button size="lg" asChild className={goldButton}>
+            <Link href="/auth/register">Create a School</Link>
+          </Button>
+          <Button size="lg" variant="outline" asChild className={ghostButton}>
+            <Link href="/onboarding/join">Join a School</Link>
+          </Button>
+        </>
+      ),
+    },
     {
       id: "hsmm",
       eyebrow: "Featured Institution",
@@ -90,28 +120,6 @@ export default function Home() {
           </Button>
           <Button size="lg" variant="outline" asChild className={ghostButton}>
             <a href={hsmmHref}>Discover HSMM</a>
-          </Button>
-        </>
-      ),
-    },
-    {
-      id: "platform",
-      eyebrow: "SolomonQuest LMS",
-      title: (
-        <>
-          Education, <span className="italic text-gold">Elevated.</span>
-        </>
-      ),
-      body:
-        "A refined home for your school: admissions, courses, grading, tuition, and community, beautifully organized in one place.",
-      image: LIBRARY_IMG,
-      actions: (
-        <>
-          <Button size="lg" asChild className={goldButton}>
-            <Link href="/auth/register">Create a School</Link>
-          </Button>
-          <Button size="lg" variant="outline" asChild className={ghostButton}>
-            <Link href="/onboarding/join">Join a School</Link>
           </Button>
         </>
       ),
