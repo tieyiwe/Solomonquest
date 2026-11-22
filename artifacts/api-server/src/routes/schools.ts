@@ -76,6 +76,32 @@ router.get("/schools/by-domain/:domain", async (req, res): Promise<void> => {
   res.json(mapSchool(data));
 });
 
+// Slug availability check for the branding page's live "URL is available /
+// taken" indicator. Must be registered before /schools/:slug — without this
+// route the request fell through to that handler, 404'd ("school not
+// found"), and the page read `available` as undefined, so every slug an
+// admin typed showed as "taken".
+router.get("/schools/slug-check", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const slug = String(req.query.slug ?? "").trim().toLowerCase();
+  const exclude = typeof req.query.exclude === "string" ? req.query.exclude : "";
+
+  if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+    res.json({ available: false, reason: "invalid" });
+    return;
+  }
+
+  let query = supabaseAdmin.from("schools").select("id").eq("slug", slug);
+  if (exclude) query = query.neq("id", exclude);
+  const { data, error } = await query.maybeSingle();
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  res.json({ available: !data });
+});
+
 // Get school by slug (public)
 router.get("/schools/:slug", optionalAuth, async (req, res): Promise<void> => {
   const { slug } = req.params;

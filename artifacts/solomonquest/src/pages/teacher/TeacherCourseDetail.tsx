@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
 import { useParams, Link, useSearch } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import { StudentDetailDialog } from "@/components/StudentDetailDialog";
@@ -609,6 +610,8 @@ export default function TeacherCourseDetail() {
                 <div className="text-sm text-muted-foreground mt-1">Attendance Records</div>
               </Card>
             </div>
+
+            <AnnouncementsPanel courseId={courseId} canPost title="Course announcements" />
           </TabsContent>
 
           {/* STUDENTS TAB */}

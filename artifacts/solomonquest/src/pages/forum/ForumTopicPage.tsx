@@ -333,8 +333,10 @@ function CommentCard({
 
 export default function ForumTopicPage() {
   const { user } = useAuth();
-  const params = useParams<{ topicId: string }>();
-  const topicId = params.topicId ?? "";
+  // Router registers this page as /forum/topics/:id — reading `topicId`
+  // here was always undefined, so the topic never loaded.
+  const params = useParams<{ id: string }>();
+  const topicId = params.id ?? "";
   const [, setLocation] = useLocation();
 
   const [topic, setTopic] = useState<ForumTopic | null>(null);

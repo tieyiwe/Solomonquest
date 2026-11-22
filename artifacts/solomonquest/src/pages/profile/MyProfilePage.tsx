@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { RoleLayout } from "@/components/layout/RoleLayout";
 import { supabase } from "@/lib/supabase";
-import { AdminLayout } from "@/components/layout/AdminLayout";
-import { TeacherLayout } from "@/components/layout/TeacherLayout";
-import { StudentLayout } from "@/components/layout/StudentLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -13,7 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Camera, Loader2, Save } from "lucide-react";
+import { Camera, KeyRound, Loader2, Save } from "lucide-react";
+import { getGetMeQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
   return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U";
@@ -36,11 +36,86 @@ async function authedFetch(path: string, init?: RequestInit) {
   });
 }
 
+/**
+ * Signed-in password change. The only other password UI is the email
+ * recovery flow (/auth/reset-password), which needs a recovery link — a
+ * logged-in user had no way to change their password. The current password
+ * is re-verified first so an unattended session can't be used to take over
+ * the account.
+ */
+function ChangePasswordCard({ email }: { email: string }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleChange = async () => {
+    if (next.length < 8) {
+      toast.error("New password must be at least 8 characters");
+      return;
+    }
+    if (next !== confirm) {
+      toast.error("New passwords do not match");
+      return;
+    }
+    if (!email) {
+      toast.error("Your account has no email address to verify against");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error: verifyError } = await supabase.auth.signInWithPassword({ email, password: current });
+      if (verifyError) throw new Error("Current password is incorrect");
+      const { error } = await supabase.auth.updateUser({ password: next });
+      if (error) throw error;
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      toast.success("Password changed");
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to change password");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Change Password</CardTitle>
+        <CardDescription>Use at least 8 characters.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="myprofilepage-current-password">Current password</Label>
+          <Input id="myprofilepage-current-password" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="myprofilepage-new-password">New password</Label>
+            <Input id="myprofilepage-new-password" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="myprofilepage-confirm-password">Confirm new password</Label>
+            <Input id="myprofilepage-confirm-password" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          </div>
+        </div>
+        <Button onClick={handleChange} disabled={saving || !current || !next || !confirm}>
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+          Change Password
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ProfileForm() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [bio, setBio] = useState("");
+  const [phone, setPhone] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -58,6 +133,7 @@ function ProfileForm() {
         setFirstName(data.firstName ?? data.first_name ?? "");
         setLastName(data.lastName ?? data.last_name ?? "");
         setBio(data.bio ?? "");
+        setPhone(data.phone ?? "");
         setAvatarUrl(data.avatarUrl ?? data.avatar_url ?? "");
         setEmail(data.email ?? "");
       })
@@ -92,6 +168,8 @@ function ProfileForm() {
       if (!res.ok) throw new Error("Failed to save avatar");
 
       setAvatarUrl(versionedUrl);
+      // The header/sidebar avatar comes from the cached /auth/me profile.
+      queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
       toast.success("Profile picture updated");
     } catch (err: any) {
       toast.error(err.message ?? "Failed to upload picture");
@@ -107,10 +185,13 @@ function ProfileForm() {
     try {
       const res = await authedFetch(`/api/users/${user.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ firstName, lastName, bio }),
+        body: JSON.stringify({ firstName, lastName, bio, phone }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error ?? "Failed to save");
+      // Refresh the signed-in profile so the name in the header, sidebar
+      // and profile menu updates without a reload.
+      queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
       toast.success("Profile updated");
     } catch (err: any) {
       toast.error(err.message ?? "Failed to save profile");
@@ -199,6 +280,10 @@ function ProfileForm() {
             <Input id="myprofilepage-email" value={email} readOnly disabled className="bg-muted" />
           </div>
           <div className="space-y-1.5">
+            <Label htmlFor="myprofilepage-phone">Phone</Label>
+            <Input id="myprofilepage-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" maxLength={40} />
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="myprofilepage-bio">Bio</Label>
             <Textarea id="myprofilepage-bio"
               value={bio}
@@ -213,30 +298,16 @@ function ProfileForm() {
           </Button>
         </CardContent>
       </Card>
+
+      <ChangePasswordCard email={email || user?.email || ""} />
     </div>
   );
 }
 
 export default function MyProfilePage() {
-  const { user } = useAuth();
-
-  if (user?.role === "admin" || user?.role === "super_admin") {
-    return (
-      <AdminLayout>
-        <ProfileForm />
-      </AdminLayout>
-    );
-  }
-  if (user?.role === "teacher") {
-    return (
-      <TeacherLayout>
-        <ProfileForm />
-      </TeacherLayout>
-    );
-  }
   return (
-    <StudentLayout>
+    <RoleLayout>
       <ProfileForm />
-    </StudentLayout>
+    </RoleLayout>
   );
 }

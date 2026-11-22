@@ -2,10 +2,9 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { RoleLayout } from "@/components/layout/RoleLayout";
+import { dashboardPathForRole } from "@/lib/roleHome";
 import { supabase } from "@/lib/supabase";
-import { AdminLayout } from "@/components/layout/AdminLayout";
-import { TeacherLayout } from "@/components/layout/TeacherLayout";
-import { StudentLayout } from "@/components/layout/StudentLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -61,12 +60,7 @@ function CalendarContent() {
   const grouped = useMemo(() => groupByDay(events ?? []), [events]);
   const now = Date.now();
 
-  const dashboardPath =
-    user?.role === "admin" || user?.role === "super_admin"
-      ? "/dashboard/admin"
-      : user?.role === "teacher"
-        ? "/dashboard/teacher"
-        : "/dashboard/student";
+  const dashboardPath = dashboardPathForRole(user?.role);
 
   return (
     <div className="px-6 pt-4 pb-8 space-y-6">
@@ -156,25 +150,9 @@ function CalendarContent() {
 }
 
 export default function CalendarPage() {
-  const { user } = useAuth();
-
-  if (user?.role === "admin" || user?.role === "super_admin") {
-    return (
-      <AdminLayout>
-        <CalendarContent />
-      </AdminLayout>
-    );
-  }
-  if (user?.role === "teacher") {
-    return (
-      <TeacherLayout>
-        <CalendarContent />
-      </TeacherLayout>
-    );
-  }
   return (
-    <StudentLayout>
+    <RoleLayout>
       <CalendarContent />
-    </StudentLayout>
+    </RoleLayout>
   );
 }

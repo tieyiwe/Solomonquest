@@ -47,11 +47,13 @@ interface Course {
   status?: string;
 }
 
+// GET /api/applications returns the caller's own applications (camelCase)
+// when the caller isn't an admin.
 interface Application {
   id: string;
-  school_id?: string;
+  schoolId?: string;
   status?: string;
-  created_at?: string;
+  createdAt?: string;
 }
 
 export default function StudentProfilePage() {
@@ -65,8 +67,13 @@ export default function StudentProfilePage() {
     if (!user) return;
     Promise.all([
       apiFetch<Profile>(`/api/users/${user.id}`),
-      apiFetch<Course[]>("/api/courses"),
-      apiFetch<Application[]>("/api/applications/my").catch(() => []),
+      // /courses/my = the courses this student is actually enrolled in
+      // (/courses lists every course in the school).
+      apiFetch<Course[]>("/api/courses/my"),
+      // There is no /applications/my route — it fell through to
+      // /applications/:id with id "my" and always 404'd, so this card never
+      // showed. Plain /applications is already scoped to the caller.
+      apiFetch<Application[]>("/api/applications").catch(() => []),
     ]).then(([prof, courseList, apps]) => {
       setProfile(prof);
       setCourses(courseList ?? []);
@@ -203,11 +210,11 @@ export default function StudentProfilePage() {
                 {applications.map((app) => (
                   <div key={app.id} className="flex items-center justify-between p-3 rounded-lg border">
                     <span className="text-sm text-muted-foreground">
-                      {app.created_at ? new Date(app.created_at).toLocaleDateString() : "Application"}
+                      {app.createdAt ? new Date(app.createdAt).toLocaleDateString() : "Application"}
                     </span>
                     <Badge
                       variant={
-                        app.status === "accepted" ? "default" :
+                        app.status === "approved" ? "default" :
                         app.status === "rejected" ? "destructive" :
                         "secondary"
                       }

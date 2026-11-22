@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
 import { useParams, Link } from "wouter";
 import { StudentLayout } from "@/components/layout/StudentLayout";
 import { useAuth } from "@/contexts/AuthContext";
@@ -738,6 +739,8 @@ export default function StudentCourseDetail() {
                 </CardContent>
               </Card>
             </div>
+
+            <AnnouncementsPanel courseId={courseId} title="Course announcements" />
           </TabsContent>
 
           <TabsContent value="resources" className="mt-6">

@@ -104,6 +104,37 @@ function makeId() {
   return Math.random().toString(36).slice(2, 9);
 }
 
+// Map a stored quiz_questions row ({ question, type, options:
+// [{ id, text, is_correct }], correct_answer }) into the editor's model.
+// The builder used to drop rows straight into state, so reopening a quiz
+// showed every question blank with no correct answer marked — and saving
+// one then PUT an empty question text over the real one.
+function fromApiQuestion(raw: Record<string, any>): Question {
+  const type: QuestionType = (raw.type ?? raw.question_type ?? "short_answer") as QuestionType;
+  const correct = raw.correct_answer != null ? String(raw.correct_answer) : undefined;
+  const options: QuizOption[] = Array.isArray(raw.options)
+    ? raw.options.map((o: any, i: number) => {
+        const opt = o && typeof o === "object" ? o : { id: String(o), text: String(o) };
+        const id = String(opt.id ?? i);
+        const text = String(opt.text ?? "");
+        const isCorrect =
+          opt.is_correct === true ||
+          opt.isCorrect === true ||
+          (type === "multiple_choice" && correct === id) ||
+          (type === "true_false" && correct === text);
+        return { id, text, isCorrect };
+      })
+    : [];
+  return {
+    id: String(raw.id),
+    type,
+    text: raw.question ?? raw.question_text ?? "",
+    points: Number(raw.points ?? 1),
+    options,
+    correctAnswer: type === "multiple_choice" || type === "true_false" ? undefined : correct,
+  };
+}
+
 function makeQuestion(type: QuestionType): Question {
   const base: Question = { id: makeId(), type, text: "", points: 1, options: [] };
   if (type === "multiple_choice") {
@@ -554,7 +585,7 @@ function QuizDetail({ quiz, onPublished }: QuizDetailProps) {
     setLoadingQuestions(true);
     apiFetch(`/api/quizzes/${quiz.id}`)
       .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setQuestions(Array.isArray(data) ? data : data?.questions ?? []))
+      .then((data) => setQuestions((Array.isArray(data) ? data : data?.questions ?? []).map(fromApiQuestion)))
       .catch(() => setQuestions([]))
       .finally(() => setLoadingQuestions(false));
   }, [quiz.id]);

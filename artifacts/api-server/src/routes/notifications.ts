@@ -24,6 +24,11 @@ router.get("/notifications", requireAuth, async (req: AuthenticatedRequest, res)
     link: n.link ?? (n.metadata as Record<string, unknown> | null)?.link ?? null,
     read: n.is_read ?? false,
     created_at: n.created_at,
+    // Aliases matching the generated client's Notification type
+    // (useListNotifications) — StudentLayout's unread badge reads isRead,
+    // so it counted every notification as unread.
+    isRead: n.is_read ?? false,
+    createdAt: n.created_at,
   }));
 
   res.json(notifications);

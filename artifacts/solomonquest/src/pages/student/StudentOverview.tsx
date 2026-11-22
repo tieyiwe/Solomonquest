@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -33,6 +34,7 @@ import {
   Star,
   AlertCircle,
   GraduationCap,
+  Wallet,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +48,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { format, isToday, isFuture, parseISO } from "date-fns";
 import { navIconActive, navIconIdle, navItemClass } from "@/components/layout/navStyles";
+import AttendanceCheckin from "@/components/AttendanceCheckin";
 
 // ─── apiFetch helper ──────────────────────────────────────────────────────────
 
@@ -82,9 +85,11 @@ interface Course {
   code?: string;
   teacherName?: string;
   teacher_name?: string;
-  is_live?: boolean;
-  next_class_date?: string;
-  class_date?: string;
+  // GET /courses/my is camelCase (isLive / classDate / classEndTime); the
+  // snake_case names were never sent, so live classes never showed here.
+  isLive?: boolean;
+  classDate?: string | null;
+  classEndTime?: string | null;
 }
 
 interface Grade {
@@ -136,6 +141,23 @@ function gradeColor(pct: number) {
   return "text-destructive";
 }
 
+// courses.class_date is a DATE column ("YYYY-MM-DD"); the only time of day
+// is the free-text class_end_time. Formatting the date with "h:mm a" showed
+// every live class as starting at 12:00 AM.
+function liveClassLabel(classDate?: string | null, classEndTime?: string | null): string | null {
+  if (!classDate) return null;
+  try {
+    const d = parseISO(classDate);
+    const until = classEndTime ? ` · until ${classEndTime}` : "";
+    if (classDate.length > 10) {
+      return isToday(d) ? `Today at ${format(d, "h:mm a")}` : format(d, "EEE, MMM d 'at' h:mm a");
+    }
+    return `${isToday(d) ? "Today" : format(d, "EEE, MMM d")}${until}`;
+  } catch {
+    return classDate;
+  }
+}
+
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
 const NAV_LINKS = [
@@ -147,6 +169,7 @@ const NAV_LINKS = [
   { href: "/forum", label: "Forum", icon: MessageSquare },
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/messages", label: "Messages", icon: MessageSquare },
+  { href: "/dashboard/student/tuition", label: "Tuition", icon: Wallet },
 ];
 
 function Sidebar({ onClose, onOpenHelp }: { onClose?: () => void; onOpenHelp: () => void }) {
@@ -336,8 +359,8 @@ export default function StudentOverview() {
 
   // Upcoming live courses
   const upcomingLive = courses.filter((c) => {
-    if (!c.is_live) return false;
-    const raw = c.next_class_date || c.class_date;
+    if (!c.isLive) return false;
+    const raw = c.classDate;
     if (!raw) return true; // is_live but no date — still show
     try {
       const d = parseISO(raw);
@@ -551,18 +574,7 @@ export default function StudentOverview() {
                     <div className="grid gap-4 sm:grid-cols-2">
                       {courses.map((course) => {
                         const activeRoom = activeSessions[course.id];
-                        const classDate = course.next_class_date || course.class_date;
-                        let classDisplay: string | null = null;
-                        if (classDate) {
-                          try {
-                            const d = parseISO(classDate);
-                            classDisplay = isToday(d)
-                              ? `Today at ${format(d, "h:mm a")}`
-                              : format(d, "EEE, MMM d 'at' h:mm a");
-                          } catch {
-                            classDisplay = classDate;
-                          }
-                        }
+                        const classDisplay = course.isLive ? liveClassLabel(course.classDate, course.classEndTime) : null;
 
                         return (
                           <Card
@@ -575,7 +587,7 @@ export default function StudentOverview() {
                                   <BookOpen className="h-4 w-4 text-primary" />
                                 </div>
                                 <div className="flex gap-1.5">
-                                  {course.is_live && (
+                                  {course.isLive && (
                                     <Badge className="text-xs gap-1 bg-destructive hover:bg-destructive/90">
                                       <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
                                       Live
@@ -648,6 +660,18 @@ export default function StudentOverview() {
                   )}
                 </div>
 
+                {/* Live-class self check-in (POST /attendance/checkin only
+                    accepts a course that is live with class_date = today).
+                    The AttendanceCheckin card existed but was never mounted,
+                    so students had no way to check in. */}
+                <AttendanceCheckin
+                  courses={upcomingLive
+                    .filter((c) => {
+                      try { return !!c.classDate && isToday(parseISO(c.classDate)); } catch { return false; }
+                    })
+                    .map((c) => ({ id: c.id, name: c.title, class_date: c.classDate as string }))}
+                />
+
                 {/* Upcoming Live Classes */}
                 {upcomingLive.length > 0 && (
                   <div className="space-y-4">
@@ -658,18 +682,7 @@ export default function StudentOverview() {
                     <div className="space-y-3">
                       {upcomingLive.map((course) => {
                         const activeRoom = activeSessions[course.id];
-                        const raw = course.next_class_date || course.class_date;
-                        let classDisplay: string | null = null;
-                        if (raw) {
-                          try {
-                            const d = parseISO(raw);
-                            classDisplay = isToday(d)
-                              ? `Today at ${format(d, "h:mm a")}`
-                              : format(d, "EEEE, MMM d 'at' h:mm a");
-                          } catch {
-                            classDisplay = raw;
-                          }
-                        }
+                        const classDisplay = liveClassLabel(course.classDate, course.classEndTime);
                         return (
                           <Card
                             key={course.id}
@@ -723,6 +736,8 @@ export default function StudentOverview() {
 
               {/* Right: Recent Grades + Quick Links */}
               <div className="space-y-8">
+
+                <AnnouncementsPanel title="Announcements" limit={5} />
 
                 {/* Recent Grades */}
                 <div className="space-y-4">

@@ -6,18 +6,41 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, GraduationCap, ArrowRight } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getGetMeQueryKey } from "@workspace/api-client-react";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { joinSchool } from "@/lib/joinSchool";
 
 export default function OnboardingJoin() {
   const [, setLocation] = useLocation();
   const [query, setQuery] = useState("");
   const { data: schools, isLoading } = useListSchools();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [joiningId, setJoiningId] = useState<string | null>(null);
 
   const filtered = (schools ?? []).filter((s) =>
     s.name?.toLowerCase().includes(query.toLowerCase()) ||
     s.slug?.toLowerCase().includes(query.toLowerCase())
   );
 
-  function handleSelect(schoolId: string, schoolName: string) {
+  async function handleSelect(schoolId: string, schoolName: string) {
+    // Already signed in without a school (e.g. sent here from
+    // /onboarding/setup): join directly instead of re-registering.
+    if (user && !user.schoolId) {
+      setJoiningId(schoolId);
+      const err = await joinSchool(schoolId).catch(() => "Could not join the school");
+      if (err) {
+        toast.error(err);
+        setJoiningId(null);
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+      toast.success(`Welcome to ${schoolName}!`);
+      setLocation("/dashboard/student");
+      return;
+    }
     setLocation(`/auth/register?schoolId=${encodeURIComponent(schoolId)}&schoolName=${encodeURIComponent(schoolName)}`);
   }
 
@@ -59,6 +82,7 @@ export default function OnboardingJoin() {
               <button
                 key={school.id}
                 onClick={() => handleSelect(school.id, school.name ?? "")}
+                disabled={joiningId !== null}
                 className="w-full flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:border-primary hover:bg-primary/5 transition-all text-left group"
               >
                 <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">

@@ -1,9 +1,79 @@
 import { Router, type IRouter } from "express";
+import multer from "multer";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { gradeSubmission } from "../lib/gradingEngine";
+import { scanFile } from "../lib/fileScan";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+const SUBMISSIONS_BUCKET = "submission-files";
+const MAX_SUBMISSION_FILE_BYTES = 25 * 1024 * 1024;
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_SUBMISSION_FILE_BYTES } });
+
+let bucketReady: Promise<void> | null = null;
+/** Lazily creates the submission-files bucket (same pattern as chat
+ *  attachments), so no manual storage setup is needed. */
+function ensureSubmissionsBucket(): Promise<void> {
+  if (!bucketReady) {
+    bucketReady = supabaseAdmin.storage
+      .createBucket(SUBMISSIONS_BUCKET, { public: true, fileSizeLimit: MAX_SUBMISSION_FILE_BYTES })
+      .then(() => undefined)
+      .catch((err) => {
+        if (!String(err?.message ?? err).toLowerCase().includes("already exists")) {
+          logger.error({ err }, "Failed to create submission-files bucket");
+        }
+      });
+  }
+  return bucketReady;
+}
+
+/** The caller may hand in work for this assignment: a student, actively
+ *  enrolled in its course, the assignment published, and not already graded. */
+async function assertStudentCanSubmit(
+  req: AuthenticatedRequest,
+  assignmentId: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (req.userRole !== "student") {
+    return { ok: false, status: 403, error: "Only students can submit assignments" };
+  }
+
+  const { data: assignment } = await supabaseAdmin
+    .from("assignments")
+    .select("id, course_id, is_published")
+    .eq("id", assignmentId)
+    .single();
+
+  if (!assignment) return { ok: false, status: 404, error: "Assignment not found" };
+  if (!assignment.is_published) return { ok: false, status: 403, error: "This assignment is not yet published" };
+
+  const { data: enrollment } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("course_id")
+    .eq("course_id", assignment.course_id as string)
+    .eq("student_id", req.userId ?? "")
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (!enrollment) return { ok: false, status: 403, error: "You are not enrolled in this course" };
+
+  // The upsert below overwrote content (and reset status to "submitted") on
+  // an already-graded submission while keeping its grade, so a student
+  // could swap in different work after seeing their mark and the grade
+  // would silently attach to it.
+  const { data: prior } = await supabaseAdmin
+    .from("submissions")
+    .select("id, grade, graded_at")
+    .eq("assignment_id", assignmentId)
+    .eq("student_id", req.userId ?? "")
+    .maybeSingle();
+  if (prior && (prior.grade != null || prior.graded_at)) {
+    return { ok: false, status: 409, error: "This submission has already been graded and can no longer be changed" };
+  }
+
+  return { ok: true };
+}
 
 /** Verifies the caller may see/grade submissions for this assignment's course. */
 async function assertAssignmentTeacherOrAdmin(
@@ -75,54 +145,25 @@ router.post("/assignments/:assignmentId/submissions", requireAuth, async (req: A
   // polluting gradebooks/analytics with fake rows. Only the enrolled
   // student themselves may submit, and only against a published
   // assignment they're actively enrolled in.
-  if (req.userRole !== "student") {
-    res.status(403).json({ error: "Only students can submit assignments" });
+  const allowed = await assertStudentCanSubmit(req, assignmentId);
+  if (!allowed.ok) {
+    res.status(allowed.status).json({ error: allowed.error });
     return;
   }
 
-  const { data: assignment } = await supabaseAdmin
-    .from("assignments")
-    .select("id, course_id, is_published")
-    .eq("id", assignmentId)
-    .single();
+  const { content, fileUrl, fileName } = req.body as { content?: string; fileUrl?: string | null; fileName?: string | null };
 
-  if (!assignment) {
-    res.status(404).json({ error: "Assignment not found" });
-    return;
-  }
-  if (!assignment.is_published) {
-    res.status(403).json({ error: "This assignment is not yet published" });
-    return;
-  }
-
-  const { data: enrollment } = await supabaseAdmin
-    .from("course_enrollments")
-    .select("course_id")
-    .eq("course_id", assignment.course_id as string)
-    .eq("student_id", req.userId ?? "")
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (!enrollment) {
-    res.status(403).json({ error: "You are not enrolled in this course" });
-    return;
-  }
-
-  const { content } = req.body;
-
-  // The upsert below overwrote content (and reset status to "submitted") on
-  // an already-graded submission while keeping its grade, so a student
-  // could swap in different work after seeing their mark and the grade
-  // would silently attach to it.
-  const { data: prior } = await supabaseAdmin
-    .from("submissions")
-    .select("id, grade, graded_at")
-    .eq("assignment_id", assignmentId)
-    .eq("student_id", req.userId ?? "")
-    .maybeSingle();
-  if (prior && (prior.grade != null || prior.graded_at)) {
-    res.status(409).json({ error: "This submission has already been graded and can no longer be changed" });
-    return;
+  // Only accept file URLs that the upload route below produced (our own
+  // bucket), so a submission can't point the teacher at an arbitrary link
+  // dressed up as an attached file. Pasted links still go in `content`.
+  let storedFileUrl: string | null = null;
+  if (typeof fileUrl === "string" && fileUrl) {
+    const { data: bucketUrl } = supabaseAdmin.storage.from(SUBMISSIONS_BUCKET).getPublicUrl(`${assignmentId}/${req.userId}/`);
+    if (!fileUrl.startsWith(bucketUrl.publicUrl)) {
+      res.status(400).json({ error: "fileUrl must come from the submission upload endpoint" });
+      return;
+    }
+    storedFileUrl = fileUrl;
   }
 
   // Upsert submission
@@ -133,7 +174,16 @@ router.post("/assignments/:assignmentId/submissions", requireAuth, async (req: A
         assignment_id: assignmentId,
         student_id: req.userId,
         content: content ?? null,
+        // Only touch the file columns when the client sent a file, so plain
+        // text/link submissions keep working even before submission-files.sql
+        // has been applied.
+        ...(fileUrl !== undefined
+          ? { file_url: storedFileUrl, file_name: storedFileUrl && typeof fileName === "string" ? fileName.slice(0, 255) : null }
+          : {}),
         status: "submitted",
+        // The column default only fires on insert — a resubmission kept the
+        // first attempt's timestamp, so late resubmits looked on time.
+        submitted_at: new Date().toISOString(),
       },
       { onConflict: "assignment_id,student_id" }
     )
@@ -147,6 +197,63 @@ router.post("/assignments/:assignmentId/submissions", requireAuth, async (req: A
 
   res.status(201).json(await enrichSubmission(data));
 });
+
+// Upload a file for a submission. Goes through the API (not client-direct
+// to storage) so it can be virus-scanned first, like chat attachments.
+// Returns the stored file's URL; the client then submits with
+// { content, fileUrl, fileName }.
+router.post(
+  "/assignments/:assignmentId/submissions/upload",
+  requireAuth,
+  upload.single("file"),
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const assignmentId = Array.isArray(req.params.assignmentId)
+      ? req.params.assignmentId[0]
+      : req.params.assignmentId;
+
+    const allowed = await assertStudentCanSubmit(req, assignmentId);
+    if (!allowed.ok) {
+      res.status(allowed.status).json({ error: allowed.error });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({ error: "No file uploaded" });
+      return;
+    }
+
+    const scan = await scanFile(req.file.buffer, req.file.originalname);
+    if (!scan.allowed) {
+      res.status(422).json({ error: scan.reason ?? "This file could not be uploaded.", flagged: true });
+      return;
+    }
+
+    await ensureSubmissionsBucket();
+
+    const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${assignmentId}/${req.userId}/${Date.now()}-${safeName}`;
+    // Public bucket + client-claimed mimetype: never serve active content
+    // (HTML/SVG/XML/JS) inline from it.
+    const ACTIVE_CONTENT = /^(text\/html|application\/xhtml\+xml|image\/svg\+xml|text\/xml|application\/xml|text\/javascript|application\/javascript)/i;
+    const contentType = ACTIVE_CONTENT.test(req.file.mimetype) ? "application/octet-stream" : req.file.mimetype;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from(SUBMISSIONS_BUCKET)
+      .upload(path, req.file.buffer, { contentType, upsert: false });
+    if (uploadError) {
+      res.status(500).json({ error: uploadError.message });
+      return;
+    }
+
+    const { data: publicUrl } = supabaseAdmin.storage.from(SUBMISSIONS_BUCKET).getPublicUrl(path);
+    res.status(201).json({
+      fileUrl: publicUrl.publicUrl,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      fileType: req.file.mimetype,
+    });
+  }
+);
 
 // Grade a submission
 router.patch("/submissions/:id/grade", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
@@ -218,6 +325,9 @@ async function enrichSubmission(s: Record<string, unknown>) {
     rubricScores: s.rubric_scores ?? null,
     feedback: s.feedback ?? null,
     gradedAt: s.graded_at ?? null,
+    submittedAt: s.submitted_at ?? null,
+    fileUrl: s.file_url ?? null,
+    fileName: s.file_name ?? null,
     status: s.status,
     studentName,
   };
@@ -247,6 +357,9 @@ async function enrichSubmissions(rows: Record<string, unknown>[]) {
     rubricScores: s.rubric_scores ?? null,
     feedback: s.feedback ?? null,
     gradedAt: s.graded_at ?? null,
+    submittedAt: s.submitted_at ?? null,
+    fileUrl: s.file_url ?? null,
+    fileName: s.file_name ?? null,
     status: s.status,
     studentName: s.student_id ? nameById.get(s.student_id as string) ?? null : null,
   }));

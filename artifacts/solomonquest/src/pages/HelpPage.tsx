@@ -8,6 +8,7 @@ import { getHelpData, type HelpCategory, type HelpArticle, type HelpRole } from 
 import { setPageMeta } from "@/lib/seo";
 import { useEffect, useMemo } from "react";
 import { getTourKey } from "@/components/tour/tourData";
+import { dashboardPathForRole } from "@/lib/roleHome";
 
 type View =
   | { type: "home" }
@@ -69,12 +70,7 @@ export default function HelpPage() {
     if (role) {
       localStorage.removeItem(getTourKey(role));
     }
-    const dashPath =
-      role === "admin" || role === "super_admin"
-        ? "/dashboard/admin"
-        : role === "teacher"
-        ? "/dashboard/teacher"
-        : "/dashboard/student";
+    const dashPath = dashboardPathForRole(role);
     setLocation(dashPath);
   };
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { StudentLayout } from "@/components/layout/StudentLayout";
+import { supabase } from "@/lib/supabase";
 import { RequiredVideoPlayer } from "@/components/video/RequiredVideoPlayer";
 import {
   useListPendingAssignments,
@@ -103,6 +104,36 @@ function SubmitDialog({
   const submitAssignment = useSubmitAssignment();
   const [fileUrl, setFileUrl] = useState("");
   const [comment, setComment] = useState("");
+  // An actual uploaded file (POST /assignments/:id/submissions/upload) —
+  // before this the only option was pasting a link.
+  const [attached, setAttached] = useState<{ fileUrl: string; fileName: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error("Files must be under 25 MB");
+      return;
+    }
+    setUploading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/assignments/${assignment.id}/submissions/upload`, {
+        method: "POST",
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        body: form,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Upload failed");
+      setAttached({ fileUrl: body.fileUrl, fileName: body.fileName ?? file.name });
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
   const [videoWatched, setVideoWatched] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -118,8 +149,9 @@ function SubmitDialog({
         data: {
           content: [fileUrl.trim() ? `File: ${fileUrl.trim()}` : "", comment.trim()]
             .filter(Boolean)
-            .join("\n\n") || "Video watched",
-        },
+            .join("\n\n") || (attached ? attached.fileName : "Video watched"),
+          ...(attached ? { fileUrl: attached.fileUrl, fileName: attached.fileName } : {}),
+        } as { content: string },
       },
       {
         onSuccess: () => {
@@ -239,9 +271,37 @@ function SubmitDialog({
       {(!isVideoType || !requireFullWatch || videoWatched) && (
         <div className="space-y-4">
           <div className="space-y-1.5">
+            <Label htmlFor="submission_file" className="flex items-center gap-1.5">
+              <Upload className="h-3.5 w-3.5" />
+              Upload a file
+              <span className="text-muted-foreground font-normal text-xs">(optional, max 25 MB)</span>
+            </Label>
+            {attached ? (
+              <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+                <span className="truncate">{attached.fileName}</span>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setAttached(null)}>
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <Input
+                id="submission_file"
+                type="file"
+                disabled={uploading}
+                onChange={(e) => handleFile(e.target.files?.[0])}
+              />
+            )}
+            {uploading && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
             <Label htmlFor="file_url" className="flex items-center gap-1.5">
               <Upload className="h-3.5 w-3.5" />
-              File / Document URL
+              Or paste a link
               {!isVideoType && <span className="text-muted-foreground font-normal text-xs">(optional)</span>}
             </Label>
             <Input
@@ -278,7 +338,7 @@ function SubmitDialog({
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={submitAssignment.isPending || !canSubmit}
+          disabled={submitAssignment.isPending || !canSubmit || uploading}
           className="gap-2"
         >
           {submitAssignment.isPending ? (

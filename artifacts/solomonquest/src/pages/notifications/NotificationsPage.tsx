@@ -1,9 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { RoleLayout } from "@/components/layout/RoleLayout";
 import { useLocation } from "wouter";
-import { AdminLayout } from "@/components/layout/AdminLayout";
-import { TeacherLayout } from "@/components/layout/TeacherLayout";
-import { StudentLayout } from "@/components/layout/StudentLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -134,26 +131,9 @@ function NotificationsList() {
 }
 
 export default function NotificationsPage() {
-  const { user } = useAuth();
-  const role = user?.role;
-
-  if (role === "admin" || role === "super_admin") {
-    return (
-      <AdminLayout>
-        <NotificationsList />
-      </AdminLayout>
-    );
-  }
-  if (role === "teacher") {
-    return (
-      <TeacherLayout>
-        <NotificationsList />
-      </TeacherLayout>
-    );
-  }
   return (
-    <StudentLayout>
+    <RoleLayout>
       <NotificationsList />
-    </StudentLayout>
+    </RoleLayout>
   );
 }

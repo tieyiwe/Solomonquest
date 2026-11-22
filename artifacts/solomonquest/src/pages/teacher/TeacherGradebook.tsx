@@ -430,7 +430,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
   // by fetching the first assignment and iterating. The existing API only exposes per-assignment.
   // We'll accumulate submission data keyed by [studentId][assignmentId].
   const [submissionCache, setSubmissionCache] = useState<
-    Record<string, Record<string, { id: string; grade: number | null; feedback: string | null; content: string | null; fileUrl: string | null; status: string }>>
+    Record<string, Record<string, { id: string; grade: number | null; feedback: string | null; content: string | null; fileUrl: string | null; status: string; rubricScores: Record<string, { score: number }> | null }>>
   >({});
 
   const [selectedCell, setSelectedCell] = useState<CellSelection | null>(null);
@@ -459,7 +459,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
         content: sub?.content ?? null,
         fileUrl: sub?.fileUrl ?? null,
         rubric: assignment.rubric ?? null,
-        currentRubricScores: (sub as any)?.rubricScores ?? null,
+        currentRubricScores: sub?.rubricScores ?? null,
       });
     },
     [submissionCache]
@@ -514,6 +514,9 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
                   content: (sub as any).content ?? null,
                   fileUrl: (sub as any).fileUrl ?? (sub as any).file_url ?? null,
                   status: sub.status,
+                  // Kept so reopening a rubric-graded cell shows the saved
+                  // per-criterion scores instead of a blank rubric.
+                  rubricScores: (sub as any).rubricScores ?? null,
                 };
               }
               return next;

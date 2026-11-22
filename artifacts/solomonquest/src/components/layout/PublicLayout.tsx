@@ -13,6 +13,9 @@ export function PublicLayout({ children, showFeatured = false }: { children: Rea
       setLocation("/dashboard/teacher");
     } else if (user?.role === "student" || user?.role === "staff") {
       setLocation("/dashboard/student");
+    } else if (user?.role === "parent") {
+      // Parents used to fall through to /onboarding/join (find a school).
+      setLocation("/dashboard/parent");
     } else {
       setLocation("/onboarding/join");
     }

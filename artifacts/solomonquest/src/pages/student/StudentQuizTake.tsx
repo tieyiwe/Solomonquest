@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useRoute, Link } from "wouter";
+import { useParams, Link } from "wouter";
 import { StudentLayout } from "@/components/layout/StudentLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +45,7 @@ interface Quiz {
   attempt_limit?: number;
   show_results_immediately?: boolean;
   release_scores_immediately?: boolean;
+  passing_score?: number | null;
   questions: QuizQuestion[];
 }
 
@@ -68,6 +69,43 @@ interface SubmissionResult {
   release_scores_immediately?: boolean;
   show_results_immediately?: boolean;
   question_results?: QuestionResult[];
+}
+
+// quiz_questions rows come back as stored by the quiz builder:
+// { question, type, options: [{ id, text }] } — this page was written
+// against question_text / question_type, so every question rendered with no
+// text and no answer inputs. Older rows may use the *_text/_type columns or
+// plain-string options; accept all of them.
+function normalizeQuestion(raw: Record<string, any>): QuizQuestion {
+  const options = Array.isArray(raw.options)
+    ? raw.options.map((o: any, i: number) =>
+        o && typeof o === "object"
+          ? { id: String(o.id ?? i), text: String(o.text ?? o.label ?? "") }
+          : { id: String(o), text: String(o) }
+      )
+    : undefined;
+  return {
+    id: raw.id,
+    question_text: raw.question_text ?? raw.question ?? "",
+    question_type: raw.question_type ?? raw.type ?? "short_answer",
+    options,
+    points: Number(raw.points ?? 1),
+    explanation: raw.explanation ?? undefined,
+  };
+}
+
+// PUT /quizzes/:id/attempts/:aid returns the graded attempt row (score =
+// percent, earned_points / total_points) plus the quiz's release settings
+// and question_results.
+function normalizeResult(raw: Record<string, any>): SubmissionResult {
+  return {
+    score: raw.earned_points ?? undefined,
+    max_score: raw.max_score ?? raw.total_points ?? undefined,
+    percentage: raw.percentage ?? (raw.score != null ? Math.round(Number(raw.score)) : undefined),
+    release_scores_immediately: raw.release_scores_immediately,
+    show_results_immediately: raw.show_results_immediately,
+    question_results: raw.question_results ?? [],
+  };
 }
 
 function TimerDisplay({ seconds }: { seconds: number }) {
@@ -110,7 +148,9 @@ function MultipleChoiceInput({
     <div className="space-y-3">
       {question.options?.map((opt) => {
         const isSelected = value === opt.id;
-        const isCorrect = opt.is_correct;
+        // The answer key is never sent with the questions; after submission
+        // it comes back per question as result.correct_answer (the option id).
+        const isCorrect = result?.correct_answer != null ? result.correct_answer === opt.id : false;
         let optStyle = "border-border hover:border-primary/60 hover:bg-muted/40";
         if (showResults && result) {
           if (isCorrect) optStyle = "border-success bg-success/10 ";
@@ -199,8 +239,11 @@ function TrueFalseInput({
 }
 
 export default function StudentQuizTake() {
-  const [, params] = useRoute("/dashboard/student/quiz/:id");
-  const quizId = params?.id;
+  // Rendered for both /dashboard/student/quiz/:id and
+  // /dashboard/student/quizzes/:id — useRoute() on just the first pattern
+  // left quizId undefined on the second.
+  const params = useParams<{ id: string }>();
+  const quizId = params.id;
   const { session } = useAuth();
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -230,7 +273,7 @@ export default function StudentQuizTake() {
         ]);
         if (!quizRes.ok) throw new Error("Failed to load quiz");
         const quizData = await quizRes.json();
-        setQuiz(quizData);
+        setQuiz({ ...quizData, questions: (quizData.questions ?? []).map(normalizeQuestion) });
         if (attemptsRes.ok) {
           const attemptsData = await attemptsRes.json();
           setAttemptInfo(attemptsData);
@@ -259,7 +302,7 @@ export default function StudentQuizTake() {
         });
         if (!res.ok) throw new Error("Failed to submit quiz");
         const data = await res.json();
-        setResult(data);
+        setResult(normalizeResult(data));
         setSubmitted(true);
         toast.success("Quiz submitted successfully");
       } catch {
@@ -361,7 +404,7 @@ export default function StudentQuizTake() {
       (result.score != null && result.max_score
         ? Math.round((result.score / result.max_score) * 100)
         : null);
-    const passed = percentage != null && percentage >= 70;
+    const passed = percentage != null && percentage >= (quiz?.passing_score ?? 70);
 
     return (
       <StudentLayout>

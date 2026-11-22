@@ -99,9 +99,23 @@ async function assertCourseAccess(
   return { ok: true, isManager: false };
 }
 
-/** Strips answer keys from questions for non-managers (students taking the quiz). */
+/** Strips answer keys from questions for non-managers (students taking the quiz).
+ *  The quiz builder also marks the right choice inside `options`
+ *  ({ id, text, is_correct }), so stripping only `correct_answer` still
+ *  handed every student the answer key in the options array. */
 function sanitizeQuestionsForStudent(questions: Record<string, unknown>[]): Record<string, unknown>[] {
-  return questions.map(({ correct_answer, ...rest }) => rest);
+  return questions.map(({ correct_answer, ...rest }) => ({
+    ...rest,
+    options: Array.isArray(rest.options)
+      ? (rest.options as unknown[]).map((o) => {
+          if (o && typeof o === "object") {
+            const { is_correct, isCorrect, ...opt } = o as Record<string, unknown>;
+            return opt;
+          }
+          return o;
+        })
+      : rest.options ?? null,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -758,7 +772,35 @@ router.put(
         return;
       }
 
-      res.json(updatedAttempt);
+      // The take-quiz page renders the result from this response: it needs
+      // the quiz's release settings and a per-question breakdown, which the
+      // bare attempt row doesn't carry (so a student never saw their score
+      // even on quizzes set to release scores immediately). Correct answers
+      // are only revealed when the quiz releases results immediately.
+      const { data: quizSettings } = await supabaseAdmin
+        .from("quizzes")
+        .select("release_scores_immediately, show_results_immediately, passing_score")
+        .eq("id", id)
+        .maybeSingle();
+      const releaseNow =
+        quizSettings?.release_scores_immediately === true || quizSettings?.show_results_immediately === true;
+      const correctById = new Map((questions ?? []).map((q) => [q.id as string, q.correct_answer ?? null]));
+
+      res.json({
+        ...updatedAttempt,
+        max_score: totalPoints,
+        percentage: Math.round(scorePercent),
+        passing_score: quizSettings?.passing_score ?? null,
+        release_scores_immediately: quizSettings?.release_scores_immediately === true,
+        show_results_immediately: quizSettings?.show_results_immediately === true,
+        question_results: releaseNow
+          ? gradedAnswers.map((g) => ({
+              question_id: g.question_id,
+              is_correct: g.is_correct,
+              correct_answer: correctById.get(g.question_id as string) ?? null,
+            }))
+          : [],
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

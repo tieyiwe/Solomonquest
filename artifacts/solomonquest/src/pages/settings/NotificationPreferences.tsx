@@ -55,6 +55,37 @@ const defaultPrefs: NotificationPrefs = {
   applicationStatusUpdates: true,
 };
 
+// The API stores prefs under the same keys lib/notifications.ts checks
+// (prefs.email / prefs[category]) and wraps them as { notification_prefs }.
+// The page used to spread the wrapper into its state (so nothing saved ever
+// loaded) and PUT its own camelCase keys, which the route ignores — every
+// save wrote an empty object, wiping the user's preferences.
+const API_KEY: Record<keyof NotificationPrefs, string> = {
+  inApp: "in_app",
+  email: "email",
+  chatMessages: "chat",
+  forumActivity: "forum",
+  assignmentUpdates: "assignments",
+  gradeNotifications: "grades",
+  newResources: "resources",
+  applicationStatusUpdates: "applications",
+};
+
+function fromApi(stored: Record<string, unknown> | null | undefined): NotificationPrefs {
+  const prefs = { ...defaultPrefs };
+  for (const key of Object.keys(API_KEY) as (keyof NotificationPrefs)[]) {
+    const v = stored?.[API_KEY[key]];
+    if (typeof v === "boolean") prefs[key] = v;
+  }
+  return prefs;
+}
+
+function toApi(prefs: NotificationPrefs): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const key of Object.keys(API_KEY) as (keyof NotificationPrefs)[]) out[API_KEY[key]] = prefs[key];
+  return out;
+}
+
 // ---- PreferenceRow ----
 
 interface PreferenceRowProps {
@@ -120,7 +151,7 @@ export default function NotificationPreferences() {
     apiFetch("/api/users/me/notification-prefs")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data) setPrefs({ ...defaultPrefs, ...data });
+        if (data) setPrefs(fromApi(data.notification_prefs));
       })
       .catch(() => {
         toast.error("Could not load notification preferences.");
@@ -133,7 +164,7 @@ export default function NotificationPreferences() {
     try {
       const res = await apiFetch("/api/users/me/notification-prefs", {
         method: "PUT",
-        body: JSON.stringify(updated),
+        body: JSON.stringify(toApi(updated)),
       });
       if (!res.ok) throw new Error();
       toast.success("Preferences saved");

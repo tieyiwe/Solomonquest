@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useParams } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import {
   useGetMyCourses,
@@ -186,7 +186,8 @@ function SubmissionsPanel({
                     {sub.studentName || sub.studentId}
                   </TableCell>
                   <TableCell className="py-2">
-                    {(sub as any).fileUrl ? (
+                    {/* A file submission can also carry a note — show both. */}
+                    {(sub as any).fileUrl && (
                       <a
                         href={(sub as any).fileUrl}
                         target="_blank"
@@ -194,15 +195,16 @@ function SubmissionsPanel({
                         className="text-xs text-primary flex items-center gap-1 hover:underline"
                       >
                         <ExternalLink className="h-3 w-3" />
-                        Download
+                        {(sub as any).fileName || "Download"}
                       </a>
-                    ) : sub.content ? (
+                    )}
+                    {sub.content ? (
                       <span className="text-xs text-muted-foreground line-clamp-2 max-w-[180px]">
                         {sub.content}
                       </span>
-                    ) : (
+                    ) : !(sub as any).fileUrl ? (
                       <span className="text-xs text-muted-foreground">—</span>
-                    )}
+                    ) : null}
                   </TableCell>
                   <TableCell className="py-2">
                     <Badge
@@ -717,7 +719,11 @@ function CourseAssignmentsPanel({
 
 export default function TeacherAssignments() {
   const queryClient = useQueryClient();
-  const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  // Also mounted at /dashboard/teacher/courses/:id/assignments (the course
+  // page's "Assignments" link) — start filtered to that course instead of
+  // ignoring the id and showing every course.
+  const params = useParams<{ id?: string }>();
+  const [selectedCourseId, setSelectedCourseId] = useState<string>(params.id ?? "");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editAssignment, setEditAssignment] = useState<Assignment | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Assignment | null>(null);

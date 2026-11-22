@@ -4,6 +4,27 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
+/** Course ids whose announcements a non-staff caller may read: the
+ *  courses they're actively enrolled in (students/staff) or, for a parent,
+ *  their linked children's courses. */
+async function readableCourseIds(req: AuthenticatedRequest): Promise<string[]> {
+  let studentIds = [req.userId ?? ""];
+  if (req.userRole === "parent") {
+    const { data: links } = await supabaseAdmin
+      .from("parent_student_links")
+      .select("student_id")
+      .eq("parent_id", req.userId ?? "");
+    studentIds = (links ?? []).map((l) => l.student_id as string);
+    if (studentIds.length === 0) return [];
+  }
+  const { data } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("course_id")
+    .in("student_id", studentIds)
+    .eq("status", "active");
+  return Array.from(new Set((data ?? []).map((e) => e.course_id as string)));
+}
+
 router.get("/announcements", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   let query = supabaseAdmin
     .from("announcements")
@@ -12,8 +33,23 @@ router.get("/announcements", requireAuth, async (req: AuthenticatedRequest, res)
     .order("is_pinned", { ascending: false })
     .order("created_at", { ascending: false });
 
-  if (req.query.courseId) {
-    query = query.eq("course_id", req.query.courseId as string);
+  const isStaff = req.userRole === "admin" || req.userRole === "super_admin" || req.userRole === "teacher";
+  const courseId = typeof req.query.courseId === "string" ? req.query.courseId : undefined;
+
+  if (courseId) {
+    // Students only see a course's announcements if they're in the course.
+    if (!isStaff && !(await readableCourseIds(req)).includes(courseId)) {
+      res.json([]);
+      return;
+    }
+    query = query.eq("course_id", courseId);
+  } else if (!isStaff) {
+    // No course filter: school-wide announcements plus the caller's own
+    // courses' — never every course in the school.
+    const ids = await readableCourseIds(req);
+    query = ids.length
+      ? query.or(`course_id.is.null,course_id.in.(${ids.join(",")})`)
+      : query.is("course_id", null);
   }
 
   const { data, error } = await query;
@@ -37,6 +73,28 @@ router.post("/announcements", requireAuth, async (req: AuthenticatedRequest, res
 
   if (!title) {
     res.status(400).json({ error: "title is required" });
+    return;
+  }
+
+  // A teacher posts to a course they teach; school-wide announcements are
+  // for admins. Previously a teacher could post into any course id (or the
+  // whole school), including courses in other schools.
+  if (courseId) {
+    const { data: course } = await supabaseAdmin
+      .from("courses")
+      .select("school_id, teacher_id")
+      .eq("id", courseId)
+      .maybeSingle();
+    if (!course || (req.userRole !== "super_admin" && course.school_id !== req.schoolId)) {
+      res.status(404).json({ error: "Course not found" });
+      return;
+    }
+    if (req.userRole === "teacher" && course.teacher_id !== req.userId) {
+      res.status(403).json({ error: "You can only post announcements to courses you teach" });
+      return;
+    }
+  } else if (req.userRole === "teacher") {
+    res.status(403).json({ error: "Teachers post announcements to a course" });
     return;
   }
 

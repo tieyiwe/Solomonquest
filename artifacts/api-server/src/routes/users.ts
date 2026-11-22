@@ -301,7 +301,13 @@ router.get("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): Pr
     }
   }
 
-  res.json(mapProfile(data, data.email as string | null));
+  // Phone is personal contact info: only the user themselves and their
+  // school's admins get it back (any same-school user can read this route).
+  const canSeePhone = req.userId === id || req.userRole === "admin" || req.userRole === "super_admin";
+  res.json({
+    ...mapProfile(data, data.email as string | null),
+    ...(canSeePhone ? { phone: (data.phone as string | null) ?? null } : {}),
+  });
 });
 
 // Get a student's full profile (contact info, program/courses, attendance) for
@@ -517,13 +523,20 @@ router.patch("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): 
   }
 
   // Only allow safe profile fields — never role
-  const { firstName, lastName, avatarUrl, bio } = req.body;
+  const { firstName, lastName, avatarUrl, bio, phone } = req.body;
 
   const updates: Record<string, unknown> = {};
   if (firstName !== undefined) updates.first_name = firstName;
   if (lastName !== undefined) updates.last_name = lastName;
   if (avatarUrl !== undefined) updates.avatar_url = avatarUrl;
   if (bio !== undefined) updates.bio = bio;
+  if (phone !== undefined) {
+    if (phone !== null && (typeof phone !== "string" || phone.length > 40)) {
+      res.status(400).json({ error: "phone must be a string of at most 40 characters" });
+      return;
+    }
+    updates.phone = typeof phone === "string" && phone.trim() ? phone.trim() : null;
+  }
 
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: "No valid fields to update" });
@@ -542,7 +555,7 @@ router.patch("/users/:id", requireAuth, async (req: AuthenticatedRequest, res): 
     return;
   }
 
-  res.json(mapProfile(data, data.email as string | null));
+  res.json({ ...mapProfile(data, data.email as string | null), phone: (data.phone as string | null) ?? null });
 });
 
 // Update user role — admin/super_admin only, same-school constraint for admin

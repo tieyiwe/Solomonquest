@@ -64,6 +64,8 @@ router.post("/video/sessions", requireAuth, requireSchoolFeature("video_calls"),
         user_id: enrollment.student_id,
         type: "video_session",
         message: `Live class started for ${course.title}. Click to join.`,
+        // "Click to join" had nowhere to go — the notification had no link.
+        link: `/dashboard/student/courses/${course_id}`,
         metadata: {
           room_name: session.room_name,
           session_id: session.id,

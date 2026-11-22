@@ -61,6 +61,15 @@ router.get("/calendar", requireAuth, async (req: AuthenticatedRequest, res): Pro
 
   const events: CalendarEvent[] = [];
 
+  // Where an event should open for this viewer. Admins have no per-course
+  // detail page (/dashboard/admin/courses/:id isn't a frontend route — it
+  // rendered the 404 page), so they land on the course list instead.
+  const courseLink = (r: string | undefined, courseId: string): string => {
+    if (r === "teacher") return `/dashboard/teacher/courses/${courseId}`;
+    if (r === "admin" || r === "super_admin") return "/dashboard/admin/courses";
+    return `/dashboard/student/courses/${courseId}`;
+  };
+
   if (courseIds.length > 0) {
     const isStaffRole = role === "teacher" || role === "admin" || role === "super_admin";
 
@@ -94,7 +103,7 @@ router.get("/calendar", requireAuth, async (req: AuthenticatedRequest, res): Pro
         date: a.due_date as string,
         courseId: a.course_id as string,
         courseTitle: (a.courses as { title?: string } | null)?.title ?? null,
-        link: `/dashboard/${role === "teacher" ? "teacher" : role === "admin" || role === "super_admin" ? "admin" : "student"}/courses/${a.course_id}`,
+        link: courseLink(role, a.course_id as string),
       });
     }
 
@@ -106,7 +115,7 @@ router.get("/calendar", requireAuth, async (req: AuthenticatedRequest, res): Pro
         date: v.scheduled_at as string,
         courseId: v.course_id as string,
         courseTitle: (v.courses as { title?: string } | null)?.title ?? null,
-        link: `/dashboard/${role === "teacher" ? "teacher" : role === "admin" || role === "super_admin" ? "admin" : "student"}/courses/${v.course_id}`,
+        link: courseLink(role, v.course_id as string),
       });
     }
   }

@@ -10,6 +10,7 @@ import { AgentWidget } from "@/components/agent/AgentWidget";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
 import { HelpCenter } from "@/components/help/HelpCenter";
+import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import {
   LayoutDashboard,
   BookOpen,
@@ -239,6 +240,7 @@ export default function TeacherOverview() {
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const { showTour, launchTour, closeTour } = useTour("teacher");
 
   const [stats, setStats] = useState<TeacherStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -586,8 +588,12 @@ export default function TeacherOverview() {
       <StickyNotesLayer />
 
       {helpOpen && (
-        <HelpCenter role="teacher" onClose={() => setHelpOpen(false)} onStartTour={() => {}} />
+        <HelpCenter role="teacher" onClose={() => setHelpOpen(false)} onStartTour={launchTour} />
       )}
+      {/* This page has its own shell instead of TeacherLayout, so the
+          first-login tour (and Help Center's "Start tour") never ran on the
+          page teachers land on. */}
+      {showTour && <TourOverlay role="teacher" onClose={closeTour} />}
     </div>
   );
 }

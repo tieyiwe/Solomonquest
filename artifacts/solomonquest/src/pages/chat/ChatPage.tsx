@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { dashboardPathForRole } from "@/lib/roleHome";
 import { NotificationBell } from "@/components/NotificationBell";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -1571,6 +1572,13 @@ const TEACHER_LINKS = [
   { href: "/dashboard/teacher/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/dashboard/teacher/reminders", label: "Reminders", icon: AlarmClock },
 ];
+// Parents can't open any /dashboard/student/* page (ProtectedRoute bounces
+// them), so they get their own short rail instead of the student one.
+const PARENT_LINKS = [
+  { href: "/dashboard/parent", label: "Overview", icon: LayoutDashboard },
+  { href: "/messages", label: "Messages", icon: FileText },
+  { href: "/forum", label: "Forum", icon: MessageSquare },
+];
 const STUDENT_LINKS = [
   { href: "/dashboard/student", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/student/assignments", label: "Assignments", icon: FileText },
@@ -1588,14 +1596,11 @@ function DashboardRail({ role }: { role?: string | null }) {
       ? ADMIN_LINKS
       : role === "teacher"
       ? TEACHER_LINKS
+      : role === "parent"
+      ? PARENT_LINKS
       : STUDENT_LINKS;
 
-  const dashboardHref =
-    role === "admin" || role === "super_admin"
-      ? "/dashboard/admin"
-      : role === "teacher"
-      ? "/dashboard/teacher"
-      : "/dashboard/student";
+  const dashboardHref = dashboardPathForRole(role);
 
   return (
     <div
@@ -2322,16 +2327,10 @@ export default function ChatPage() {
     setMessages([]);
     setChannels((prev) => prev.map((c) => (c.id === ch.id ? { ...c, unread_count: 0 } : c)));
     apiFetch(`/api/chat/channels/${ch.id}/read`, { method: "POST" }).catch(() => {});
-    try {
-      const res = await apiFetch(`/api/chat/channels/${ch.id}`);
-      if (res.ok) {
-        const detail: Channel = await res.json();
-        setActiveChannel({ ...detail, unread_count: 0 });
-        setChannels((prev) => prev.map((c) => (c.id === detail.id ? { ...detail, unread_count: 0 } : c)));
-      }
-    } catch {
-      /* ignore */
-    }
+    // The channel object from GET /chat/channels already carries everything
+    // the header needs (type, otherUser presence, archived state). This used
+    // to also GET /chat/channels/:id, a route the backend never had, so every
+    // channel click fired a 404.
   }
 
   const topMessages = messages.filter((m) => !m.thread_parent_id);

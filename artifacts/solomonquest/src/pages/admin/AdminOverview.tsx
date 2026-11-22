@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -12,6 +13,7 @@ import { AgentWidget } from "@/components/agent/AgentWidget";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
 import { HelpCenter } from "@/components/help/HelpCenter";
+import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import {
   LayoutDashboard,
   Users,
@@ -297,6 +299,7 @@ export default function AdminOverview() {
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const { showTour, launchTour, closeTour } = useTour((user as any)?.role as "admin" | "super_admin");
   const [notifOpen, setNotifOpen] = useState(false);
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -523,6 +526,8 @@ export default function AdminOverview() {
                 sub={pendingCount > 0 ? "Requires review" : "All caught up"}
               />
             </div>
+
+            <AnnouncementsPanel canPost title="School announcements" limit={5} />
 
             {/* Quick Actions tiles */}
             <div>
@@ -810,9 +815,12 @@ export default function AdminOverview() {
         <HelpCenter
           role={(user as any)?.role as "admin" | "super_admin"}
           onClose={() => setHelpOpen(false)}
-          onStartTour={() => {}}
+          onStartTour={launchTour}
         />
       )}
+      {/* Own shell instead of AdminLayout — the first-login tour (and Help
+          Center's "Start tour") never ran on the admin landing page. */}
+      {showTour && <TourOverlay role={(user as any)?.role as "admin" | "super_admin"} onClose={closeTour} />}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 interface LiveCourse {
   id: string;
   name: string;
-  class_date: string; // ISO datetime string
+  class_date: string; // "YYYY-MM-DD" (courses.class_date) or an ISO datetime
 }
 
 interface AttendanceCheckinProps {
@@ -86,7 +86,9 @@ export default function AttendanceCheckin({ courses }: AttendanceCheckinProps) {
                 <div>
                   <p className="font-semibold text-foreground">Live class today!</p>
                   <p className="text-sm text-muted-foreground">
-                    {course.name} at {formatTime(course.class_date)}
+                    {course.name}
+                    {/* courses.class_date is a DATE column — only show a time when one is present. */}
+                    {course.class_date.includes("T") ? ` at ${formatTime(course.class_date)}` : ""}
                   </p>
                   {error && <p className="text-xs text-destructive mt-1">{error}</p>}
                 </div>

@@ -10,6 +10,12 @@ import { toast } from "sonner";
 import { CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { supabase } from "@/lib/supabase";
+import { Link, useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
+import { getGetMeQueryKey } from "@workspace/api-client-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { acceptInvite, joinSchool, PENDING_INVITE_KEY, PENDING_SCHOOL_KEY } from "@/lib/joinSchool";
+import { dashboardPathForRole } from "@/lib/roleHome";
 
 const requestSchema = z.object({
   name: z.string().min(2, "Your full name is required"),
@@ -49,12 +55,66 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export default function OnboardingSetup() {
   const [existingRequest, setExistingRequest] = useState<SchoolRequest | null | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
+  const [joiningPending, setJoiningPending] = useState(false);
+  const { user, session } = useAuth();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     apiFetch<SchoolRequest | null>("/api/school-requests/mine")
       .then(setExistingRequest)
       .catch(() => setExistingRequest(null));
   }, []);
+
+  // A student who signed up from "Join a school" with email confirmation on
+  // gets no session at sign-up time, so the join couldn't happen then.
+  // Register stashed the school in user_metadata; finish the join here,
+  // which is where a school-less account lands after logging in.
+  const meta = session?.user?.user_metadata as Record<string, unknown> | undefined;
+  const pendingSchoolId = meta?.[PENDING_SCHOOL_KEY];
+  const pendingInvite = meta?.[PENDING_INVITE_KEY];
+
+  // Same for an invitation accepted before email confirmation.
+  useEffect(() => {
+    if (typeof pendingInvite !== "string" || !pendingInvite || user?.schoolId) return;
+    let cancelled = false;
+    setJoiningPending(true);
+    acceptInvite(pendingInvite)
+      .then(async (result) => {
+        if (cancelled) return;
+        if ("error" in result) {
+          toast.error(result.error);
+          setJoiningPending(false);
+          return;
+        }
+        await queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+        toast.success("Your invitation has been accepted.");
+        setLocation(dashboardPathForRole(result.role));
+      })
+      .catch(() => !cancelled && setJoiningPending(false));
+    return () => { cancelled = true; };
+  }, [pendingInvite, user?.schoolId, queryClient, setLocation]);
+
+  useEffect(() => {
+    if (typeof pendingInvite === "string" && pendingInvite) return; // invite wins
+    if (typeof pendingSchoolId !== "string" || !pendingSchoolId || user?.schoolId) return;
+    let cancelled = false;
+    setJoiningPending(true);
+    joinSchool(pendingSchoolId)
+      .then(async (err) => {
+        if (cancelled) return;
+        if (err) {
+          toast.error(err);
+          setJoiningPending(false);
+          return;
+        }
+        await queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+        toast.success("You've joined your school.");
+        setLocation("/dashboard/student");
+      })
+      .catch(() => !cancelled && setJoiningPending(false));
+    return () => { cancelled = true; };
+  }, [pendingSchoolId, pendingInvite, user?.schoolId, queryClient, setLocation]);
 
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestSchema),
@@ -77,7 +137,7 @@ export default function OnboardingSetup() {
     }
   }
 
-  if (existingRequest === undefined) {
+  if (existingRequest === undefined || joiningPending) {
     return (
       <PublicLayout>
         <div className="flex justify-center py-24">
@@ -124,6 +184,12 @@ export default function OnboardingSetup() {
           <p className="text-muted-foreground">
             Tell us a bit about the school you'd like to set up. A platform administrator will review your
             request and follow up.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Joining a school as a student?{" "}
+            <Link href="/onboarding/join" className="text-primary font-medium hover:underline">
+              Find your school
+            </Link>
           </p>
         </div>
 

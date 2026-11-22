@@ -1,4 +1,5 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import { Switch, Route, useParams, useLocation } from "wouter";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import NotFound from "@/pages/not-found";
@@ -43,6 +44,8 @@ const StudentCourseDetail = lazy(() => import("@/pages/student/StudentCourseDeta
 const StudentAssignments = lazy(() => import("@/pages/student/StudentAssignments"));
 const StudentQuizTake = lazy(() => import("@/pages/student/StudentQuizTake"));
 const StudentTranscript = lazy(() => import("@/pages/student/StudentTranscript"));
+const StudentQuizzes = lazy(() => import("@/pages/student/StudentQuizzes"));
+const StudentTuition = lazy(() => import("@/pages/student/StudentTuition"));
 const TranscriptVerifyPage = lazy(() => import("@/pages/transcripts/TranscriptVerifyPage"));
 const StudentProfilePage = lazy(() => import("@/pages/dashboard/StudentProfilePage"));
 const MyProfilePage = lazy(() => import("@/pages/profile/MyProfilePage"));
@@ -65,19 +68,45 @@ const HelpPage = lazy(() => import("@/pages/HelpPage"));
 function StudentVideoSession() {
   const params = useParams<{ id: string }>();
   const courseId = params.id;
+  // Join the room of the course's *active* session (POST /video/sessions
+  // names it "solomonquest-<id>-<timestamp>"). This page used to embed a
+  // made-up "solomonquest-course-<id>" room, so a student opening it sat in
+  // an empty room while the class ran elsewhere.
+  const [room, setRoom] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`/api/video/sessions?course_id=${encodeURIComponent(courseId ?? "")}`, {
+          headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        });
+        const data = res.ok ? await res.json() : null;
+        if (!cancelled) setRoom(data?.is_active && data?.room_name ? data.room_name : null);
+      } catch {
+        if (!cancelled) setRoom(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [courseId]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background p-8">
       <h1 className="text-2xl font-bold mb-4">Live Video Session</h1>
-      <p className="text-muted-foreground mb-6">Course ID: {courseId}</p>
-      <div className="w-full max-w-4xl aspect-video bg-muted rounded-xl flex items-center justify-center border">
-        <iframe
-          src={`https://meet.jit.si/solomonquest-course-${courseId}`}
-          allow="camera; microphone; fullscreen; display-capture"
-          className="w-full h-full rounded-xl"
-          title="Video Session"
-        />
-      </div>
+      {room === undefined ? (
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      ) : room === null ? (
+        <p className="text-muted-foreground">There is no live class running for this course right now.</p>
+      ) : (
+        <div className="w-full max-w-4xl aspect-video bg-muted rounded-xl flex items-center justify-center border">
+          <iframe
+            src={`https://meet.jit.si/${room}`}
+            allow="camera; microphone; fullscreen; display-capture"
+            className="w-full h-full rounded-xl"
+            title="Video Session"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -215,7 +244,10 @@ export function Router() {
           <ProtectedRoute allowedRoles={["student", "staff"]}><StudentQuizTake /></ProtectedRoute>
         </Route>
         <Route path="/dashboard/student/quizzes">
-          <ProtectedRoute allowedRoles={["student", "staff"]}><StudentAssignments /></ProtectedRoute>
+          <ProtectedRoute allowedRoles={["student", "staff"]}><StudentQuizzes /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/student/tuition">
+          <ProtectedRoute allowedRoles={["student", "staff"]}><StudentTuition /></ProtectedRoute>
         </Route>
         <Route path="/dashboard/student/quizzes/:id">
           <ProtectedRoute allowedRoles={["student", "staff"]}><StudentQuizTake /></ProtectedRoute>

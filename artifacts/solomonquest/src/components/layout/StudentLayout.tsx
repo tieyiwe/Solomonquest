@@ -26,6 +26,7 @@ import {
   Scroll,
   ClipboardList,
   CalendarDays,
+  Wallet,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -65,6 +66,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
     { href: "/forum", label: "Forum", icon: MessageSquare, exact: false },
     { href: "/dashboard/student/transcript", label: "Transcript", icon: Scroll, exact: false },
     { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
+    { href: "/dashboard/student/tuition", label: "Tuition", icon: Wallet, exact: false },
     ...(user?.role === "staff"
       ? [{ href: "/dashboard/admin/terms", label: "Terms & Scheduling", icon: CalendarDays, exact: false }]
       : []),
@@ -237,7 +239,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
           <div className="flex items-center gap-2">
             <GlobalSearch />
             <Button variant="ghost" size="icon" className="rounded-full relative" asChild>
-              <Link href="/dashboard/student" aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}>
+              <Link href="/notifications" aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}>
                 <Bell className="h-5 w-5 text-muted-foreground" />
                 {unreadCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center font-bold">

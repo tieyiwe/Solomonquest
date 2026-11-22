@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startReminderDispatcher } from "./lib/reminderDispatcher";
 
 // Log-and-continue instead of crashing the whole process on an unexpected
 // error outside Express's own request/response cycle (e.g. a rejected
@@ -21,4 +22,6 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  // Scheduled reminders (POST /reminders) are delivered by this poller.
+  startReminderDispatcher();
 });

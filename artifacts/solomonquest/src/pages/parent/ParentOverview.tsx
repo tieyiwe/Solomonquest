@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
 import { ParentLayout } from "@/components/layout/ParentLayout";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -182,6 +183,8 @@ export default function ParentOverview() {
             );
           })
         )}
+
+        <AnnouncementsPanel title="School & class announcements" limit={5} />
       </div>
     </ParentLayout>
   );

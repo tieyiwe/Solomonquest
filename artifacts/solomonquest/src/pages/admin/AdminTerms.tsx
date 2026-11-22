@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { AdminLayout } from "@/components/layout/AdminLayout";
+import { RoleLayout } from "@/components/layout/RoleLayout";
+import { useAuth } from "@/contexts/AuthContext";
+import { dashboardPathForRole } from "@/lib/roleHome";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -260,6 +262,10 @@ function TermScheduleDialog({ term }: { term: Term }) {
 }
 
 export default function AdminTerms() {
+  // Staff can manage terms too (Router allows admin/super_admin/staff); they
+  // get their own (student/staff) layout and back-link — the admin sidebar
+  // was all links ProtectedRoute bounces a staff user away from.
+  const { user } = useAuth();
   const [terms, setTerms] = useState<Term[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -286,9 +292,9 @@ export default function AdminTerms() {
   };
 
   return (
-    <AdminLayout>
+    <RoleLayout>
       <div className="px-6 pt-4 pb-0">
-        <Link href="/dashboard/admin">
+        <Link href={dashboardPathForRole(user?.role)}>
           <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
@@ -396,6 +402,6 @@ export default function AdminTerms() {
       </div>
 
       <TermFormDialog term={editTerm} open={formOpen} onOpenChange={setFormOpen} onSaved={fetchTerms} />
-    </AdminLayout>
+    </RoleLayout>
   );
 }

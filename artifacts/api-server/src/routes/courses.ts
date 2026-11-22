@@ -184,10 +184,21 @@ router.post("/courses", requireAuth, async (req: AuthenticatedRequest, res): Pro
     return;
   }
 
-  const { title, programId, teacherId, code, term, termStartDate, termEndDate, termId, description } = req.body;
+  const {
+    title, programId, teacherId, code, term, termStartDate, termEndDate, termId, description,
+    isPublished, attendanceWeightPercent, isLive, classDate, classEndTime,
+  } = req.body;
 
   if (!title) {
     res.status(400).json({ error: "title is required" });
+    return;
+  }
+
+  if (
+    attendanceWeightPercent !== undefined &&
+    (typeof attendanceWeightPercent !== "number" || attendanceWeightPercent < 0 || attendanceWeightPercent > 100)
+  ) {
+    res.status(400).json({ error: "attendanceWeightPercent must be a number between 0 and 100" });
     return;
   }
 
@@ -220,7 +231,14 @@ router.post("/courses", requireAuth, async (req: AuthenticatedRequest, res): Pro
       term_end_date: termEndDate ?? null,
       term_id: termId ?? null,
       description: description ?? null,
-      is_published: false,
+      // The create form sends Published / attendance weight / live-class
+      // fields; they used to be dropped (every new course came out
+      // unpublished, 0% attendance weight, not live) until a second edit.
+      is_published: isPublished === true,
+      attendance_weight_percent: attendanceWeightPercent ?? 0,
+      is_live: isLive === true,
+      class_date: isLive === true && classDate ? classDate : null,
+      class_end_time: isLive === true && classEndTime ? classEndTime : null,
       created_by: req.userId,
     })
     .select()
@@ -613,6 +631,12 @@ async function enrichCourse(c: Record<string, unknown>) {
     attendanceWeightPercent: c.attendance_weight_percent ?? 0,
     description: c.description,
     isPublished: c.is_published,
+    // Live-class schedule (PUT /courses/:id/live-settings). Without these the
+    // admin edit form always reopened as "not live" and the student
+    // dashboard never showed a live class / check-in.
+    isLive: c.is_live ?? false,
+    classDate: c.class_date ?? null,
+    classEndTime: c.class_end_time ?? null,
     teacherName,
     studentCount,
     createdBy: c.created_by ?? null,
@@ -669,6 +693,9 @@ async function enrichCourses(rows: Record<string, unknown>[]) {
     attendanceWeightPercent: c.attendance_weight_percent ?? 0,
     description: c.description,
     isPublished: c.is_published,
+    isLive: c.is_live ?? false,
+    classDate: c.class_date ?? null,
+    classEndTime: c.class_end_time ?? null,
     teacherName: c.teacher_id ? nameById.get(c.teacher_id as string) ?? null : null,
     studentCount: countByCourse.get(c.id as string) ?? 0,
     createdBy: c.created_by ?? null,

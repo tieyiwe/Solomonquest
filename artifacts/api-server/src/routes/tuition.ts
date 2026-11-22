@@ -468,11 +468,15 @@ router.post(
     }
 
     const appUrl = process.env.APP_URL ?? "";
-    // Tuition checkout is only ever started from the school's public apply
-    // page (SchoolApply). The previous return target, /dashboard/student/
-    // tuition, is not a route in the frontend router at all, so every
-    // student who completed a real Stripe payment landed on the 404 page.
-    const returnPath = school.slug ? `/schools/${school.slug}/apply` : "/";
+    // Checkout starts either from the school's public apply page
+    // (SchoolApply) or from the student's own Tuition page
+    // (/dashboard/student/tuition, which pays later installments). Only
+    // those two fixed return targets are allowed — never a client URL.
+    const returnTo = (req.body as { returnTo?: string } | undefined)?.returnTo;
+    const returnPath =
+      returnTo === "dashboard"
+        ? "/dashboard/student/tuition"
+        : school.slug ? `/schools/${school.slug}/apply` : "/";
 
     try {
       const stripe = getStripe();
