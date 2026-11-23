@@ -170,7 +170,13 @@ select * from (values
     exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='submissions' and column_name='file_url')
     and exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='submissions' and column_name='file_name'))
+      where table_schema='public' and table_name='submissions' and column_name='file_name')),
+
+  ('storage-buckets.sql: school-assets + course-resources buckets and upload policies',
+    exists (select 1 from storage.buckets where id='school-assets')
+    and exists (select 1 from storage.buckets where id='course-resources')
+    and exists (select 1 from pg_policies where schemaname='storage' and tablename='objects'
+      and policyname='course-resources insert'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;
