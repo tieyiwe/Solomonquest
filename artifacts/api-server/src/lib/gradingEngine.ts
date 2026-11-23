@@ -185,6 +185,17 @@ export async function gradeSubmission(params: GradeSubmissionParams): Promise<Gr
       .catch((error) => console.warn("[gradingEngine] grade notification failed:", error?.message ?? error));
   }
 
+  // Certificates in "issue automatically" mode: a grade may complete the
+  // course. Fire-and-forget; a no-op unless the school opted into auto mode.
+  // (Dynamic import: lib/certificates imports this module.)
+  if (existing.student_id && assignment?.course_id) {
+    const sid = existing.student_id as string;
+    const cid = assignment.course_id;
+    import("./certificates")
+      .then((m) => m.maybeIssueCertificate(sid, cid))
+      .catch((e) => console.warn("[gradingEngine] certificate check failed:", e));
+  }
+
   return { ok: true, submission: updated };
 }
 

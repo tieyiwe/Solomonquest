@@ -43,6 +43,9 @@ import schoolRequestsRouter from "./school-requests";
 import courseModulesRouter from "./course-modules";
 import lateWorkRouter from "./late-work";
 import progressReportsRouter from "./progress-reports";
+import certificatesRouter from "./certificates";
+import questionBanksRouter from "./question-banks";
+import bulkImportRouter from "./bulk-import";
 
 const router: IRouter = Router();
 
@@ -90,5 +93,8 @@ router.use(schoolRequestsRouter);
 router.use(courseModulesRouter);
 router.use(lateWorkRouter);
 router.use(progressReportsRouter);
+router.use(certificatesRouter);
+router.use(questionBanksRouter);
+router.use(bulkImportRouter);
 
 export default router;

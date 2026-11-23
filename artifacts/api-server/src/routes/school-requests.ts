@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Response, type NextFunction } from "express";
 import { supabaseAdmin } from "../lib/supabase";
+import { isReservedSlug } from "../lib/reservedSlugs";
 import { logger } from "../lib/logger";
 import { invalidateCachedProfile } from "../lib/profileCache";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
@@ -227,7 +228,7 @@ router.post(
       let slug = baseSlug;
       for (let attempt = 0; attempt < 25; attempt++) {
         const { data: conflict } = await supabaseAdmin.from("schools").select("id").eq("slug", slug).maybeSingle();
-        if (!conflict) break;
+        if (!conflict && !isReservedSlug(slug)) break;
         slug = `${baseSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
       }
 

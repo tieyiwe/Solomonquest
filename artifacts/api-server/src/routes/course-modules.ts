@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { maybeIssueCertificate } from "../lib/certificates";
 import {
   loadCourseStructure,
   getStudentCourseState,
@@ -771,6 +772,11 @@ router.post("/lessons/:id/complete", requireAuth, async (req: AuthenticatedReque
       return;
     }
     const state = await getStudentCourseState(courseId, req.userId ?? "");
+    // Finishing the last lesson can complete the course: let the school's
+    // certificate settings (auto mode only) decide whether to issue one.
+    if (state.progress.totalItems > 0 && state.progress.completedItems >= state.progress.totalItems) {
+      void maybeIssueCertificate(req.userId ?? "", courseId);
+    }
     res.json({ lessonId: id, completed: true, progress: state.progress });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

@@ -28,6 +28,7 @@ import {
   CalendarDays,
   Wallet,
   FileBarChart,
+  Award,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -69,6 +70,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
     { href: "/reports/students/me", label: "Progress report", icon: FileBarChart, exact: false },
     { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
     { href: "/dashboard/student/tuition", label: "Tuition", icon: Wallet, exact: false },
+    { href: "/dashboard/student/certificates", label: "Certificates", icon: Award, exact: false },
     ...(user?.role === "staff"
       ? [{ href: "/dashboard/admin/terms", label: "Terms & Scheduling", icon: CalendarDays, exact: false }]
       : []),

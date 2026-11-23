@@ -28,6 +28,9 @@ import {
   DollarSign,
   Wallet,
   Shield,
+  Award,
+  Upload,
+  Library,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter } from "@/components/help/HelpCenter";
@@ -56,6 +59,9 @@ const adminLinks = [
   { href: "/dashboard/admin/terms", label: "Terms & Scheduling", icon: CalendarRange },
   { href: "/dashboard/admin/admissions", label: "Admissions", icon: CheckSquare },
   { href: "/dashboard/admin/resources", label: "Resources", icon: FolderOpen },
+  { href: "/dashboard/admin/certificates", label: "Certificates", icon: Award },
+  { href: "/dashboard/admin/question-banks", label: "Question Banks", icon: Library },
+  { href: "/dashboard/admin/bulk-import", label: "Bulk Import", icon: Upload },
   { href: "/dashboard/admin/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/dashboard/admin/at-risk", label: "At-risk students", icon: AlertTriangle },
   { href: "/dashboard/admin/audit-log", label: "Audit Log", icon: History },
@@ -81,12 +87,14 @@ const NAV_GROUPS: { label: string; hrefs: string[] }[] = [
       "/dashboard/admin/admissions",
       "/dashboard/admin/resources",
       "/dashboard/admin/at-risk",
+      "/dashboard/admin/certificates",
+      "/dashboard/admin/question-banks",
     ],
   },
   { label: "Finance", hrefs: ["/dashboard/admin/tuition", "/dashboard/admin/accounting"] },
   { label: "Communication", hrefs: ["/chat", "/help"] },
   // Danger Zone lives under Settings (after Branding), not here.
-  { label: "Administration", hrefs: ["/dashboard/admin/audit-log"] },
+  { label: "Administration", hrefs: ["/dashboard/admin/audit-log", "/dashboard/admin/bulk-import"] },
 ];
 
 const settingsSubLinks = [
