@@ -538,6 +538,28 @@ router.get("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
 // while still requiring the student to have watched the bulk of it.
 const VIDEO_COMPLETION_THRESHOLD_PERCENT = 90;
 
+// GET /assignments/:id/watch-progress — the student's own server-side watch
+// record, so the page can show "watched in full" after a reload.
+router.get("/assignments/:id/watch-progress", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const assignmentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  if (req.userRole !== "student" || !req.userId) {
+    res.status(403).json({ error: "Only students have watch progress" });
+    return;
+  }
+  const { data } = await supabaseAdmin
+    .from("video_watch_progress")
+    .select("max_watched_seconds, duration_seconds, watched_percent, completed")
+    .eq("assignment_id", assignmentId)
+    .eq("student_id", req.userId)
+    .maybeSingle();
+  res.json({
+    maxWatchedSeconds: Number(data?.max_watched_seconds ?? 0),
+    durationSeconds: data?.duration_seconds != null ? Number(data.duration_seconds) : null,
+    watchedPercent: Number(data?.watched_percent ?? 0),
+    completed: data?.completed === true,
+  });
+});
+
 // POST /assignments/:id/watch-progress — the video player pings this
 // periodically (not on every timeupdate tick) with how far the student has
 // gotten. This is the server-side backstop for video-watch verification:
@@ -602,12 +624,36 @@ router.post("/assignments/:id/watch-progress", requireAuth, async (req: Authenti
 
   const { data: existingProgress } = await supabaseAdmin
     .from("video_watch_progress")
-    .select("completed")
+    .select("completed, max_watched_seconds, duration_seconds, updated_at")
     .eq("assignment_id", assignmentId)
     .eq("student_id", studentId)
     .maybeSingle();
 
   const wasCompleted = existingProgress?.completed === true;
+
+  // The client reports its own position, so without limits a student could
+  // POST { watchedSeconds: duration } once and be marked complete. Two
+  // server-side limits make the record reflect real playback time:
+  //  1. Duration is fixed by the first report; later reports can't shrink
+  //     the video to make a small position count as "complete".
+  //  2. The recorded position can only advance about as fast as real time
+  //     passes between reports (the player reports every ~12s while
+  //     playing). Each report may add at most the wall-clock time since the
+  //     previous one x 1.25, plus a few seconds of slack, capped at 60s of
+  //     elapsed time so a long pause can't be cashed in as one big jump.
+  // Values beyond the limit are clamped, not rejected: the player re-sends
+  // its true position on the next report and catches up legitimately.
+  const prevMax = Number(existingProgress?.max_watched_seconds ?? 0) || 0;
+  const lockedDuration = Number(existingProgress?.duration_seconds ?? 0);
+  const effectiveDuration = lockedDuration > 0 ? lockedDuration : durationSeconds;
+  const lastReportAt = existingProgress?.updated_at ? Date.parse(existingProgress.updated_at as string) : NaN;
+  const elapsedSinceLast = Number.isFinite(lastReportAt)
+    ? Math.min(Math.max(0, (Date.now() - lastReportAt) / 1000), 60)
+    : 0;
+  const maxAllowed = existingProgress
+    ? prevMax + elapsedSinceLast * 1.25 + 5
+    : 15; // first report: playback has only just started
+  const acceptedWatchedSeconds = Math.min(watchedSeconds, maxAllowed, effectiveDuration);
 
   // High-water mark only: a client re-reporting a lower value (e.g. after
   // seeking back) must never reduce what the server has already recorded.
@@ -621,8 +667,8 @@ router.post("/assignments/:id/watch-progress", requireAuth, async (req: Authenti
     .rpc("upsert_video_watch_progress", {
       p_assignment_id: assignmentId,
       p_student_id: studentId,
-      p_watched_seconds: watchedSeconds,
-      p_duration_seconds: durationSeconds,
+      p_watched_seconds: acceptedWatchedSeconds,
+      p_duration_seconds: effectiveDuration,
       p_completion_threshold_percent: VIDEO_COMPLETION_THRESHOLD_PERCENT,
     })
     .single();

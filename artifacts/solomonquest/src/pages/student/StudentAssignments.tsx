@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { StudentLayout } from "@/components/layout/StudentLayout";
 import { supabase } from "@/lib/supabase";
@@ -141,6 +141,27 @@ function SubmitDialog({
   const requireFullWatch = (assignment as any).requireFullWatch === true;
   const videoUrl = (assignment as any).videoUrl as string | undefined;
   const canSubmit = !isVideoType || !requireFullWatch || videoWatched;
+
+  // The server is the source of truth for "watched in full" (it refuses
+  // submissions otherwise), so a student who finished the video earlier
+  // isn't made to rewatch it after a reload.
+  useEffect(() => {
+    if (!isVideoType || !requireFullWatch) return;
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data: { session } }) =>
+      fetch(`/api/assignments/${assignment.id}/watch-progress`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((p) => {
+          if (!cancelled && p?.completed === true) setVideoWatched(true);
+        })
+        .catch(() => {})
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [assignment.id, isVideoType, requireFullWatch]);
 
   const handleSubmit = () => {
     submitAssignment.mutate(

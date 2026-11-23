@@ -41,12 +41,28 @@ async function assertStudentCanSubmit(
 
   const { data: assignment } = await supabaseAdmin
     .from("assignments")
-    .select("id, course_id, is_published")
+    .select("id, course_id, is_published, assignment_type, require_full_watch")
     .eq("id", assignmentId)
     .single();
 
   if (!assignment) return { ok: false, status: 404, error: "Assignment not found" };
   if (!assignment.is_published) return { ok: false, status: 403, error: "This assignment is not yet published" };
+
+  // "Must watch the full video" used to be enforced only by the browser
+  // hiding the submit form, so a direct API call could submit unwatched.
+  // The server's watch record (rate-limited in POST /watch-progress) is the
+  // source of truth.
+  if (assignment.assignment_type === "video" && assignment.require_full_watch === true) {
+    const { data: progress } = await supabaseAdmin
+      .from("video_watch_progress")
+      .select("completed")
+      .eq("assignment_id", assignmentId)
+      .eq("student_id", req.userId ?? "")
+      .maybeSingle();
+    if (progress?.completed !== true) {
+      return { ok: false, status: 403, error: "Watch the full video before submitting this assignment" };
+    }
+  }
 
   const { data: enrollment } = await supabaseAdmin
     .from("course_enrollments")

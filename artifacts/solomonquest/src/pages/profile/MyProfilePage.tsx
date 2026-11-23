@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Camera, KeyRound, Loader2, Save } from "lucide-react";
+import { Camera, KeyRound, Loader2, Mail, Save } from "lucide-react";
 import { getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -103,6 +103,109 @@ function ChangePasswordCard({ email }: { email: string }) {
         <Button onClick={handleChange} disabled={saving || !current || !next || !confirm}>
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
           Change Password
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Signed-in email change. Safety rests on three things:
+ *  - the current password is re-checked first, so an unattended session
+ *    can't redirect the account's email (the usual first step of a takeover);
+ *  - Supabase Auth only switches the email after the confirmation link is
+ *    clicked. With "Secure email change" on (the Supabase default), links go
+ *    to BOTH the old and new addresses and both must be confirmed, so the
+ *    real owner is told and can refuse;
+ *  - profiles.email is synced from auth.users by a database trigger
+ *    (supabase-perf-denormalize-email.sql), so nothing here writes it.
+ */
+function ChangeEmailCard({ email }: { email: string }) {
+  const [password, setPassword] = useState("");
+  const [nextEmail, setNextEmail] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      const pending = (data.user as { new_email?: string | null } | null)?.new_email;
+      setPendingEmail(pending || null);
+    });
+    // After a confirmation link, Supabase returns here with a status message
+    // in the URL fragment (e.g. "confirm the link sent to the other email").
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const message = hash.get("message");
+    const errorDescription = hash.get("error_description");
+    if (message) toast.info(message.replace(/\+/g, " "));
+    if (errorDescription) toast.error(errorDescription.replace(/\+/g, " "));
+    if (message || errorDescription) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, []);
+
+  const handleChange = async () => {
+    const target = nextEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
+      toast.error("Enter a valid email address");
+      return;
+    }
+    if (target === email.trim().toLowerCase()) {
+      toast.error("That is already your email address");
+      return;
+    }
+    if (!email) {
+      toast.error("Your account has no email address to verify against");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error: verifyError } = await supabase.auth.signInWithPassword({ email, password });
+      if (verifyError) throw new Error("Password is incorrect");
+      const { error } = await supabase.auth.updateUser(
+        { email: target },
+        { emailRedirectTo: `${window.location.origin}/profile` }
+      );
+      if (error) throw error;
+      setPendingEmail(target);
+      setPassword("");
+      setNextEmail("");
+      toast.success("Check your inbox to confirm the change");
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to change email");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Change Email</CardTitle>
+        <CardDescription>
+          You sign in with this address. We'll send confirmation links before anything changes.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {pendingEmail && (
+          <div className="rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-sm">
+            Change to <span className="font-medium">{pendingEmail}</span> is waiting for confirmation.
+            Open the links sent to <span className="font-medium">{email}</span> and{" "}
+            <span className="font-medium">{pendingEmail}</span>. Until then, keep signing in with your current email.
+          </div>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="myprofilepage-new-email">New email</Label>
+            <Input id="myprofilepage-new-email" type="email" autoComplete="email" value={nextEmail} onChange={(e) => setNextEmail(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="myprofilepage-email-password">Current password</Label>
+            <Input id="myprofilepage-email-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+        </div>
+        <Button onClick={handleChange} disabled={saving || !password || !nextEmail}>
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+          Change Email
         </Button>
       </CardContent>
     </Card>
@@ -299,6 +402,7 @@ function ProfileForm() {
         </CardContent>
       </Card>
 
+      <ChangeEmailCard email={user?.email || email || ""} />
       <ChangePasswordCard email={email || user?.email || ""} />
     </div>
   );
