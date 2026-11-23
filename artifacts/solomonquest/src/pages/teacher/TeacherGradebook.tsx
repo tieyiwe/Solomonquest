@@ -77,6 +77,10 @@ interface CellSelection {
   fileUrl: string | null;
   rubric: RubricCriterion[] | null;
   currentRubricScores: Record<string, { score: number }> | null;
+  /** Late-work info: the grade input edits the raw (pre-penalty) score. */
+  submittedLate?: boolean;
+  daysLate?: number;
+  latePenaltyPercent?: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -322,6 +326,16 @@ function GradingPanel({
             )}
           </div>
 
+          {selection?.submittedLate && (
+            <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">
+              <span className="font-semibold">Submitted late</span>
+              {selection.daysLate ? ` (${selection.daysLate} day${selection.daysLate === 1 ? "" : "s"})` : ""}.{" "}
+              {selection.latePenaltyPercent
+                ? `Enter the score before penalty — a ${selection.latePenaltyPercent}% late penalty is applied on save.`
+                : "Any late penalty set on the assignment is applied when you save."}
+            </div>
+          )}
+
           {/* Grade input — rubric-based when this assignment has one, else a single value */}
           {hasRubric ? (
             <div className="space-y-2">
@@ -430,7 +444,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
   // by fetching the first assignment and iterating. The existing API only exposes per-assignment.
   // We'll accumulate submission data keyed by [studentId][assignmentId].
   const [submissionCache, setSubmissionCache] = useState<
-    Record<string, Record<string, { id: string; grade: number | null; feedback: string | null; content: string | null; fileUrl: string | null; status: string; rubricScores: Record<string, { score: number }> | null }>>
+    Record<string, Record<string, { id: string; grade: number | null; rawGrade: number | null; submittedLate: boolean; daysLate: number; latePenaltyPercent: number; feedback: string | null; content: string | null; fileUrl: string | null; status: string; rubricScores: Record<string, { score: number }> | null }>>
   >({});
 
   const [selectedCell, setSelectedCell] = useState<CellSelection | null>(null);
@@ -454,7 +468,12 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
         assignmentTitle: assignment.title,
         pointsPossible: assignment.pointsPossible ?? null,
         submissionId: sub?.id ?? null,
-        currentGrade: sub?.grade ?? null,
+        // Edit the raw score: `grade` already has any late penalty applied,
+        // and re-saving it would apply the penalty twice.
+        currentGrade: sub?.rawGrade ?? sub?.grade ?? null,
+        submittedLate: sub?.submittedLate ?? false,
+        daysLate: sub?.daysLate ?? 0,
+        latePenaltyPercent: sub?.latePenaltyPercent ?? 0,
         currentFeedback: sub?.feedback ?? null,
         content: sub?.content ?? null,
         fileUrl: sub?.fileUrl ?? null,
@@ -510,6 +529,10 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
                 next[sub.studentId][a.id] = {
                   id: sub.id,
                   grade: sub.grade ?? null,
+                  rawGrade: (sub as any).rawGrade ?? null,
+                  submittedLate: (sub as any).submittedLate === true,
+                  daysLate: (sub as any).daysLate ?? 0,
+                  latePenaltyPercent: (sub as any).latePenaltyPercent ?? 0,
                   feedback: (sub as any).feedback ?? null,
                   content: (sub as any).content ?? null,
                   fileUrl: (sub as any).fileUrl ?? (sub as any).file_url ?? null,
@@ -623,6 +646,11 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
                                 </span>
                                 {pct != null && (
                                   <span className={cn("text-xs", gradeColor(pct))}>{pct}%</span>
+                                )}
+                                {sub!.latePenaltyPercent > 0 && (
+                                  <span className="text-[10px] font-medium text-warning" title={`Raw score ${sub!.rawGrade ?? "?"} before late penalty`}>
+                                    Late −{sub!.latePenaltyPercent}%
+                                  </span>
                                 )}
                               </div>
                             ) : sub ? (

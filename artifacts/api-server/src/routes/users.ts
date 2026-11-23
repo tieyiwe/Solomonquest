@@ -73,7 +73,7 @@ router.put("/users/me/notification-prefs", requireAuth, async (req: Authenticate
     return;
   }
 
-  const { in_app, email, chat, forum, assignments, grades, resources, applications } = req.body;
+  const { in_app, email, chat, forum, assignments, grades, resources, applications, announcements } = req.body;
 
   const notification_prefs: Record<string, unknown> = {};
   if (in_app !== undefined) notification_prefs.in_app = in_app;
@@ -84,6 +84,7 @@ router.put("/users/me/notification-prefs", requireAuth, async (req: Authenticate
   if (grades !== undefined) notification_prefs.grades = grades;
   if (resources !== undefined) notification_prefs.resources = resources;
   if (applications !== undefined) notification_prefs.applications = applications;
+  if (announcements !== undefined) notification_prefs.announcements = announcements;
 
   const { data, error } = await supabaseAdmin
     .from("profiles")

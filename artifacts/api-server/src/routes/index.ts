@@ -41,6 +41,8 @@ import termsRouter from "./terms";
 import searchRouter from "./search";
 import schoolRequestsRouter from "./school-requests";
 import courseModulesRouter from "./course-modules";
+import lateWorkRouter from "./late-work";
+import progressReportsRouter from "./progress-reports";
 
 const router: IRouter = Router();
 
@@ -86,5 +88,7 @@ router.use(termsRouter);
 router.use(searchRouter);
 router.use(schoolRequestsRouter);
 router.use(courseModulesRouter);
+router.use(lateWorkRouter);
+router.use(progressReportsRouter);
 
 export default router;

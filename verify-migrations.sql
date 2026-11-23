@@ -194,7 +194,17 @@ select * from (values
     and exists (select 1 from information_schema.tables
       where table_schema='public' and table_name='course_module_items')
     and exists (select 1 from information_schema.tables
-      where table_schema='public' and table_name='lesson_completions'))
+      where table_schema='public' and table_name='lesson_completions')),
+
+  ('late-work-and-alerts.sql: late policy columns + assignment_extensions + school_risk_settings',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='assignments' and column_name='late_cutoff_at')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='submissions' and column_name='raw_grade')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='assignment_extensions')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='school_risk_settings'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

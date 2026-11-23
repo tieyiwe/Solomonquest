@@ -74,6 +74,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { ExtensionsPanel } from "@/components/assignments/ExtensionsPanel";
 
 interface RubricCriterionForm {
   id: string;
@@ -92,6 +93,10 @@ interface AssignmentFormData {
   video_url: string;
   require_full_watch: boolean;
   rubric: RubricCriterionForm[];
+  allow_late_submissions: boolean;
+  late_penalty_per_day: string;
+  late_penalty_max: string;
+  late_cutoff_at: string;
 }
 
 const emptyForm: AssignmentFormData = {
@@ -105,7 +110,18 @@ const emptyForm: AssignmentFormData = {
   video_url: "",
   require_full_watch: true,
   rubric: [],
+  allow_late_submissions: true,
+  late_penalty_per_day: "0",
+  late_penalty_max: "100",
+  late_cutoff_at: "",
 };
+
+/** ISO -> local "yyyy-MM-ddTHH:mm" for datetime-local inputs. */
+function isoToLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : format(d, "yyyy-MM-dd'T'HH:mm");
+}
 
 function toFormData(a: Assignment & { instructions?: string | null; fileUrl?: string | null }): AssignmentFormData {
   const rubric = (a as any).rubric as { id: string; name: string; maxPoints: number }[] | null;
@@ -120,6 +136,10 @@ function toFormData(a: Assignment & { instructions?: string | null; fileUrl?: st
     video_url: (a as any).videoUrl ?? "",
     require_full_watch: (a as any).requireFullWatch ?? true,
     rubric: (rubric ?? []).map((c) => ({ id: c.id, name: c.name, maxPoints: String(c.maxPoints) })),
+    allow_late_submissions: (a as any).allowLateSubmissions !== false,
+    late_penalty_per_day: String((a as any).latePenaltyPerDay ?? 0),
+    late_penalty_max: String((a as any).latePenaltyMax ?? 100),
+    late_cutoff_at: isoToLocalInput((a as any).lateCutoffAt),
   };
 }
 
@@ -127,14 +147,16 @@ function SubmissionsPanel({
   assignmentId,
   assignmentTitle,
   pointsPossible,
+  dueDate,
   onClose,
 }: {
   assignmentId: string;
   assignmentTitle: string;
   pointsPossible?: number | null;
+  dueDate?: string | null;
   onClose: () => void;
 }) {
-  const { data: submissions, isLoading } = useListSubmissions(assignmentId, {
+  const { data: submissions, isLoading, refetch } = useListSubmissions(assignmentId, {
     query: { enabled: !!assignmentId },
   });
   const gradeSubmission = useGradeSubmission();
@@ -143,7 +165,10 @@ function SubmissionsPanel({
     gradeSubmission.mutate(
       { id: submissionId, data: { grade } },
       {
-        onSuccess: () => toast.success("Grade saved"),
+        onSuccess: () => {
+          toast.success("Grade saved");
+          refetch();
+        },
         onError: () => toast.error("Failed to save grade"),
       }
     );
@@ -170,6 +195,7 @@ function SubmissionsPanel({
             ))}
           </div>
         ) : submissions && submissions.length > 0 ? (
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -207,24 +233,42 @@ function SubmissionsPanel({
                     ) : null}
                   </TableCell>
                   <TableCell className="py-2">
-                    <Badge
-                      variant={
-                        sub.status === "graded"
-                          ? "default"
-                          : sub.status === "submitted"
-                          ? "secondary"
-                          : "outline"
-                      }
-                      className="text-xs capitalize"
-                    >
-                      {sub.status}
-                    </Badge>
+                    <div className="flex flex-col items-start gap-1">
+                      <Badge
+                        variant={
+                          sub.status === "graded"
+                            ? "default"
+                            : sub.status === "submitted"
+                            ? "secondary"
+                            : "outline"
+                        }
+                        className="text-xs capitalize"
+                      >
+                        {sub.status}
+                      </Badge>
+                      {(sub as any).submittedLate && (
+                        <Badge variant="outline" className="text-[10px] border-warning/50 text-warning">
+                          Late {(sub as any).daysLate ? `${(sub as any).daysLate}d` : ""}
+                          {(sub as any).latePenaltyPercent > 0 ? ` · −${(sub as any).latePenaltyPercent}%` : ""}
+                        </Badge>
+                      )}
+                      {(sub as any).extension && (
+                        <span className="text-[10px] text-muted-foreground">
+                          Ext. to {format(new Date((sub as any).extension.extendedDueAt), "MMM d")}
+                          {(sub as any).extension.waivePenalty ? " (waived)" : ""}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="py-2">
                     <div className="flex items-center gap-1">
                       <Input
                         type="number"
-                        defaultValue={sub.grade ?? ""}
+                        aria-label={`Score for ${sub.studentName || "student"} before late penalty`}
+                        // The raw (pre-penalty) score — grade has any late
+                        // penalty applied already; re-saving it would
+                        // apply the penalty twice.
+                        defaultValue={(sub as any).rawGrade ?? sub.grade ?? ""}
                         className="h-7 w-16 text-xs"
                         onBlur={(e) => {
                           if (e.target.value !== "") {
@@ -237,17 +281,24 @@ function SubmissionsPanel({
                         /{pointsPossible ?? "?"}
                       </span>
                     </div>
+                    {(sub as any).latePenaltyPercent > 0 && sub.grade != null && (
+                      <p className="text-[10px] text-warning mt-0.5">Counts as {sub.grade}</p>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          </div>
         ) : (
           <div className="text-center py-6">
             <Clock className="h-7 w-7 mx-auto text-muted-foreground/50 mb-2" />
             <p className="text-xs text-muted-foreground">No submissions yet.</p>
           </div>
         )}
+        <div className="mt-4">
+          <ExtensionsPanel assignmentId={assignmentId} dueDate={dueDate} onChanged={() => refetch()} />
+        </div>
       </CardContent>
     </Card>
   );
@@ -301,6 +352,21 @@ function AssignmentFormDialog({
       return;
     }
 
+    const perDay = Number(form.late_penalty_per_day || 0);
+    const maxPenalty = Number(form.late_penalty_max || 100);
+    if (!Number.isFinite(perDay) || perDay < 0 || perDay > 100 || !Number.isFinite(maxPenalty) || maxPenalty < 0 || maxPenalty > 100) {
+      toast.error("Late penalties must be between 0 and 100%");
+      return;
+    }
+    if (form.late_cutoff_at && isNaN(Date.parse(form.late_cutoff_at))) {
+      toast.error("Please enter a valid cutoff date");
+      return;
+    }
+    if (form.late_cutoff_at && form.due_date && Date.parse(form.late_cutoff_at) < Date.parse(form.due_date)) {
+      toast.error("The cutoff must be after the due date");
+      return;
+    }
+
     const rubricRows = form.rubric.filter((c) => c.name.trim());
     for (const c of rubricRows) {
       const max = Number(c.maxPoints);
@@ -322,6 +388,10 @@ function AssignmentFormDialog({
       video_url: isVideo ? form.video_url.trim() : undefined,
       require_full_watch: isVideo ? form.require_full_watch : undefined,
       rubric: rubricRows.length > 0 ? rubricRows.map((c) => ({ id: c.id, name: c.name.trim(), maxPoints: Number(c.maxPoints) })) : undefined,
+      allow_late_submissions: form.allow_late_submissions,
+      late_penalty_per_day: form.allow_late_submissions ? perDay : 0,
+      late_penalty_max: maxPenalty,
+      late_cutoff_at: form.late_cutoff_at ? new Date(form.late_cutoff_at).toISOString() : null,
     };
 
     if (isEditing && editAssignment) {
@@ -504,6 +574,61 @@ function AssignmentFormDialog({
             </div>
           </div>
 
+          <div className="space-y-3 rounded-lg border border-dashed p-4" data-testid="late-policy">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Accept late submissions</p>
+                <p className="text-xs text-muted-foreground">
+                  Off: nothing can be handed in after the due date (unless you grant an extension).
+                </p>
+              </div>
+              <Switch
+                aria-label="Accept late submissions"
+                checked={form.allow_late_submissions}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, allow_late_submissions: v }))}
+              />
+            </div>
+            {form.allow_late_submissions && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="late_penalty_per_day">Penalty per day late (%)</Label>
+                  <Input
+                    id="late_penalty_per_day"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={form.late_penalty_per_day}
+                    onChange={set("late_penalty_per_day")}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="late_penalty_max">Maximum penalty (%)</Label>
+                  <Input
+                    id="late_penalty_max"
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={form.late_penalty_max}
+                    onChange={set("late_penalty_max")}
+                  />
+                </div>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="late_cutoff_at">Hard cutoff (optional)</Label>
+              <Input
+                id="late_cutoff_at"
+                type="datetime-local"
+                value={form.late_cutoff_at}
+                onChange={set("late_cutoff_at")}
+              />
+              <p className="text-xs text-muted-foreground">
+                Submissions are refused after this time. A student's extension past the cutoff still lets them submit.
+              </p>
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label>Rubric (optional)</Label>
@@ -662,6 +787,17 @@ function CourseAssignmentsPanel({
                         </span>
                       )}
                       <span>{assignment.pointsPossible ?? 0} pts</span>
+                      {(assignment as any).allowLateSubmissions === false ? (
+                        <span>No late work</span>
+                      ) : (assignment as any).latePenaltyPerDay > 0 ? (
+                        <span>
+                          Late: −{(assignment as any).latePenaltyPerDay}%/day
+                          {(assignment as any).latePenaltyMax < 100 ? ` (max ${(assignment as any).latePenaltyMax}%)` : ""}
+                        </span>
+                      ) : null}
+                      {(assignment as any).lateCutoffAt && (
+                        <span>Cutoff {format(new Date((assignment as any).lateCutoffAt), "MMM d, h:mm a")}</span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 flex-wrap">
@@ -709,6 +845,7 @@ function CourseAssignmentsPanel({
             assignmentId={viewSubmissionsFor}
             assignmentTitle={viewingAssignment.title}
             pointsPossible={viewingAssignment.pointsPossible}
+            dueDate={viewingAssignment.dueDate}
             onClose={() => setViewSubmissionsFor(null)}
           />
         )}

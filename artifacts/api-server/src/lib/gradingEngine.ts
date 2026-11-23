@@ -1,4 +1,14 @@
 import { supabaseAdmin } from "./supabase";
+import {
+  hasLateColumns,
+  getExtension,
+  effectiveDueDate,
+  minutesLate,
+  penaltyPercent,
+  latePolicyOf,
+  applyPenalty,
+} from "./lateWork";
+import { dispatchNotifications, studentAndParentRecipients } from "./notifyAudience";
 
 // ---------------------------------------------------------------------------
 // gradeSubmission — the one correct path for setting a submission's grade.
@@ -18,6 +28,8 @@ export interface GradeSubmissionParams {
   rubricScores?: Record<string, number>;
   feedback?: string | null;
   gradedBy: string | undefined;
+  /** Default true: notify the student + linked parents. */
+  notify?: boolean;
 }
 
 export type GradeSubmissionResult =
@@ -33,7 +45,9 @@ export async function gradeSubmission(params: GradeSubmissionParams): Promise<Gr
 
   const { data: existing, error: fetchError } = await supabaseAdmin
     .from("submissions")
-    .select("id, student_id, assignment_id, assignments:assignment_id (id, title, course_id, points_possible, rubric, courses:course_id (id, school_id))")
+    // "*" on both so the late-work columns are picked up when
+    // late-work-and-alerts.sql has been applied, and ignored when not.
+    .select("*, assignments:assignment_id (*, courses:course_id (id, school_id))")
     .eq("id", submissionId)
     .single();
 
@@ -41,7 +55,7 @@ export async function gradeSubmission(params: GradeSubmissionParams): Promise<Gr
     return { ok: false, status: 404, error: "Submission not found" };
   }
 
-  const assignment = existing.assignments as unknown as {
+  const assignment = existing.assignments as unknown as Record<string, unknown> & {
     id: string;
     title: string;
     course_id: string | null;
@@ -99,6 +113,23 @@ export async function gradeSubmission(params: GradeSubmissionParams): Promise<Gr
     finalGrade = grade;
   }
 
+  // Late penalty: the teacher's score is the raw grade; `grade` stores the
+  // score after the penalty so every gradebook/transcript reader stays
+  // consistent. Lateness is re-measured now against the student's effective
+  // due date (an extension may have been granted after they handed in).
+  if (assignment && hasLateColumns(assignment) && "raw_grade" in existing) {
+    const ext = existing.student_id ? await getExtension(existing.assignment_id as string, existing.student_id as string) : null;
+    const due = effectiveDueDate(assignment.due_date as string | null, ext);
+    const mins = minutesLate(existing.submitted_at as string | null, due);
+    const pct = penaltyPercent(latePolicyOf(assignment), mins, ext?.waivePenalty === true);
+    updates.raw_grade = finalGrade;
+    updates.late_penalty_percent = pct;
+    updates.submitted_late = mins > 0;
+    updates.minutes_late = mins;
+    finalGrade = applyPenalty(finalGrade, pct);
+    updates.grade = finalGrade;
+  }
+
   const { data: updated, error: updateError } = await supabaseAdmin
     .from("submissions")
     .update(updates)
@@ -132,18 +163,26 @@ export async function gradeSubmission(params: GradeSubmissionParams): Promise<Gr
       if (error) console.warn("[gradingEngine] transcript upsert failed:", error.message);
     });
 
-  if (existing.student_id) {
-    supabaseAdmin
-      .from("notifications")
-      .insert({
-        user_id: existing.student_id,
-        title: "Assignment graded",
-        link: assignment?.course_id ? `/dashboard/student/courses/${assignment.course_id}` : null,
-        is_read: false,
-      })
-      .then(({ error }) => {
-        if (error) console.warn("[gradingEngine] grade notification failed:", error.message);
-      });
+  if (existing.student_id && params.notify !== false) {
+    const studentId = existing.student_id as string;
+    const pointsLabel = typeof assignment?.points_possible === "number" ? ` / ${assignment.points_possible}` : "";
+    const penaltyNote =
+      typeof updates.late_penalty_percent === "number" && updates.late_penalty_percent > 0
+        ? ` (includes a ${updates.late_penalty_percent}% late penalty)`
+        : "";
+    studentAndParentRecipients([studentId], () => "/dashboard/student/assignments")
+      .then((recipients) =>
+        dispatchNotifications({
+          recipients,
+          type: "grade",
+          category: "grades",
+          title: `Graded: ${assignment?.title ?? "Assignment"}`,
+          body: `Score: ${finalGrade}${pointsLabel}${penaltyNote}.${feedback ? " Your teacher left feedback." : ""}`,
+          excludeUserId: gradedBy ?? null,
+          metadata: { submissionId: existing.id, assignmentId: existing.assignment_id, studentId },
+        })
+      )
+      .catch((error) => console.warn("[gradingEngine] grade notification failed:", error?.message ?? error));
   }
 
   return { ok: true, submission: updated };

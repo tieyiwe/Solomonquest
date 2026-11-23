@@ -64,6 +64,8 @@ const AdminStudentTranscript = lazy(() => import("@/pages/admin/AdminStudentTran
 const AcceptInvitePage = lazy(() => import("@/pages/auth/AcceptInvitePage"));
 const ResetPassword = lazy(() => import("@/pages/auth/ResetPassword"));
 const HelpPage = lazy(() => import("@/pages/HelpPage"));
+const AtRiskStudents = lazy(() => import("@/pages/reports/AtRiskStudents"));
+const StudentProgressReport = lazy(() => import("@/pages/reports/StudentProgressReport"));
 
 
 function StudentVideoSession() {
@@ -125,7 +127,7 @@ const RESERVED_ROOT_SEGMENTS = new Set([
   "api", "auth", "login", "logout", "register", "signup", "onboarding",
   "schools", "dashboard", "admin", "super_admin", "teacher", "student", "parent",
   "chat", "forum", "invite", "messages", "calendar", "settings", "notifications",
-  "profile", "transcript", "transcripts", "help", "assets", "static",
+  "profile", "transcript", "transcripts", "help", "assets", "static", "reports",
 ]);
 
 function RootSchoolRoute({ apply = false }: { apply?: boolean }) {
@@ -335,6 +337,17 @@ export function Router() {
 
         {/* Public Transcript Verification Route */}
         <Route path="/transcript" component={TranscriptVerifyPage} />
+
+        {/* At-risk students + per-student progress reports (server enforces who may see which student) */}
+        <Route path="/dashboard/admin/at-risk">
+          <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AtRiskStudents /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/teacher/at-risk">
+          <ProtectedRoute allowedRoles={["teacher"]}><AtRiskStudents /></ProtectedRoute>
+        </Route>
+        <Route path="/reports/students/:id">
+          <ProtectedRoute><StudentProgressReport /></ProtectedRoute>
+        </Route>
 
         {/* Help Center */}
         <Route path="/help">

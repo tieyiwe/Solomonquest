@@ -31,6 +31,7 @@ import {
   CalendarDays,
   AlarmClock,
   MessageSquare,
+  AlertTriangle,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useGetMySchool, useGetMyCourses } from "@workspace/api-client-react";
@@ -64,6 +65,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
     { href: "/dashboard/teacher/attendance", label: "Attendance", icon: CalendarCheck, exact: false },
     { href: "/dashboard/teacher/resources", label: "Resources", icon: FolderOpen, exact: false },
     { href: "/dashboard/teacher/analytics", label: "Analytics", icon: BarChart2, exact: false },
+    { href: "/dashboard/teacher/at-risk", label: "At-risk students", icon: AlertTriangle, exact: false },
     { href: "/dashboard/teacher/reminders", label: "Reminders", icon: AlarmClock, exact: false },
     { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
   ];
