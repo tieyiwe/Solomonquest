@@ -176,7 +176,17 @@ select * from (values
     exists (select 1 from storage.buckets where id='school-assets')
     and exists (select 1 from storage.buckets where id='course-resources')
     and exists (select 1 from pg_policies where schemaname='storage' and tablename='objects'
-      and policyname='course-resources insert'))
+      and policyname='course-resources insert')),
+
+  ('course-modules.sql: course_modules, course_lessons, course_module_items, lesson_completions',
+    exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='course_modules')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='course_lessons')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='course_module_items')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='lesson_completions'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

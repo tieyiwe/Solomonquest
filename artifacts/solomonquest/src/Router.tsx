@@ -15,6 +15,7 @@ const SchoolApply = lazy(() => import("@/pages/school/SchoolApply"));
 const AdminOverview = lazy(() => import("@/pages/admin/AdminOverview"));
 const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
 const AdminCourses = lazy(() => import("@/pages/admin/AdminCourses"));
+const AdminCourseModules = lazy(() => import("@/pages/admin/AdminCourseModules"));
 const AdminTuition = lazy(() => import("@/pages/admin/AdminTuition"));
 const AdminAccounting = lazy(() => import("@/pages/admin/AdminAccounting"));
 const AdminPrograms = lazy(() => import("@/pages/admin/AdminPrograms"));
@@ -163,6 +164,9 @@ export function Router() {
         </Route>
         <Route path="/dashboard/admin/users">
           <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminUsers /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/admin/courses/:id/modules">
+          <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminCourseModules /></ProtectedRoute>
         </Route>
         <Route path="/dashboard/admin/courses">
           <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminCourses /></ProtectedRoute>

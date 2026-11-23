@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { lockedItemError } from "../lib/courseProgress";
 
 const router: IRouter = Router();
 
@@ -603,6 +604,13 @@ router.post(
 
       if (!enrollment) {
         res.status(403).json({ error: "You are not enrolled in this course" });
+        return;
+      }
+
+      // Module prerequisites / sequential items (course-modules.sql).
+      const lockError = await lockedItemError(quiz.course_id as string, userId, { type: "quiz", id: String(id) });
+      if (lockError) {
+        res.status(403).json({ error: lockError });
         return;
       }
 

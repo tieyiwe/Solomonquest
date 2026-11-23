@@ -67,6 +67,7 @@ import {
   UserPlus,
   Radio,
   History,
+  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -1071,6 +1072,11 @@ export default function AdminCourses() {
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             <CourseHistoryDialog course={course} />
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Modules & progress" asChild>
+                              <Link href={`/dashboard/admin/courses/${course.id}/modules`} aria-label="Modules & progress">
+                                <Layers className="h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"

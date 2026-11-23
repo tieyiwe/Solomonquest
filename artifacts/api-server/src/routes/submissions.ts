@@ -5,6 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { gradeSubmission } from "../lib/gradingEngine";
 import { scanFile } from "../lib/fileScan";
 import { logger } from "../lib/logger";
+import { lockedItemError } from "../lib/courseProgress";
 
 const router: IRouter = Router();
 
@@ -57,6 +58,10 @@ async function assertStudentCanSubmit(
     .maybeSingle();
 
   if (!enrollment) return { ok: false, status: 403, error: "You are not enrolled in this course" };
+
+  // Module prerequisites / sequential items (course-modules.sql).
+  const lockError = await lockedItemError(assignment.course_id as string, req.userId ?? "", { type: "assignment", id: assignmentId });
+  if (lockError) return { ok: false, status: 403, error: lockError };
 
   // The upsert below overwrote content (and reset status to "submitted") on
   // an already-graded submission while keeping its grade, so a student
