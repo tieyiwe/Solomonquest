@@ -176,7 +176,15 @@ select * from (values
     exists (select 1 from storage.buckets where id='school-assets')
     and exists (select 1 from storage.buckets where id='course-resources')
     and exists (select 1 from pg_policies where schemaname='storage' and tablename='objects'
-      and policyname='course-resources insert'))
+      and policyname='course-resources insert')),
+
+  ('rls-lockdown.sql: permissive using(true) policies dropped + narrow ones added',
+    not exists (select 1 from pg_policies where schemaname='public'
+      and policyname in ('submissions_all', 'Allow all on quiz_questions', 'profiles_read', 'profiles_update'))
+    and not exists (select 1 from pg_policies where schemaname='public'
+      and (qual = 'true' or with_check = 'true'))
+    and exists (select 1 from pg_policies where schemaname='public'
+      and policyname='lockdown_notifications_select_own'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;
