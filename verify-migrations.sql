@@ -176,7 +176,33 @@ select * from (values
     exists (select 1 from storage.buckets where id='school-assets')
     and exists (select 1 from storage.buckets where id='course-resources')
     and exists (select 1 from pg_policies where schemaname='storage' and tablename='objects'
-      and policyname='course-resources insert'))
+      and policyname='course-resources insert')),
+
+  ('certificates.sql: certificate_settings + certificates tables',
+    exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='certificate_settings')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='certificates')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='certificates' and column_name='verification_code')),
+
+  ('question-banks.sql: question_banks, question_bank_questions, quiz_bank_draws + quiz_attempts.drawn_question_ids',
+    exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='question_banks')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='question_bank_questions')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='quiz_bank_draws')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='quiz_attempts' and column_name='drawn_question_ids')),
+
+  ('bulk-import.sql: invitations.first_name + last_name + course_ids',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='invitations' and column_name='first_name')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='invitations' and column_name='last_name')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='invitations' and column_name='course_ids'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

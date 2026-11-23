@@ -63,6 +63,12 @@ const AdminStudentTranscript = lazy(() => import("@/pages/admin/AdminStudentTran
 const AcceptInvitePage = lazy(() => import("@/pages/auth/AcceptInvitePage"));
 const ResetPassword = lazy(() => import("@/pages/auth/ResetPassword"));
 const HelpPage = lazy(() => import("@/pages/HelpPage"));
+const AdminCertificates = lazy(() => import("@/pages/admin/AdminCertificates"));
+const AdminBulkImport = lazy(() => import("@/pages/admin/AdminBulkImport"));
+const QuestionBanksPage = lazy(() => import("@/pages/question-banks/QuestionBanksPage"));
+const StudentCertificates = lazy(() => import("@/pages/student/StudentCertificates"));
+const CertificatePage = lazy(() => import("@/pages/certificates/CertificatePage"));
+const VerifyCertificatePage = lazy(() => import("@/pages/certificates/VerifyCertificatePage"));
 
 
 function StudentVideoSession() {
@@ -125,6 +131,7 @@ const RESERVED_ROOT_SEGMENTS = new Set([
   "schools", "dashboard", "admin", "super_admin", "teacher", "student", "parent",
   "chat", "forum", "invite", "messages", "calendar", "settings", "notifications",
   "profile", "transcript", "transcripts", "help", "assets", "static",
+  "verify", "certificates",
 ]);
 
 function RootSchoolRoute({ apply = false }: { apply?: boolean }) {
@@ -331,6 +338,29 @@ export function Router() {
 
         {/* Public Transcript Verification Route */}
         <Route path="/transcript" component={TranscriptVerifyPage} />
+
+        {/* Certificates, question banks, bulk import */}
+        <Route path="/dashboard/admin/certificates">
+          <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminCertificates /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/admin/bulk-import">
+          <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminBulkImport /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/admin/question-banks">
+          <ProtectedRoute allowedRoles={["admin", "super_admin"]}><QuestionBanksPage /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/teacher/question-banks">
+          <ProtectedRoute allowedRoles={["teacher"]}><QuestionBanksPage /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/student/certificates">
+          <ProtectedRoute allowedRoles={["student", "staff"]}><StudentCertificates /></ProtectedRoute>
+        </Route>
+        <Route path="/certificates/:id">
+          <ProtectedRoute><CertificatePage /></ProtectedRoute>
+        </Route>
+        {/* Public certificate verification (no login) */}
+        <Route path="/verify/:code" component={VerifyCertificatePage} />
+        <Route path="/verify" component={VerifyCertificatePage} />
 
         {/* Help Center */}
         <Route path="/help">

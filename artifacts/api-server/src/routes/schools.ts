@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { randomBytes } from "crypto";
 import { resolveTxt } from "dns/promises";
 import { supabaseAdmin } from "../lib/supabase";
+import { isReservedSlug } from "../lib/reservedSlugs";
 import { logger } from "../lib/logger";
 import { invalidateCachedProfile } from "../lib/profileCache";
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from "../middlewares/auth";
@@ -89,6 +90,10 @@ router.get("/schools/slug-check", requireAuth, async (req: AuthenticatedRequest,
     res.json({ available: false, reason: "invalid" });
     return;
   }
+  if (isReservedSlug(slug)) {
+    res.json({ available: false, reason: "reserved" });
+    return;
+  }
 
   let query = supabaseAdmin.from("schools").select("id").eq("slug", slug);
   if (exclude) query = query.neq("id", exclude);
@@ -133,6 +138,10 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
   // Validate slug format
   if (!/^[a-z0-9-]+$/.test(slug)) {
     res.status(400).json({ error: "Slug must contain only lowercase letters, numbers, and hyphens." });
+    return;
+  }
+  if (isReservedSlug(slug)) {
+    res.status(400).json({ error: "That URL is reserved by the platform. Please choose a different one." });
     return;
   }
 
@@ -269,6 +278,10 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
   if (slug !== undefined) {
     if (typeof slug !== "string" || !/^[a-z0-9-]+$/.test(slug)) {
       res.status(400).json({ error: "Slug must be lowercase alphanumeric with hyphens only" });
+      return;
+    }
+    if (isReservedSlug(slug)) {
+      res.status(400).json({ error: "That URL is reserved by the platform. Please choose a different one." });
       return;
     }
     const { data: slugConflict } = await supabaseAdmin

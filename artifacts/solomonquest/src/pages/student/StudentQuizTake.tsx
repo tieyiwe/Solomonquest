@@ -46,6 +46,8 @@ interface Quiz {
   show_results_immediately?: boolean;
   release_scores_immediately?: boolean;
   passing_score?: number | null;
+  /** Questions drawn at random from a question bank when an attempt starts. */
+  random_question_count?: number;
   questions: QuizQuestion[];
 }
 
@@ -336,6 +338,11 @@ export default function StudentQuizTake() {
       if (!res.ok) throw new Error("Failed to start quiz");
       const data = await res.json();
       setAttemptId(data.id || data.attempt_id);
+      // The attempt carries its own question set (fixed questions plus any
+      // drawn at random from a question bank for this attempt only).
+      if (Array.isArray(data.questions)) {
+        setQuiz((prev) => (prev ? { ...prev, questions: data.questions.map(normalizeQuestion) } : prev));
+      }
       setStarted(true);
       if (quiz?.time_limit_minutes) {
         setTimeLeft(quiz.time_limit_minutes * 60);
@@ -615,7 +622,7 @@ export default function StudentQuizTake() {
               <div className="grid sm:grid-cols-3 gap-4">
                 <div className="bg-muted/40 rounded-xl p-4 text-center">
                   <p className="text-2xl font-bold text-foreground">
-                    {quiz.questions?.length ?? 0}
+                    {(quiz.questions?.length ?? 0) + (quiz.random_question_count ?? 0)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">Questions</p>
                 </div>

@@ -37,6 +37,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
+import { QuizBankTools } from "@/components/quiz/QuizBankTools";
 
 async function apiFetch(url: string, options: RequestInit = {}) {
   const { data } = await supabase.auth.getSession();
@@ -53,15 +54,15 @@ async function apiFetch(url: string, options: RequestInit = {}) {
 
 // ---- types ----
 
-type QuestionType = "multiple_choice" | "true_false" | "short_answer" | "essay" | "fill_blank";
+export type QuestionType = "multiple_choice" | "true_false" | "short_answer" | "essay" | "fill_blank";
 
-interface QuizOption {
+export interface QuizOption {
   id: string;
   text: string;
   isCorrect: boolean;
 }
 
-interface Question {
+export interface Question {
   id: string;
   type: QuestionType;
   text: string;
@@ -92,7 +93,7 @@ interface Analytics {
   attempt_count: number;
 }
 
-const questionTypeLabels: Record<QuestionType, string> = {
+export const questionTypeLabels: Record<QuestionType, string> = {
   multiple_choice: "Multiple Choice",
   true_false: "True / False",
   short_answer: "Short Answer",
@@ -109,7 +110,7 @@ function makeId() {
 // The builder used to drop rows straight into state, so reopening a quiz
 // showed every question blank with no correct answer marked — and saving
 // one then PUT an empty question text over the real one.
-function fromApiQuestion(raw: Record<string, any>): Question {
+export function fromApiQuestion(raw: Record<string, any>): Question {
   const type: QuestionType = (raw.type ?? raw.question_type ?? "short_answer") as QuestionType;
   const correct = raw.correct_answer != null ? String(raw.correct_answer) : undefined;
   const options: QuizOption[] = Array.isArray(raw.options)
@@ -135,7 +136,7 @@ function fromApiQuestion(raw: Record<string, any>): Question {
   };
 }
 
-function makeQuestion(type: QuestionType): Question {
+export function makeQuestion(type: QuestionType): Question {
   const base: Question = { id: makeId(), type, text: "", points: 1, options: [] };
   if (type === "multiple_choice") {
     base.options = [
@@ -154,9 +155,30 @@ function makeQuestion(type: QuestionType): Question {
   return base;
 }
 
+// Editor model -> stored quiz_questions shape. See the comment on
+// toApiPayload in QuizDetail; also used by the question-bank editor.
+export function questionToApiPayload(q: Question) {
+  const options = q.options.map((o) => ({ id: o.id, text: o.text, is_correct: o.isCorrect }));
+  let correctAnswer: string | null = null;
+  if (q.type === "multiple_choice") {
+    correctAnswer = q.options.find((o) => o.isCorrect)?.id ?? null;
+  } else if (q.type === "true_false") {
+    correctAnswer = q.options.find((o) => o.isCorrect)?.text ?? null;
+  } else {
+    correctAnswer = q.correctAnswer ?? null;
+  }
+  return {
+    type: q.type,
+    question: q.text,
+    options: q.options.length > 0 ? options : null,
+    correct_answer: correctAnswer,
+    points: q.points,
+  };
+}
+
 // ---- QuestionCard ----
 
-function QuestionCard({
+export function QuestionCard({
   question,
   index,
   total,
@@ -615,24 +637,7 @@ function QuizDetail({ quiz, onPublished }: QuizDetailProps) {
   // while for true_false it's the literal string "True"/"False" (see
   // StudentQuizTake.tsx's MultipleChoiceInput/TrueFalseInput). Translate here
   // rather than changing the local shape everywhere it's used for editing.
-  const toApiPayload = (q: Question) => {
-    const options = q.options.map((o) => ({ id: o.id, text: o.text, is_correct: o.isCorrect }));
-    let correctAnswer: string | null = null;
-    if (q.type === "multiple_choice") {
-      correctAnswer = q.options.find((o) => o.isCorrect)?.id ?? null;
-    } else if (q.type === "true_false") {
-      correctAnswer = q.options.find((o) => o.isCorrect)?.text ?? null;
-    } else {
-      correctAnswer = q.correctAnswer ?? null;
-    }
-    return {
-      type: q.type,
-      question: q.text,
-      options: q.options.length > 0 ? options : null,
-      correct_answer: correctAnswer,
-      points: q.points,
-    };
-  };
+  const toApiPayload = questionToApiPayload;
 
   const addQuestion = async (type: QuestionType) => {
     const q = makeQuestion(type);
@@ -784,6 +789,13 @@ function QuizDetail({ quiz, onPublished }: QuizDetailProps) {
               </div>
             </CardContent>
           </Card>
+
+          {/* Question banks: copy picked questions in, or draw at random per attempt */}
+          <QuizBankTools
+            quizId={quiz.id}
+            courseId={quiz.course_id}
+            onQuestionsAdded={(rows) => setQuestions((prev) => [...prev, ...rows.map(fromApiQuestion)])}
+          />
 
           {loadingQuestions ? (
             <div className="space-y-3">

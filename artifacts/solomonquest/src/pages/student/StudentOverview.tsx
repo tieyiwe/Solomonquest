@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
+import { MyCertificatesCard } from "@/components/certificates/MyCertificatesCard";
+import { Award } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -170,6 +172,7 @@ const NAV_LINKS = [
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/messages", label: "Messages", icon: MessageSquare },
   { href: "/dashboard/student/tuition", label: "Tuition", icon: Wallet },
+  { href: "/dashboard/student/certificates", label: "Certificates", icon: Award },
 ];
 
 function Sidebar({ onClose, onOpenHelp }: { onClose?: () => void; onOpenHelp: () => void }) {
@@ -473,6 +476,8 @@ export default function StudentOverview() {
         {/* Page Body */}
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-8">
+
+            <MyCertificatesCard />
 
             {/* Welcome Banner */}
             <div className="rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-gold/10 border p-6 flex flex-col sm:flex-row sm:items-center gap-4">

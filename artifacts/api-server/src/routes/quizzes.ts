@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { drawQuestionsForQuiz, drawnIdsOf, loadBankQuestionsAsQuizRows } from "../lib/questionBanks";
 
 const router: IRouter = Router();
 
@@ -17,7 +18,7 @@ function isTeacherOrAdmin(role?: string): boolean {
  * questions (including correct_answer), delete, or publish/unpublish any
  * OTHER school's quiz just by knowing/guessing its id.
  */
-async function assertCanManageQuiz(
+export async function assertCanManageQuiz(
   quizIdParam: string | string[],
   userId: string | undefined,
   role: string | undefined
@@ -103,7 +104,7 @@ async function assertCourseAccess(
  *  The quiz builder also marks the right choice inside `options`
  *  ({ id, text, is_correct }), so stripping only `correct_answer` still
  *  handed every student the answer key in the options array. */
-function sanitizeQuestionsForStudent(questions: Record<string, unknown>[]): Record<string, unknown>[] {
+export function sanitizeQuestionsForStudent(questions: Record<string, unknown>[]): Record<string, unknown>[] {
   return questions.map(({ correct_answer, ...rest }) => ({
     ...rest,
     options: Array.isArray(rest.options)
@@ -268,7 +269,18 @@ router.get("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): 
       ? questions ?? []
       : sanitizeQuestionsForStudent(questions ?? []);
 
-    res.json({ ...quiz, questions: safeQuestions });
+    // Random-draw rules (question banks): students get their drawn questions
+    // when they start an attempt; here they only learn how many to expect.
+    let randomQuestionCount = 0;
+    const { data: draws, error: drawsError } = await supabaseAdmin
+      .from("quiz_bank_draws")
+      .select("draw_count")
+      .eq("quiz_id", id);
+    if (!drawsError) {
+      randomQuestionCount = (draws ?? []).reduce((sum, d) => sum + (Number(d.draw_count) || 0), 0);
+    }
+
+    res.json({ ...quiz, questions: safeQuestions, random_question_count: randomQuestionCount });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -625,6 +637,10 @@ router.post(
         }
       }
 
+      // Random draws from question banks are resolved HERE, server-side, and
+      // stored on the attempt so grading uses exactly these questions.
+      const drawnIds = await drawQuestionsForQuiz(String(id));
+
       const { data, error } = await supabaseAdmin
         .from("quiz_attempts")
         .insert({
@@ -632,6 +648,7 @@ router.post(
           student_id: userId,
           started_at: new Date().toISOString(),
           status: "in_progress",
+          ...(drawnIds.length > 0 ? { drawn_question_ids: drawnIds } : {}),
         })
         .select()
         .single();
@@ -641,7 +658,16 @@ router.post(
         return;
       }
 
-      res.status(201).json(data);
+      // The attempt's full question set (fixed + drawn), answer keys stripped.
+      const { data: fixedQuestions } = await supabaseAdmin
+        .from("quiz_questions")
+        .select("*")
+        .eq("quiz_id", id)
+        .order("order_index", { ascending: true });
+      const drawnRows = await loadBankQuestionsAsQuizRows(drawnIds, String(id));
+      const attemptQuestions = sanitizeQuestionsForStudent([...(fixedQuestions ?? []), ...drawnRows]);
+
+      res.status(201).json({ ...data, questions: attemptQuestions });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -689,7 +715,7 @@ router.put(
       }
 
       // Fetch all questions for this quiz
-      const { data: questions, error: qError } = await supabaseAdmin
+      const { data: fixedQuestions, error: qError } = await supabaseAdmin
         .from("quiz_questions")
         .select("*")
         .eq("quiz_id", id);
@@ -698,6 +724,12 @@ router.put(
         res.status(500).json({ error: qError.message });
         return;
       }
+
+      // Plus the bank questions drawn for this attempt when it started.
+      const questions: Record<string, unknown>[] = [
+        ...(fixedQuestions ?? []),
+        ...(await loadBankQuestionsAsQuizRows(drawnIdsOf(attempt), String(id))),
+      ];
 
       const AUTO_GRADE_TYPES = new Set(["multiple_choice", "true_false", "fill_blank"]);
       let totalPoints = 0;

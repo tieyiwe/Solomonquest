@@ -29,6 +29,9 @@ interface InviteDetails {
   email: string;
   role: string;
   schoolName: string;
+  /** Set when the invite came from a CSV bulk import. */
+  firstName?: string | null;
+  lastName?: string | null;
 }
 
 export default function AcceptInvitePage() {
@@ -58,6 +61,13 @@ export default function AcceptInvitePage() {
     resolver: zodResolver(schema),
     defaultValues: { firstName: "", lastName: "", phone: "", password: "" },
   });
+
+  // Pre-fill the name an admin supplied in a bulk import (still editable).
+  useEffect(() => {
+    if (invite?.firstName || invite?.lastName) {
+      form.reset({ ...form.getValues(), firstName: invite.firstName ?? "", lastName: invite.lastName ?? "" });
+    }
+  }, [invite]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function onSubmit(data: FormValues) {
     if (!invite) return;

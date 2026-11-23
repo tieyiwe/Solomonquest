@@ -17,9 +17,16 @@ interface CreateInviteParams {
   studentId?: string | null;
   schoolId: string;
   invitedBy: string;
+  /** CSV bulk import (routes/bulk-import.ts): pre-fills the accept form. */
+  firstName?: string | null;
+  lastName?: string | null;
+  /** CSV bulk import: courses (already validated to this school) to enrol in on accept. */
+  courseIds?: string[] | null;
+  /** CSV bulk import lets a student be invited with courses but no program. */
+  programOptional?: boolean;
 }
 
-type CreateInviteResult =
+export type CreateInviteResult =
   | { ok: true; invitation: Record<string, unknown> }
   | { ok: false; email: string; error: string };
 
@@ -29,8 +36,8 @@ type CreateInviteResult =
  * two entry points can't drift (e.g. bulk-import silently skipping the
  * program-required-for-students check a one-off invite enforces).
  */
-async function createInvitation(params: CreateInviteParams): Promise<CreateInviteResult> {
-  const { email, role, programId, studentId, schoolId, invitedBy } = params;
+export async function createInvitation(params: CreateInviteParams): Promise<CreateInviteResult> {
+  const { email, role, programId, studentId, schoolId, invitedBy, firstName, lastName, courseIds, programOptional } = params;
 
   if (!email || !email.includes("@")) {
     return { ok: false, email, error: "Missing or invalid email" };
@@ -45,7 +52,7 @@ async function createInvitation(params: CreateInviteParams): Promise<CreateInvit
     return { ok: false, email, error: "programId only applies to student invitations" };
   }
 
-  if (role === "student" && !programId) {
+  if (role === "student" && !programId && !programOptional) {
     return { ok: false, email, error: "A program is required to invite a student" };
   }
 
@@ -95,6 +102,11 @@ async function createInvitation(params: CreateInviteParams): Promise<CreateInvit
       expires_at: expiresAt,
       program_id: programId ?? null,
       student_id: studentId ?? null,
+      // Only sent when set, so single invites keep working before
+      // bulk-import.sql has added these columns.
+      ...(firstName ? { first_name: firstName } : {}),
+      ...(lastName ? { last_name: lastName } : {}),
+      ...(courseIds && courseIds.length > 0 ? { course_ids: courseIds } : {}),
     })
     .select()
     .single();
@@ -403,7 +415,7 @@ router.get(
 
       const { data: invitation, error } = await supabaseAdmin
         .from("invitations")
-        .select("id, email, role, status, expires_at, school_id")
+        .select("*")
         .eq("token", token)
         .single();
 
@@ -432,6 +444,8 @@ router.get(
         email: invitation.email,
         role: invitation.role,
         schoolName: school?.name ?? null,
+        firstName: (invitation as Record<string, unknown>).first_name ?? null,
+        lastName: (invitation as Record<string, unknown>).last_name ?? null,
       });
     } catch (err: any) {
       console.error("[invitations] Unhandled error in GET /invitations/accept/:token:", err);
@@ -452,7 +466,7 @@ router.post(
 
       const { data: invitation, error } = await supabaseAdmin
         .from("invitations")
-        .select("id, email, role, status, expires_at, school_id, invited_by, program_id, student_id")
+        .select("*")
         .eq("token", token)
         .single();
 
@@ -542,6 +556,25 @@ router.post(
               body: `You've been added to the ${program?.name ?? "your"} program and enrolled in its courses.`,
               link: "/dashboard/student",
             }).catch((e) => console.warn("[invitations] program notify error:", e));
+          });
+      }
+
+      // A CSV-imported student invitation can name specific courses
+      // (bulk-import.sql's invitations.course_ids). Ids were validated against
+      // the school at import time; re-check here in case a course moved.
+      const inviteCourseIds = (invitation as Record<string, unknown>).course_ids;
+      if (invitation.role === "student" && Array.isArray(inviteCourseIds) && inviteCourseIds.length > 0) {
+        supabaseAdmin
+          .from("courses")
+          .select("id")
+          .eq("school_id", invitation.school_id)
+          .in("id", (inviteCourseIds as unknown[]).map(String))
+          .then(async ({ data: inviteCourses }) => {
+            for (const course of inviteCourses ?? []) {
+              await enrollStudentInCourse(course.id as string, userId!).catch((e) =>
+                console.warn("[invitations] course enroll error:", e)
+              );
+            }
           });
       }
 
