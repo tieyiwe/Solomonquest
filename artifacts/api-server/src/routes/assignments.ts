@@ -2,6 +2,13 @@ import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { gradeSubmission } from "../lib/gradingEngine";
+import {
+  parseLatePolicyInput,
+  latePolicyFields,
+  getStudentExtensions,
+  effectiveDueDate,
+  submissionLateFields,
+} from "../lib/lateWork";
 
 const router: IRouter = Router();
 
@@ -79,6 +86,63 @@ async function assertCanManageAssignmentCourse(
     : { ok: false, status: 403, error: "You do not have permission to manage this assignment" };
 }
 
+/** Writes an assignment row; if the late-policy columns don't exist yet
+ *  (late-work-and-alerts.sql not applied) retries without them, so creating
+ *  and editing assignments keeps working before the migration is run. */
+const LATE_POLICY_COLUMNS = ["allow_late_submissions", "late_penalty_per_day", "late_penalty_max", "late_cutoff_at"];
+async function writeAssignment(
+  op: (row: Record<string, unknown>) => PromiseLike<{ data: any; error: { message: string } | null }>,
+  row: Record<string, unknown>
+): Promise<{ data: any; error: { message: string } | null }> {
+  const result = await op(row);
+  if (result.error && /late_|allow_late/.test(result.error.message)) {
+    return op(Object.fromEntries(Object.entries(row).filter(([k]) => !LATE_POLICY_COLUMNS.includes(k))));
+  }
+  return result;
+}
+
+/**
+ * Student view of assignment rows: `dueDate` becomes the student's
+ * effective due date (their extension, if any — so every list, the "Due
+ * This Week" count and sorting use it), with the original and extended
+ * dates alongside, plus the student's own submission state (status, grade,
+ * lateness and any late penalty).
+ */
+async function withStudentView<T extends { id: unknown; dueDate: unknown }>(
+  items: T[],
+  studentId: string
+): Promise<(T & Record<string, unknown>)[]> {
+  const ids = items.map((a) => a.id as string);
+  if (ids.length === 0) return items as (T & Record<string, unknown>)[];
+  const [extensions, subsRes] = await Promise.all([
+    getStudentExtensions(studentId, ids),
+    supabaseAdmin.from("submissions").select("*").eq("student_id", studentId).in("assignment_id", ids),
+  ]);
+  const subByAssignment = new Map((subsRes.data ?? []).map((s) => [s.assignment_id as string, s as Record<string, unknown>]));
+  return items.map((a) => {
+    const ext = extensions.get(a.id as string) ?? null;
+    const sub = subByAssignment.get(a.id as string);
+    const handedIn = !!sub && (sub.status === "submitted" || sub.status === "graded");
+    return {
+      ...a,
+      dueDate: effectiveDueDate(a.dueDate as string | null, ext),
+      originalDueDate: a.dueDate ?? null,
+      extendedDueDate: ext?.extendedDueAt ?? null,
+      penaltyWaived: ext?.waivePenalty ?? false,
+      hasSubmitted: handedIn,
+      submissionStatus: handedIn ? sub!.status : null,
+      grade: sub?.grade ?? null,
+      ...(sub
+        ? submissionLateFields(sub)
+        : { submittedLate: false, minutesLate: 0, daysLate: 0, rawGrade: null, latePenaltyPercent: 0 }),
+    };
+  });
+}
+
+function isStudentViewer(role?: string): boolean {
+  return role === "student" || role === "staff";
+}
+
 // Pending assignments for current student
 router.get("/assignments/pending", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const userId = req.userId;
@@ -122,7 +186,14 @@ router.get("/assignments/pending", requireAuth, async (req: AuthenticatedRequest
     (a: Record<string, unknown>) => !submittedIds.has(a.id as string)
   );
 
-  res.json(await enrichAssignments(pending));
+  const view = await withStudentView(await enrichAssignments(pending), userId ?? "");
+  // Re-sort by the effective (possibly extended) due date.
+  view.sort((a, b) => {
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    return new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime();
+  });
+  res.json(view);
 });
 
 // GET /assignments?course_id=X — list assignments for a course with submission info
@@ -209,7 +280,7 @@ router.get("/assignments", requireAuth, async (req: AuthenticatedRequest, res): 
     hasSubmitted: submittedSet.has(a.id as string),
   }));
 
-  res.json(enriched);
+  res.json(isStudentViewer(req.userRole) && userId ? await withStudentView(enriched, userId) : enriched);
 });
 
 // POST /assignments — create assignment (teacher/admin)
@@ -240,6 +311,11 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
     res.status(400).json({ error: rubricError });
     return;
   }
+  const { updates: latePolicy, error: lateError } = parseLatePolicyInput(req.body ?? {});
+  if (lateError) {
+    res.status(400).json({ error: lateError });
+    return;
+  }
 
   // Security: this was the only write route in this file that never
   // checked the course actually belonged to the caller (every other
@@ -255,9 +331,12 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
 
   const publishNow = isPublished === true;
 
-  const { data: assignment, error } = await supabaseAdmin
+  const { data: assignment, error } = await writeAssignment((row) => supabaseAdmin
     .from("assignments")
-    .insert({
+    .insert(row)
+    .select()
+    .single(), {
+      ...latePolicy,
       course_id,
       title,
       description: description ?? null,
@@ -270,9 +349,7 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
       video_url: video_url ?? null,
       require_full_watch: require_full_watch ?? false,
       rubric,
-    })
-    .select()
-    .single();
+    });
 
   if (error) {
     res.status(400).json({ error: error.message });
@@ -322,8 +399,13 @@ router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
     res.status(400).json({ error: rubricError });
     return;
   }
+  const { updates: latePolicy, error: lateError } = parseLatePolicyInput(req.body ?? {});
+  if (lateError) {
+    res.status(400).json({ error: lateError });
+    return;
+  }
 
-  const updates: Record<string, unknown> = {};
+  const updates: Record<string, unknown> = { ...latePolicy };
   if (title !== undefined) updates.title = title;
   if (description !== undefined) updates.description = description;
   if (due_date !== undefined) updates.due_date = due_date;
@@ -338,12 +420,12 @@ router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
 
   const wasPublished = existing.is_published === true;
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await writeAssignment((row) => supabaseAdmin
     .from("assignments")
-    .update(updates)
+    .update(row)
     .eq("id", id)
     .select()
-    .single();
+    .single(), updates);
 
   if (error || !data) {
     res.status(400).json({ error: error?.message ?? "Failed to update assignment" });
@@ -431,7 +513,8 @@ router.get("/courses/:courseId/assignments", requireAuth, async (req: Authentica
     return;
   }
 
-  res.json(await enrichAssignments(data ?? []));
+  const enriched = await enrichAssignments(data ?? []);
+  res.json(isStudentViewer(req.userRole) && req.userId ? await withStudentView(enriched, req.userId) : enriched);
 });
 
 // Create assignment (legacy route by path param — TeacherAssignments.tsx sends
@@ -473,10 +556,18 @@ router.post(
       res.status(400).json({ error: "due_date must be a valid date" });
       return;
     }
+    const { updates: latePolicy, error: lateError } = parseLatePolicyInput(body);
+    if (lateError) {
+      res.status(400).json({ error: lateError });
+      return;
+    }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await writeAssignment((row) => supabaseAdmin
       .from("assignments")
-      .insert({
+      .insert(row)
+      .select()
+      .single(), {
+        ...latePolicy,
         course_id: courseId,
         title,
         description: description ?? null,
@@ -488,9 +579,7 @@ router.post(
         assignment_type: assignmentType,
         video_url: videoUrl ?? null,
         require_full_watch: requireFullWatch,
-      })
-      .select()
-      .single();
+      });
 
     if (error) {
       res.status(400).json({ error: error.message });
@@ -526,7 +615,8 @@ router.get("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
     return;
   }
 
-  res.json(await enrichAssignment(data));
+  const one = await enrichAssignment(data);
+  res.json(isStudentViewer(req.userRole) && req.userId ? (await withStudentView([one], req.userId))[0] : one);
 });
 
 // Threshold at which server-verified watch progress counts as "fully
@@ -716,8 +806,13 @@ router.patch("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, 
     res.status(400).json({ error: "due_date must be a valid date" });
     return;
   }
+  const { updates: latePolicy, error: lateError } = parseLatePolicyInput(body);
+  if (lateError) {
+    res.status(400).json({ error: lateError });
+    return;
+  }
 
-  const updates: Record<string, unknown> = {};
+  const updates: Record<string, unknown> = { ...latePolicy };
   if (title !== undefined) updates.title = title;
   if (description !== undefined) updates.description = description;
   if (dueDate !== undefined) updates.due_date = dueDate;
@@ -731,12 +826,12 @@ router.patch("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, 
 
   const wasPublished = existing.is_published === true;
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await writeAssignment((row) => supabaseAdmin
     .from("assignments")
-    .update(updates)
+    .update(row)
     .eq("id", id)
     .select()
-    .single();
+    .single(), updates);
 
   if (error || !data) {
     res.status(404).json({ error: "Assignment not found" });
@@ -790,6 +885,7 @@ function enrichAssignmentFields(a: Record<string, unknown>, courseTitle: string 
     videoUrl: (a.video_url as string | null) ?? null,
     requireFullWatch: (a.require_full_watch as boolean) ?? false,
     rubric: (a.rubric as RubricCriterion[] | null) ?? null,
+    ...latePolicyFields(a),
   };
 }
 

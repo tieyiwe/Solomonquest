@@ -1,6 +1,33 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { dispatchNotifications, studentAndParentRecipients, parentsOfStudents, parentLinkForChild } from "../lib/notifyAudience";
+import { logger } from "../lib/logger";
+
+/**
+ * Scores on a quiz that held them back (release_scores_immediately=false)
+ * were just released: notify every student with a submitted attempt, plus
+ * their linked parents. Runs in the background.
+ */
+async function notifyQuizScoresReleased(quizId: string, quizTitle: string, actorId: string | undefined): Promise<void> {
+  const { data: attempts } = await supabaseAdmin
+    .from("quiz_attempts")
+    .select("student_id")
+    .eq("quiz_id", quizId)
+    .eq("status", "submitted");
+  const studentIds = Array.from(new Set((attempts ?? []).map((a) => a.student_id as string).filter(Boolean)));
+  if (studentIds.length === 0) return;
+  const recipients = await studentAndParentRecipients(studentIds, () => "/dashboard/student/quizzes");
+  dispatchNotifications({
+    recipients,
+    type: "quiz_scores_released",
+    category: "grades",
+    title: `Quiz scores released: ${quizTitle}`,
+    body: "Scores for this quiz are now available.",
+    excludeUserId: actorId ?? null,
+    metadata: { quizId },
+  });
+}
 
 const router: IRouter = Router();
 
@@ -301,6 +328,12 @@ router.put("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): 
     due_date,
   } = req.body;
 
+  const { data: before } = await supabaseAdmin
+    .from("quizzes")
+    .select("release_scores_immediately")
+    .eq("id", id)
+    .maybeSingle();
+
   const updates: Record<string, unknown> = {};
   if (title !== undefined) updates.title = title;
   if (description !== undefined) updates.description = description;
@@ -327,6 +360,12 @@ router.put("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): 
     if (!data) {
       res.status(404).json({ error: "Quiz not found" });
       return;
+    }
+
+    if (release_scores_immediately === true && before && before.release_scores_immediately !== true) {
+      notifyQuizScoresReleased(String(id), String(data.title ?? "Quiz"), req.userId).catch((err) =>
+        logger.error({ err }, "quiz release notification failed")
+      );
     }
 
     res.json(data);
@@ -785,6 +824,25 @@ router.put(
       const releaseNow =
         quizSettings?.release_scores_immediately === true || quizSettings?.show_results_immediately === true;
       const correctById = new Map((questions ?? []).map((q) => [q.id as string, q.correct_answer ?? null]));
+
+      if (quizSettings?.release_scores_immediately === true && attempt.student_id) {
+        const studentId = attempt.student_id as string;
+        (async () => {
+          const [{ data: quizRow }, links] = await Promise.all([
+            supabaseAdmin.from("quizzes").select("title").eq("id", id).maybeSingle(),
+            parentsOfStudents([studentId]),
+          ]);
+          if (links.length === 0) return;
+          dispatchNotifications({
+            recipients: links.map((l) => ({ userId: l.parentId, link: parentLinkForChild(studentId) })),
+            type: "quiz_scores_released",
+            category: "grades",
+            title: `Quiz completed: ${quizRow?.title ?? "Quiz"}`,
+            body: `Score: ${earnedPoints} / ${totalPoints} (${Math.round(scorePercent)}%).`,
+            metadata: { quizId: id, attemptId: aid, studentId },
+          });
+        })().catch((err) => logger.error({ err }, "quiz attempt parent notification failed"));
+      }
 
       res.json({
         ...updatedAttempt,

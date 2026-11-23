@@ -52,6 +52,53 @@ import PageHeader from "@/components/layout/PageHeader";
 
 type DuePriority = "overdue" | "today" | "soon" | "future" | "none";
 
+/** Late-work fields the API adds for students (dueDate is already the
+ *  student's effective due date — their extension, if they have one). */
+interface LateInfo {
+  extendedDueDate?: string | null;
+  originalDueDate?: string | null;
+  penaltyWaived?: boolean;
+  allowLateSubmissions?: boolean;
+  latePenaltyPerDay?: number;
+  latePenaltyMax?: number;
+  lateCutoffAt?: string | null;
+  submittedLate?: boolean;
+  daysLate?: number;
+  rawGrade?: number | null;
+  latePenaltyPercent?: number;
+}
+
+function lateInfo(a: unknown): LateInfo {
+  return (a ?? {}) as LateInfo;
+}
+
+/** The cutoff that applies to this student (an extension past it wins). */
+function effectiveCutoff(info: LateInfo): string | null {
+  if (!info.lateCutoffAt) return null;
+  if (info.extendedDueDate && new Date(info.extendedDueDate) > new Date(info.lateCutoffAt)) return info.extendedDueDate;
+  return info.lateCutoffAt;
+}
+
+/** Why the student can no longer submit, or null. */
+function submissionClosedReason(a: { dueDate?: string | null }, info: LateInfo): string | null {
+  const now = Date.now();
+  const cutoff = effectiveCutoff(info);
+  if (cutoff && now > new Date(cutoff).getTime()) return "Submissions closed — the cutoff has passed.";
+  if (info.allowLateSubmissions === false && a.dueDate && now > new Date(a.dueDate).getTime()) {
+    return "This assignment doesn't accept late work.";
+  }
+  return null;
+}
+
+/** "Late work loses 10% per day (max 50%)" — null when there's no penalty. */
+function latePolicyText(info: LateInfo): string | null {
+  if (info.allowLateSubmissions === false) return "Late work is not accepted.";
+  if (!info.latePenaltyPerDay) return null;
+  if (info.penaltyWaived) return "Your late penalty is waived.";
+  const cap = info.latePenaltyMax != null && info.latePenaltyMax < 100 ? ` (max ${info.latePenaltyMax}%)` : "";
+  return `Late work loses ${info.latePenaltyPerDay}% per day${cap}.`;
+}
+
 function getDuePriority(dueDate?: string | null): DuePriority {
   if (!dueDate) return "none";
   const date = new Date(dueDate);
@@ -62,7 +109,7 @@ function getDuePriority(dueDate?: string | null): DuePriority {
   return "future";
 }
 
-function DueDateBadge({ dueDate }: { dueDate?: string | null }) {
+function DueDateBadge({ dueDate, extended }: { dueDate?: string | null; extended?: boolean }) {
   if (!dueDate) return <span className="text-xs text-muted-foreground">No due date</span>;
   const date = new Date(dueDate);
   if (!isValid(date)) return <span className="text-xs text-muted-foreground">No due date</span>;
@@ -87,7 +134,7 @@ function DueDateBadge({ dueDate }: { dueDate?: string | null }) {
   return (
     <span className={cn("inline-flex items-center gap-1 text-xs font-medium", colorMap[priority])}>
       <Calendar className="h-3 w-3" />
-      {labels[priority]}
+      {extended ? (priority === "overdue" ? "Overdue (extended): " : "Extended to ") : labels[priority]}
       {format(date, "MMM d, yyyy h:mm a")}
     </span>
   );
@@ -167,6 +214,9 @@ function SubmitDialog({
   };
 
   const priority = getDuePriority(assignment.dueDate);
+  const info = lateInfo(assignment);
+  const closedReason = submissionClosedReason(assignment, info);
+  const policyText = latePolicyText(info);
 
   if (submitted) {
     return (
@@ -216,11 +266,29 @@ function SubmitDialog({
           )}
         >
           <Clock className="h-4 w-4 shrink-0" />
-          {priority === "overdue" ? "⚠️ Overdue since " : "Due: "}
+          {priority === "overdue" ? "⚠️ Overdue since " : info.extendedDueDate ? "Extended to: " : "Due: "}
           {format(new Date(assignment.dueDate), "EEEE, MMMM d, yyyy 'at' h:mm a")}
           {assignment.pointsPossible != null && (
             <span className="ml-auto font-semibold">{assignment.pointsPossible} pts</span>
           )}
+        </div>
+      )}
+
+      {(policyText || info.extendedDueDate || closedReason) && (
+        <div className="text-xs rounded-lg border px-3 py-2 space-y-0.5" data-testid="late-policy-note">
+          {info.extendedDueDate && info.originalDueDate && (
+            <p>
+              You have an extension (class due date was{" "}
+              {format(new Date(info.originalDueDate), "MMM d, h:mm a")}).
+            </p>
+          )}
+          {policyText && <p className="text-muted-foreground">{policyText}</p>}
+          {effectiveCutoff(info) && !closedReason && (
+            <p className="text-muted-foreground">
+              No submissions after {format(new Date(effectiveCutoff(info)!), "MMM d, yyyy h:mm a")}.
+            </p>
+          )}
+          {closedReason && <p className="font-semibold text-destructive">{closedReason}</p>}
         </div>
       )}
 
@@ -338,7 +406,7 @@ function SubmitDialog({
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={submitAssignment.isPending || !canSubmit || uploading}
+          disabled={submitAssignment.isPending || !canSubmit || uploading || !!closedReason}
           className="gap-2"
         >
           {submitAssignment.isPending ? (
@@ -353,7 +421,7 @@ function SubmitDialog({
   );
 }
 
-interface EnrichedAssignment extends Assignment {
+interface EnrichedAssignment extends Assignment, LateInfo {
   submissionStatus?: "submitted" | "graded" | null;
   grade?: number | null;
   hasSubmitted?: boolean;
@@ -377,6 +445,8 @@ function AssignmentRow({
 
   const submitted = assignment.hasSubmitted || assignment.submissionStatus;
   const graded = assignment.submissionStatus === "graded" || assignment.grade != null;
+  const closedReason = submitted ? null : submissionClosedReason(assignment, assignment);
+  const penalty = assignment.latePenaltyPercent ?? 0;
 
   return (
     <Card className={cn("hover:border-primary/40 transition-colors", borderClass)}>
@@ -433,14 +503,22 @@ function AssignmentRow({
           )}
 
           <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
-            <DueDateBadge dueDate={assignment.dueDate} />
+            <DueDateBadge dueDate={assignment.dueDate} extended={!!assignment.extendedDueDate} />
 
             {submitted ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {assignment.submittedLate && (
+                  <Badge variant="outline" className="text-xs border-warning/50 text-warning" data-testid="late-badge">
+                    Late{penalty > 0 ? ` — ${penalty}% penalty` : assignment.penaltyWaived ? " — penalty waived" : ""}
+                  </Badge>
+                )}
                 {graded && assignment.grade != null ? (
                   <span className="text-xs font-semibold text-chart-5 flex items-center gap-1">
                     <Star className="h-3 w-3" />
                     Grade: {assignment.grade}/{assignment.pointsPossible ?? "?"}
+                    {penalty > 0 && assignment.rawGrade != null && (
+                      <span className="font-normal text-muted-foreground">(raw {assignment.rawGrade})</span>
+                    )}
                   </span>
                 ) : null}
                 <Badge
@@ -455,13 +533,15 @@ function AssignmentRow({
                   {graded ? "Graded" : "Submitted"} ✓
                 </Badge>
               </div>
+            ) : closedReason ? (
+              <span className="text-xs font-medium text-destructive">{closedReason}</span>
             ) : (
               <Button
                 size="sm"
                 onClick={onSubmit}
                 variant={priority === "overdue" ? "destructive" : "default"}
               >
-                Submit Work
+                {priority === "overdue" ? "Submit Late" : "Submit Work"}
                 <ArrowRight className="ml-1.5 h-3 w-3" />
               </Button>
             )}

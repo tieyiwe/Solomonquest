@@ -5,6 +5,15 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { gradeSubmission } from "../lib/gradingEngine";
 import { scanFile } from "../lib/fileScan";
 import { logger } from "../lib/logger";
+import {
+  getExtension,
+  submissionRefusal,
+  hasLateColumns,
+  effectiveDueDate,
+  minutesLate,
+  submissionLateFields,
+  getExtensionsForAssignments,
+} from "../lib/lateWork";
 
 const router: IRouter = Router();
 
@@ -34,14 +43,16 @@ function ensureSubmissionsBucket(): Promise<void> {
 async function assertStudentCanSubmit(
   req: AuthenticatedRequest,
   assignmentId: string
-): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+): Promise<{ ok: true; lateFields: Record<string, unknown> } | { ok: false; status: number; error: string }> {
   if (req.userRole !== "student") {
     return { ok: false, status: 403, error: "Only students can submit assignments" };
   }
 
+  // "*" so the late-policy columns come along once late-work-and-alerts.sql
+  // is applied (and are simply absent before).
   const { data: assignment } = await supabaseAdmin
     .from("assignments")
-    .select("id, course_id, is_published")
+    .select("*")
     .eq("id", assignmentId)
     .single();
 
@@ -72,7 +83,19 @@ async function assertStudentCanSubmit(
     return { ok: false, status: 409, error: "This submission has already been graded and can no longer be changed" };
   }
 
-  return { ok: true };
+  // Late-work rules: refuse after the (extension-adjusted) cutoff, or after
+  // the due date when the assignment doesn't accept late work. Otherwise
+  // record how late this hand-in is against the student's effective due date.
+  let lateFields: Record<string, unknown> = {};
+  if (hasLateColumns(assignment)) {
+    const ext = await getExtension(assignmentId, req.userId ?? "");
+    const refusal = submissionRefusal(assignment, ext);
+    if (refusal) return { ok: false, status: 403, error: refusal };
+    const mins = minutesLate(new Date(), effectiveDueDate(assignment.due_date as string | null, ext));
+    lateFields = { submitted_late: mins > 0, minutes_late: mins };
+  }
+
+  return { ok: true, lateFields };
 }
 
 /** Verifies the caller may see/grade submissions for this assignment's course. */
@@ -180,6 +203,7 @@ router.post("/assignments/:assignmentId/submissions", requireAuth, async (req: A
         ...(fileUrl !== undefined
           ? { file_url: storedFileUrl, file_name: storedFileUrl && typeof fileName === "string" ? fileName.slice(0, 255) : null }
           : {}),
+        ...allowed.lateFields,
         status: "submitted",
         // The column default only fires on insert — a resubmission kept the
         // first attempt's timestamp, so late resubmits looked on time.
@@ -329,6 +353,7 @@ async function enrichSubmission(s: Record<string, unknown>) {
     fileUrl: s.file_url ?? null,
     fileName: s.file_name ?? null,
     status: s.status,
+    ...submissionLateFields(s),
     studentName,
   };
 }
@@ -348,6 +373,9 @@ async function enrichSubmissions(rows: Record<string, unknown>[]) {
     (profiles ?? []).map((p) => [p.id, [p.first_name, p.last_name].filter(Boolean).join(" ") || null])
   );
 
+  const assignmentIds = Array.from(new Set(rows.map((s) => s.assignment_id as string).filter(Boolean)));
+  const extensions = await getExtensionsForAssignments(assignmentIds);
+
   return rows.map((s) => ({
     id: s.id,
     assignmentId: s.assignment_id,
@@ -361,6 +389,8 @@ async function enrichSubmissions(rows: Record<string, unknown>[]) {
     fileUrl: s.file_url ?? null,
     fileName: s.file_name ?? null,
     status: s.status,
+    ...submissionLateFields(s),
+    extension: extensions.get(`${s.assignment_id}:${s.student_id}`) ?? null,
     studentName: s.student_id ? nameById.get(s.student_id as string) ?? null : null,
   }));
 }

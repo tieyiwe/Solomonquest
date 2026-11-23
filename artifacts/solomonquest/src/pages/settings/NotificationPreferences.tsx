@@ -15,6 +15,7 @@ import {
   FileText,
   Users,
   Layers,
+  Megaphone,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,6 +43,7 @@ interface NotificationPrefs {
   gradeNotifications: boolean;
   newResources: boolean;
   applicationStatusUpdates: boolean;
+  announcements: boolean;
 }
 
 const defaultPrefs: NotificationPrefs = {
@@ -53,6 +55,7 @@ const defaultPrefs: NotificationPrefs = {
   gradeNotifications: true,
   newResources: true,
   applicationStatusUpdates: true,
+  announcements: true,
 };
 
 // The API stores prefs under the same keys lib/notifications.ts checks
@@ -69,6 +72,7 @@ const API_KEY: Record<keyof NotificationPrefs, string> = {
   gradeNotifications: "grades",
   newResources: "resources",
   applicationStatusUpdates: "applications",
+  announcements: "announcements",
 };
 
 function fromApi(stored: Record<string, unknown> | null | undefined): NotificationPrefs {
@@ -230,9 +234,15 @@ export default function NotificationPreferences() {
       icon: <FileText className="h-4 w-4" />,
     },
     {
+      id: "announcements",
+      label: "Announcements",
+      description: "School-wide and course announcements.",
+      icon: <Megaphone className="h-4 w-4" />,
+    },
+    {
       id: "gradeNotifications",
       label: "Grades",
-      description: "Alerts when grades or feedback are posted.",
+      description: "Alerts when grades or feedback are posted, or quiz scores are released (parents: for your children).",
       icon: <Star className="h-4 w-4" />,
     },
     {
@@ -306,7 +316,7 @@ export default function NotificationPreferences() {
         <CardContent className="space-y-4">
           {loading ? (
             <>
-              {Array.from({ length: 6 }).map((_, i) => (
+              {Array.from({ length: 7 }).map((_, i) => (
                 <div key={i}>
                   {i > 0 && <div className="border-t" />}
                   <div className={i > 0 ? "pt-4" : ""}>

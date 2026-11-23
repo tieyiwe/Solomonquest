@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { dispatchNotifications, parentsOfStudents, type AudienceRecipient } from "../lib/notifyAudience";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -116,8 +118,92 @@ router.post("/announcements", requireAuth, async (req: AuthenticatedRequest, res
     return;
   }
 
+  // Notify the audience in the background — never hold the response on
+  // recipient lookups or email delivery.
+  notifyAnnouncementAudience({
+    announcementId: data.id as string,
+    schoolId: (data.school_id as string | null) ?? null,
+    courseId: (data.course_id as string | null) ?? null,
+    title: String(title),
+    content: typeof content === "string" ? content : "",
+    authorId: req.userId ?? null,
+  }).catch((err) => logger.error({ err }, "announcement notification failed"));
+
   res.status(201).json(await enrichAnnouncement(data));
 });
+
+const ROLE_HOME: Record<string, string> = {
+  admin: "/dashboard/admin",
+  super_admin: "/dashboard/admin",
+  teacher: "/dashboard/teacher",
+  student: "/dashboard/student",
+  staff: "/dashboard/student",
+  parent: "/dashboard/parent",
+};
+
+/**
+ * Course announcement: the course's actively enrolled students (link to
+ * the course page) plus their linked parents (parent dashboard, where the
+ * announcements panel lives). School-wide: everyone whose profile is in the
+ * school (each to their own dashboard, which shows the announcements
+ * panel) plus parents linked to the school's students. The author is never
+ * notified; per-user preferences ("announcements") are applied downstream.
+ */
+async function notifyAnnouncementAudience(a: {
+  announcementId: string;
+  schoolId: string | null;
+  courseId: string | null;
+  title: string;
+  content: string;
+  authorId: string | null;
+}): Promise<void> {
+  const recipients: AudienceRecipient[] = [];
+  let studentIds: string[] = [];
+  let heading = "New announcement";
+
+  if (a.courseId) {
+    const [{ data: enrollments }, { data: course }] = await Promise.all([
+      supabaseAdmin.from("course_enrollments").select("student_id").eq("course_id", a.courseId).eq("status", "active"),
+      supabaseAdmin.from("courses").select("title").eq("id", a.courseId).maybeSingle(),
+    ]);
+    studentIds = (enrollments ?? []).map((e) => e.student_id as string);
+    for (const id of studentIds) recipients.push({ userId: id, link: `/dashboard/student/courses/${a.courseId}` });
+    if (course?.title) heading = `New announcement in ${course.title}`;
+  } else if (a.schoolId) {
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data: people, error } = await supabaseAdmin
+        .from("profiles")
+        .select("id, role")
+        .eq("school_id", a.schoolId)
+        .range(from, from + PAGE - 1);
+      if (error) break;
+      for (const p of people ?? []) {
+        const role = (p.role as string | null) ?? "student";
+        recipients.push({ userId: p.id as string, link: ROLE_HOME[role] ?? "/notifications" });
+        if (role === "student") studentIds.push(p.id as string);
+      }
+      if (!people || people.length < PAGE) break;
+    }
+  } else {
+    return;
+  }
+
+  for (const l of await parentsOfStudents(studentIds)) {
+    recipients.push({ userId: l.parentId, link: "/dashboard/parent" });
+  }
+
+  const body = a.content.length > 300 ? `${a.content.slice(0, 297)}...` : a.content;
+  dispatchNotifications({
+    recipients,
+    type: "announcement",
+    category: "announcements",
+    title: `${heading}: ${a.title}`,
+    body: body || a.title,
+    excludeUserId: a.authorId,
+    metadata: { announcementId: a.announcementId, courseId: a.courseId },
+  });
+}
 
 router.delete("/announcements/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {

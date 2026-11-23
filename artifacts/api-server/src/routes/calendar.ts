@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { mapExtension, type Extension } from "../lib/lateWork";
 
 const router: IRouter = Router();
 
@@ -95,12 +96,40 @@ router.get("/calendar", requireAuth, async (req: AuthenticatedRequest, res): Pro
         .lte("scheduled_at", endIso),
     ]);
 
-    for (const a of assignmentsRes.data ?? []) {
+    // A student with an extension sees their extended due date instead.
+    // Extended dates can fall inside the window even when the original
+    // doesn't (or vice versa), so fetch those assignments too and filter
+    // by the effective date.
+    let assignmentRows = (assignmentsRes.data ?? []) as Record<string, unknown>[];
+    const extByAssignment = new Map<string, Extension>();
+    if (!isStaffRole && userId) {
+      const { data: extRows, error: extError } = await supabaseAdmin
+        .from("assignment_extensions")
+        .select("*")
+        .eq("student_id", userId);
+      if (!extError) {
+        for (const r of extRows ?? []) extByAssignment.set(r.assignment_id as string, mapExtension(r));
+      }
+      const missing = Array.from(extByAssignment.keys()).filter((id) => !assignmentRows.some((a) => a.id === id));
+      if (missing.length > 0) {
+        const { data: extra } = await supabaseAdmin
+          .from("assignments")
+          .select("id, title, due_date, course_id, courses(title)")
+          .in("id", missing)
+          .in("course_id", courseIds)
+          .eq("is_published", true);
+        assignmentRows = assignmentRows.concat((extra ?? []) as Record<string, unknown>[]);
+      }
+    }
+
+    for (const a of assignmentRows) {
+      const date = extByAssignment.get(a.id as string)?.extendedDueAt ?? (a.due_date as string | null);
+      if (!date || new Date(date) < start || new Date(date) > end) continue;
       events.push({
         id: a.id as string,
         type: "assignment_due",
         title: a.title as string,
-        date: a.due_date as string,
+        date,
         courseId: a.course_id as string,
         courseTitle: (a.courses as { title?: string } | null)?.title ?? null,
         link: courseLink(role, a.course_id as string),

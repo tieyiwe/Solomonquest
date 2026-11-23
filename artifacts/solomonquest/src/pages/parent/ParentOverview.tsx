@@ -6,7 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { GraduationCap, CalendarCheck, Receipt } from "lucide-react";
+import { GraduationCap, CalendarCheck, Receipt, FileBarChart } from "lucide-react";
+import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
 
 interface Child {
   id: string;
@@ -117,6 +119,13 @@ export default function ParentOverview() {
                       <p className="text-xs text-muted-foreground">ID: {child.uniqueStudentId}</p>
                     )}
                   </div>
+                  <Button asChild size="sm" variant="outline" className="ml-auto">
+                    <Link href={`/reports/students/${child.id}`}>
+                      <FileBarChart className="h-4 w-4 sm:mr-1.5" />
+                      <span className="hidden sm:inline">Progress report</span>
+                      <span className="sr-only sm:hidden">Progress report</span>
+                    </Link>
+                  </Button>
                 </CardHeader>
                 <CardContent className="grid gap-6 sm:grid-cols-3">
                   <div>

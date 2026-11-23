@@ -40,6 +40,8 @@ import parentsRouter from "./parents";
 import termsRouter from "./terms";
 import searchRouter from "./search";
 import schoolRequestsRouter from "./school-requests";
+import lateWorkRouter from "./late-work";
+import progressReportsRouter from "./progress-reports";
 
 const router: IRouter = Router();
 
@@ -84,5 +86,7 @@ router.use(parentsRouter);
 router.use(termsRouter);
 router.use(searchRouter);
 router.use(schoolRequestsRouter);
+router.use(lateWorkRouter);
+router.use(progressReportsRouter);
 
 export default router;
