@@ -52,6 +52,7 @@ function safeFormat(value: string | null | undefined, fmt: string): string | nul
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { StudentModulesView } from "@/components/modules/StudentModulesView";
 
 interface Resource {
   id: string;
@@ -671,8 +672,9 @@ export default function StudentCourseDetail() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="w-full grid grid-cols-6 h-auto p-1">
+          <TabsList className="w-full grid grid-cols-4 sm:grid-cols-7 h-auto p-1 gap-y-1">
             <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
+            <TabsTrigger value="modules" className="text-xs sm:text-sm">Modules</TabsTrigger>
             <TabsTrigger value="resources" className="text-xs sm:text-sm">Resources</TabsTrigger>
             <TabsTrigger value="assignments" className="text-xs sm:text-sm">Assignments</TabsTrigger>
             <TabsTrigger value="quizzes" className="text-xs sm:text-sm">Quizzes</TabsTrigger>
@@ -741,6 +743,10 @@ export default function StudentCourseDetail() {
             </div>
 
             <AnnouncementsPanel courseId={courseId} title="Course announcements" />
+          </TabsContent>
+
+          <TabsContent value="modules" className="mt-6">
+            <StudentModulesView courseId={courseId} onOpenAssignment={() => setActiveTab("assignments")} />
           </TabsContent>
 
           <TabsContent value="resources" className="mt-6">

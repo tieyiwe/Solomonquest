@@ -49,6 +49,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { format, isToday, isFuture, parseISO } from "date-fns";
 import { navIconActive, navIconIdle, navItemClass } from "@/components/layout/navStyles";
 import AttendanceCheckin from "@/components/AttendanceCheckin";
+import { MyCourseProgressBar } from "@/components/modules/MyCourseProgress";
 
 // ─── apiFetch helper ──────────────────────────────────────────────────────────
 
@@ -614,6 +615,7 @@ export default function StudentOverview() {
                                   {classDisplay}
                                 </p>
                               )}
+                              <MyCourseProgressBar courseId={course.id} />
                               <div className="flex items-center gap-2 pt-1">
                                 {activeRoom ? (
                                   <Button

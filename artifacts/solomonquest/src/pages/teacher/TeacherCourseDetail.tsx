@@ -69,6 +69,8 @@ import * as z from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { EmptyState } from "@/components/common/States";
+import { CourseModulesManager } from "@/components/modules/CourseModulesManager";
+import { CourseProgressTable } from "@/components/modules/CourseProgressTable";
 
 const assignmentSchema = z.object({
   title: z.string().min(2, "Title is required"),
@@ -467,6 +469,8 @@ export default function TeacherCourseDetail() {
             <TabsTrigger value="students">
               Students {students ? `(${students.length})` : ""}
             </TabsTrigger>
+            <TabsTrigger value="modules">Modules</TabsTrigger>
+            <TabsTrigger value="progress">Progress</TabsTrigger>
             <TabsTrigger value="resources">Resources</TabsTrigger>
             <TabsTrigger value="assignments">
               Assignments {assignments ? `(${assignments.length})` : ""}
@@ -477,6 +481,16 @@ export default function TeacherCourseDetail() {
               Video
             </TabsTrigger>
           </TabsList>
+
+          {/* MODULES TAB */}
+          <TabsContent value="modules" className="space-y-4">
+            <CourseModulesManager courseId={courseId} />
+          </TabsContent>
+
+          {/* PROGRESS TAB */}
+          <TabsContent value="progress" className="space-y-4">
+            <CourseProgressTable courseId={courseId} />
+          </TabsContent>
 
           {/* OVERVIEW TAB */}
           <TabsContent value="overview" className="space-y-4">

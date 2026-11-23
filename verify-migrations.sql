@@ -184,7 +184,17 @@ select * from (values
     and not exists (select 1 from pg_policies where schemaname='public'
       and (qual = 'true' or with_check = 'true'))
     and exists (select 1 from pg_policies where schemaname='public'
-      and policyname='lockdown_notifications_select_own'))
+      and policyname='lockdown_notifications_select_own')),
+
+  ('course-modules.sql: course_modules, course_lessons, course_module_items, lesson_completions',
+    exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='course_modules')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='course_lessons')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='course_module_items')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='lesson_completions'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;
