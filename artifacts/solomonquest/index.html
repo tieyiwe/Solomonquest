@@ -45,6 +45,26 @@
             if (m) m.setAttribute("content", "#0e121b");
           }
         } catch (e) {}
+        // Re-apply the signed-in user's school colours before first paint
+        // (cached by src/hooks/useSchoolTheme.ts; same route list as
+        // THEMED_ROUTE_RE). Only when the stored session is that user's.
+        try {
+          var c = JSON.parse(localStorage.getItem("sq-school-theme") || "null");
+          if (c && c.css && /^\/(dashboard|chat|forum|messages|calendar|settings|notifications|profile|reports|help)(\/|$)/.test(location.pathname)) {
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              if (!/^sb-.*-auth-token$/.test(k)) continue;
+              var s = JSON.parse(localStorage.getItem(k) || "null");
+              if (s && s.user && s.user.id === c.userId) {
+                var st = document.createElement("style");
+                st.id = "sq-school-theme";
+                st.textContent = c.css;
+                document.head.appendChild(st);
+              }
+              break;
+            }
+          }
+        } catch (e) {}
       })();
     </script>
   </head>

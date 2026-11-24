@@ -33,6 +33,9 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { LoadingRows } from "@/components/common/States";
+import { useQueryClient } from "@tanstack/react-query";
+import { getGetMySchoolQueryKey } from "@workspace/api-client-react";
+import { buildSchoolTheme, contrast, hslHex, type Hsl, type ModeTokens } from "@/lib/schoolTheme";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -137,6 +140,39 @@ const BORDER_RADIUS_OPTIONS: { value: "sharp" | "rounded" | "pill"; label: strin
 ];
 
 const INTERVAL_OPTIONS = [3, 5, 7, 10];
+
+const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+const isWebUrl = (v: string) => /^https?:\/\/[^\s]+$/i.test(v);
+
+/** Mirrors the server's checks (api-server lib/brandingValidation.ts) so the
+ *  admin hears about a bad value before the request goes out. */
+function brandingProblem(b: Branding): string | null {
+  const colours: [string, string][] = [
+    ["Primary colour", b.primary_color], ["Secondary colour", b.secondary_color],
+    ["Accent colour", b.accent_color], ["Heading text colour", b.heading_text_color],
+    ["Announcement colour", b.announcement_bg_color],
+    ...b.banner_slides.map((s, i) => [`Slide ${i + 1} overlay colour`, s.overlay_color] as [string, string]),
+  ];
+  for (const [label, v] of colours) if (!HEX_RE.test(v)) return `${label} must look like #1a2b3c`;
+  const urls: [string, string][] = [
+    ["Logo", b.logo_url],
+    ...b.banner_slides.map((s, i) => [`Slide ${i + 1} image URL`, s.image_url] as [string, string]),
+    ...b.testimonials.map((t, i) => [`Testimonial ${i + 1} avatar URL`, t.avatar_url] as [string, string]),
+    ["Website", b.social_website], ["Facebook", b.social_facebook], ["Twitter / X", b.social_twitter],
+    ["Instagram", b.social_instagram], ["LinkedIn", b.social_linkedin], ["YouTube", b.social_youtube],
+  ];
+  for (const [label, v] of urls) if (v && !isWebUrl(v)) return `${label} must start with https://`;
+  for (const [i, s] of b.banner_slides.entries()) {
+    if (s.cta_url && !isWebUrl(s.cta_url) && !(s.cta_url.startsWith("/") && !s.cta_url.startsWith("//"))) {
+      return `Slide ${i + 1} button link must start with https:// or /`;
+    }
+  }
+  if (b.custom_css.includes("<")) return "Custom CSS can't contain '<' (HTML tags aren't allowed)";
+  if (/@import/i.test(b.custom_css)) return "Custom CSS can't use @import";
+  return null;
+}
 
 const DEFAULT_BRANDING: Branding = {
   logo_url: "",
@@ -320,12 +356,14 @@ function LogoUploadButton({ onUploaded, schoolId }: { onUploaded: (url: string) 
     const file = e.target.files?.[0];
     if (!file || !schoolId) return;
     if (file.size > 2 * 1024 * 1024) { toast.error("File must be under 2 MB"); return; }
+    // The school-assets bucket only accepts these (storage-buckets.sql).
+    if (!LOGO_TYPES.includes(file.type)) { toast.error("Logo must be a PNG, JPG, WebP or GIF image"); return; }
 
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop() ?? "png";
+      const ext = ({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" } as Record<string, string>)[file.type];
       const path = `school-logos/${schoolId}/logo.${ext}`;
-      const { error } = await supabase.storage.from("school-assets").upload(path, file, { upsert: true });
+      const { error } = await supabase.storage.from("school-assets").upload(path, file, { upsert: true, contentType: file.type });
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from("school-assets").getPublicUrl(path);
       onUploaded(publicUrl + `?v=${Date.now()}`);
@@ -340,7 +378,7 @@ function LogoUploadButton({ onUploaded, schoolId }: { onUploaded: (url: string) 
 
   return (
     <>
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <input ref={inputRef} type="file" accept={LOGO_TYPES.join(",")} className="hidden" onChange={handleFile} />
       <Button
         type="button"
         variant="outline"
@@ -352,6 +390,86 @@ function LogoUploadButton({ onUploaded, schoolId }: { onUploaded: (url: string) 
         {uploading ? "Uploading…" : "Upload Logo"}
       </Button>
     </>
+  );
+}
+
+// ─── Preview in app ───────────────────────────────────────────────────────────
+
+const hsl = (c: Hsl) => `hsl(${Math.round(c[0])} ${Math.round(c[1])}% ${Math.round(c[2])}%)`;
+
+function MiniApp({ t, dark, radius, logoUrl, name }: { t: ModeTokens; dark: boolean; radius: string; logoUrl: string; name: string }) {
+  const page: Hsl = dark ? [222, 38, 6] : [40, 30, 98];
+  const card: Hsl = dark ? [222, 32, 9] : [0, 0, 100];
+  const text: Hsl = dark ? [40, 20, 93] : [222, 35, 11];
+  const initial = (
+    <span className="h-6 w-6 rounded-md flex items-center justify-center text-[11px] font-bold shrink-0"
+      style={{ background: hsl(t.sidebarPrimary), color: hsl(t.sidebarPrimaryFg) }}>
+      {(name || "S")[0].toUpperCase()}
+    </span>
+  );
+  return (
+    <div className="flex overflow-hidden border border-border text-[11px]" style={{ borderRadius: radius === "0rem" ? 0 : 10, background: hsl(page) }}
+      data-testid={dark ? "preview-dark" : "preview-light"}>
+      <div className="w-28 shrink-0 p-2 space-y-1" style={{ background: hsl(t.sidebar), color: hsl(t.sidebarFg) }}>
+        <div className="flex items-center gap-1.5 pb-2 mb-1 border-b" style={{ borderColor: hsl([t.sidebar[0], t.sidebar[1], t.sidebar[2] + 8]) }}>
+          {logoUrl ? (
+            <SafeImage src={logoUrl} alt="" className="h-6 w-6 rounded-md bg-white object-contain p-0.5 shrink-0" fallback={initial} />
+          ) : initial}
+          <span className="truncate font-semibold" style={{ color: hsl(t.sidebarAccentFg) }}>{name || "Your school"}</span>
+        </div>
+        <div className="relative flex items-center gap-1.5 px-2 py-1 rounded-md font-semibold"
+          style={{ background: hsl(t.sidebarAccent), color: hsl(t.sidebarAccentFg) }}>
+          <span className="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-full" style={{ background: hsl(t.sidebarPrimary) }} />
+          <BookOpen className="h-3 w-3" style={{ color: hsl(t.sidebarPrimary) }} /> Overview
+        </div>
+        <div className="flex items-center gap-1.5 px-2 py-1 opacity-75"><Clock className="h-3 w-3" /> Calendar</div>
+        <div className="flex items-center gap-1.5 px-2 py-1 opacity-75"><Award className="h-3 w-3" /> Grades</div>
+      </div>
+      <div className="flex-1 p-3 space-y-2 min-w-0" style={{ color: hsl(text) }}>
+        <p className="font-semibold">{dark ? "Dark mode" : "Light mode"}</p>
+        <div className="p-2 border" style={{ background: hsl(card), borderRadius: radius, borderColor: dark ? "hsl(222 22% 16%)" : "hsl(36 16% 88%)" }}>
+          <p className="mb-2">Welcome back! <span className="underline font-medium" style={{ color: hsl(t.primary) }}>View courses</span></p>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="px-2.5 py-1 font-medium" style={{ background: hsl(t.primary), color: hsl(t.primaryFg), borderRadius: radius }}>Primary button</span>
+            <span className="px-2 py-1 font-medium" style={{ background: hsl(t.gold), color: hsl(t.goldFg), borderRadius: radius }}>Badge</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InAppPreview({ primary, accent, radius, logoUrl, name }: {
+  primary: string; accent: string; radius: Branding["border_radius"]; logoUrl: string; name: string;
+}) {
+  const theme = buildSchoolTheme({ primary, accent, radius });
+  return (
+    <div className="border-t border-border pt-4" data-testid="in-app-preview">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-1">Preview in app</h3>
+      <p className="text-xs text-muted-foreground mb-3">
+        How your students, teachers and parents will see your colours on their dashboards.
+      </p>
+      {!theme ? (
+        <p className="text-xs text-destructive">Enter the primary colour as #RRGGBB to see the preview.</p>
+      ) : (
+        <>
+          <div className="space-y-2">
+            <MiniApp t={theme.light} dark={false} radius={theme.radius} logoUrl={logoUrl} name={name} />
+            <MiniApp t={theme.dark} dark radius={theme.radius} logoUrl={logoUrl} name={name} />
+          </div>
+          {theme.warnings.length > 0 && (
+            <div role="status" data-testid="contrast-warning" className="mt-3 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning space-y-1">
+              <p className="font-semibold">Adjusted for readability</p>
+              {theme.warnings.map((w) => <p key={w}>{w}</p>)}
+              <p>
+                Contrast now: buttons {contrast(theme.light.primary, theme.light.primaryFg).toFixed(1)}:1 (light),{" "}
+                {contrast(theme.dark.primary, theme.dark.primaryFg).toFixed(1)}:1 (dark). Your public page still uses {hslHex(theme.light.primary) === primary.toLowerCase() ? "this colour" : primary} as chosen.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -557,6 +675,8 @@ export default function AdminSchoolBranding() {
   const [branding, setBranding] = useState<Branding>(DEFAULT_BRANDING);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const queryClient = useQueryClient();
   const [addingSlide, setAddingSlide] = useState(false);
   const [newSlide, setNewSlide] = useState<Omit<HeroSlide, "id">>({
     image_url: "",
@@ -572,7 +692,10 @@ export default function AdminSchoolBranding() {
   useEffect(() => {
     if (!schoolId) return;
     apiFetch("/api/schools/my")
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         if (data) {
           // Prefer branding JSONB if available, otherwise fall back to individual columns
@@ -583,11 +706,13 @@ export default function AdminSchoolBranding() {
             ...prev,
             ...(b ?? {}),
             school_name: (data.name as string) ?? prev.school_name,
-            slug: (b?.slug as string) ?? (data.slug as string) ?? prev.slug,
-            logo_url: (b?.logo_url as string) ?? (data.logo_url as string) ?? (data.logoUrl as string) ?? prev.logo_url,
-            tagline: (b?.tagline as string) ?? (data.tagline as string) ?? prev.tagline,
-            primary_color: (b?.primary_color as string) ?? (data.primary_color as string) ?? (data.primaryColor as string) ?? prev.primary_color,
-            secondary_color: (b?.secondary_color as string) ?? (data.secondary_color as string) ?? (data.secondaryColor as string) ?? prev.secondary_color,
+            // These five live in real columns, which the server always
+            // writes; old saves may have left stale copies in the JSON.
+            slug: (data.slug as string) ?? prev.slug,
+            logo_url: (data.logo_url as string) ?? (data.logoUrl as string) ?? "",
+            tagline: (data.tagline as string) ?? "",
+            primary_color: (data.primary_color as string) ?? (data.primaryColor as string) ?? prev.primary_color,
+            secondary_color: (data.secondary_color as string) ?? (data.secondaryColor as string) ?? prev.secondary_color,
             accent_color: (b?.accent_color as string) ?? (data.accent_color as string) ?? prev.accent_color,
             heading_font: (b?.heading_font as string) ?? (data.heading_font as string) ?? prev.heading_font,
             heading_text_color: (b?.heading_text_color as string) ?? (data.heading_color as string) ?? prev.heading_text_color,
@@ -608,10 +733,13 @@ export default function AdminSchoolBranding() {
             social_youtube: (b?.social_youtube as string) ?? ((data.social_links as Record<string, string>)?.youtube) ?? prev.social_youtube,
             social_website: (b?.social_website as string) ?? ((data.social_links as Record<string, string>)?.website) ?? prev.social_website,
             custom_css: (b?.custom_css as string) ?? (data.custom_css as string) ?? prev.custom_css,
+            hero_settings: { ...prev.hero_settings, ...((b?.hero_settings as Branding["hero_settings"]) ?? {}) },
           }));
         }
       })
-      .catch(() => {})
+      // Saving the defaults over a school we failed to read would wipe its
+      // real branding, so block saving until a reload succeeds.
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, [schoolId]);
 
@@ -620,6 +748,15 @@ export default function AdminSchoolBranding() {
   }, []);
 
   const handleSave = async () => {
+    if (loadError) {
+      toast.error("Your current branding couldn't be loaded. Reload the page before saving.");
+      return;
+    }
+    const problem = brandingProblem(branding);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     setSaving(true);
     try {
       const res = await apiFetch(`/api/schools/${schoolId}/branding`, {
@@ -629,6 +766,8 @@ export default function AdminSchoolBranding() {
       const json = await res.json().catch(() => ({}));
       if (res.ok) {
         toast.success("Branding saved successfully!");
+        // Sidebars and the in-app theme read the school from this query.
+        queryClient.invalidateQueries({ queryKey: getGetMySchoolQueryKey() });
       } else {
         toast.error(json?.error ?? `Save failed (${res.status})`);
       }
@@ -717,10 +856,10 @@ export default function AdminSchoolBranding() {
   const firstSlide = branding.banner_slides[0];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-muted/50">
+    <div className="flex flex-col md:flex-row md:h-screen md:overflow-hidden bg-muted/50">
       {/* ── LEFT PANEL (60%) ── */}
-      <div className="w-[60%] flex flex-col h-full border-r border-border bg-card">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+      <div className="w-full md:w-[60%] flex flex-col md:h-full border-r border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-border">
           <div className="flex items-center gap-3">
             <Link href="/dashboard/admin">
               <Button aria-label="Back" variant="ghost" size="icon" className="h-8 w-8">
@@ -744,7 +883,7 @@ export default function AdminSchoolBranding() {
                 <ExternalLink className="w-3 h-3 ml-1" />
               </Button>
             )}
-            <Button onClick={handleSave} disabled={saving} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+            <Button onClick={handleSave} disabled={saving || loadError} className="bg-primary hover:bg-primary/90 text-primary-foreground">
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               {saving ? "Saving..." : "Save Branding"}
             </Button>
@@ -754,7 +893,7 @@ export default function AdminSchoolBranding() {
         <div className="flex-1 overflow-y-auto">
           <Tabs defaultValue="identity" className="h-full">
             <div className="px-6 pt-4 border-b border-border sticky top-0 bg-card z-10">
-              <TabsList className="flex flex-wrap gap-1 h-auto bg-muted p-1">
+              <TabsList className="flex flex-wrap justify-start gap-1 h-auto bg-muted p-1">
                 <TabsTrigger value="identity" className="text-xs">Identity</TabsTrigger>
                 <TabsTrigger value="hero" className="text-xs">Hero Banner</TabsTrigger>
                 <TabsTrigger value="colors" className="text-xs">Colors & Fonts</TabsTrigger>
@@ -766,7 +905,12 @@ export default function AdminSchoolBranding() {
               </TabsList>
             </div>
 
-            <div className="p-6 space-y-6">
+            <div className="p-4 sm:p-6 space-y-6">
+              {loadError && (
+                <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                  Your school's current branding couldn't be loaded, so saving is turned off to avoid overwriting it. Reload the page to try again.
+                </div>
+              )}
 
               {/* ── TAB 1: Identity ── */}
               <TabsContent value="identity" className="space-y-6 mt-0">
@@ -795,7 +939,7 @@ export default function AdminSchoolBranding() {
                           Remove logo
                         </button>
                       )}
-                      <p className="text-xs text-muted-foreground">PNG, JPG or SVG. Max 2 MB.</p>
+                      <p className="text-xs text-muted-foreground">PNG, JPG, WebP or GIF. Max 2 MB.</p>
                     </div>
                   </div>
                 </div>
@@ -996,8 +1140,17 @@ export default function AdminSchoolBranding() {
                   <ColorPickerRow label="Heading Text Color" value={branding.heading_text_color} onChange={(v) => update("heading_text_color", v)} />
                 </div>
 
+                <InAppPreview
+                  primary={branding.primary_color}
+                  accent={branding.accent_color}
+                  radius={branding.border_radius}
+                  logoUrl={branding.logo_url}
+                  name={branding.school_name}
+                />
+
                 <div className="border-t border-border pt-4">
                   <h3 className="text-sm font-semibold text-foreground/80 mb-3">Typography</h3>
+                  <p className="text-xs text-muted-foreground mb-3">Fonts apply to your public school page. Inside the app, everyone keeps the standard font.</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="adminschoolbranding-heading-font" className="text-sm text-muted-foreground mb-1 block">Heading Font</Label>
@@ -1297,7 +1450,7 @@ export default function AdminSchoolBranding() {
       </div>
 
       {/* ── RIGHT PANEL (40%): Live Preview ── */}
-      <div className="w-[40%] flex flex-col h-full bg-gray-100 overflow-hidden">
+      <div className="w-full md:w-[40%] flex flex-col h-[80vh] md:h-full bg-gray-100 overflow-hidden">
         <div className="px-4 py-3 bg-white border-b border-gray-200 flex items-center gap-2">
           <div className="flex gap-1.5">
             <div className="w-3 h-3 rounded-full bg-red-400" />

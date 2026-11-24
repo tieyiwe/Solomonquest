@@ -230,7 +230,15 @@ select * from (values
     and exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='invitations' and column_name='last_name')
     and exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='invitations' and column_name='course_ids'))
+      where table_schema='public' and table_name='invitations' and column_name='course_ids')),
+
+  ('school-branding.sql: schools.branding + tagline + logo_url',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='schools' and column_name='branding')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='schools' and column_name='tagline')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='schools' and column_name='logo_url'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

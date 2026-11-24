@@ -9,7 +9,8 @@ import { HelpCircle, LogOut } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 
-import { BrandTile } from "@/components/brand/BrandMark";
+import { SchoolLogoTile } from "@/components/brand/SchoolLogo";
+import { getGetMySchoolQueryKey, useGetMySchool } from "@workspace/api-client-react";
 interface ParentLayoutProps {
   children: React.ReactNode;
 }
@@ -18,6 +19,7 @@ export function ParentLayout({ children }: ParentLayoutProps) {
   const { user, signOut } = useAuth();
   const [helpOpen, setHelpOpen] = useState(false);
   const { showTour, launchTour, closeTour } = useTour("parent");
+  const { data: school } = useGetMySchool({ query: { queryKey: getGetMySchoolQueryKey(), enabled: !!user?.schoolId } });
 
   const getInitials = (firstName?: string | null, lastName?: string | null) => {
     return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "P";
@@ -26,10 +28,10 @@ export function ParentLayout({ children }: ParentLayoutProps) {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="h-16 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 flex items-center justify-between gap-3 px-4 md:px-6 sticky top-0 z-20">
-        <div className="flex items-center gap-2">
-          <BrandTile className="h-8 w-8" />
-          <Link href="/dashboard/parent">
-            <span className="text-base font-bold text-foreground tracking-tight">SolomonQuest</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <SchoolLogoTile school={school} />
+          <Link href="/dashboard/parent" className="min-w-0">
+            <span className="block truncate text-base font-bold text-foreground tracking-tight">{school?.name || "SolomonQuest"}</span>
           </Link>
         </div>
 

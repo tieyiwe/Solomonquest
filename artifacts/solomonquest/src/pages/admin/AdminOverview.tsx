@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { SidebarSchoolBrand, SchoolHeaderName } from "@/components/brand/SchoolLogo";
 import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
@@ -193,15 +194,7 @@ function Sidebar({ onClose, onOpenHelp }: { onClose?: () => void; onOpenHelp: ()
       {/* Logo */}
       <div className="px-4 h-16 border-b border-sidebar-border flex items-center justify-between shrink-0">
         <Link href="/dashboard/admin">
-          <div className="flex items-center gap-2.5 cursor-pointer">
-            <div className="h-8 w-8 rounded-lg bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm shrink-0" aria-hidden="true">
-              S
-            </div>
-            <div>
-              <p className="text-sidebar-accent-foreground font-semibold text-sm leading-tight">SolomonQuest</p>
-              <p className="text-sidebar-foreground/60 text-xs">Admin Panel</p>
-            </div>
-          </div>
+          <SidebarSchoolBrand subtitle="Admin Panel" />
         </Link>
         {onClose && (
           <button onClick={onClose} aria-label="Close navigation" className="p-1.5 rounded-md text-sidebar-foreground/70 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 md:hidden">
@@ -395,11 +388,11 @@ export default function AdminOverview() {
             <Menu className="h-5 w-5" />
           </Button>
 
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h1 className="text-base font-semibold text-foreground hidden md:block">
               Dashboard Overview
             </h1>
-            <h1 className="text-base font-semibold text-foreground md:hidden">SolomonQuest</h1>
+            <h1 className="text-base font-semibold text-foreground md:hidden min-w-0"><SchoolHeaderName /></h1>
           </div>
 
           {/* Notification Bell */}

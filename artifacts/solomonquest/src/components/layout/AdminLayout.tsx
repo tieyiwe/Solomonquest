@@ -4,6 +4,7 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useGetMySchool } from "@workspace/api-client-react";
+import { SchoolLogoTile } from "@/components/brand/SchoolLogo";
 import {
   LayoutDashboard,
   Users,
@@ -41,7 +42,6 @@ import { AgentWidget } from "@/components/agent/AgentWidget";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
 import {
-  brandMark,
   navIconActive,
   navIconIdle,
   navItemClass,
@@ -245,9 +245,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         <div className="px-4 h-16 flex items-center border-b border-sidebar-border">
           <Link href="/dashboard/admin">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className={brandMark} aria-hidden="true">
-                {(school?.name || "S")[0].toUpperCase()}
-              </div>
+              <SchoolLogoTile school={school} />
               <div className="overflow-hidden">
                 <p className="text-sidebar-accent-foreground font-semibold text-sm truncate leading-tight">
                   {school?.name || "SolomonQuest"}
@@ -302,9 +300,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               <SheetTitle className="sr-only">Navigation</SheetTitle>
               <div className="px-4 h-16 flex items-center border-b border-sidebar-border">
                 <div className="flex items-center gap-2.5">
-                  <div className={brandMark} aria-hidden="true">
-                    {(school?.name || "S")[0].toUpperCase()}
-                  </div>
+                  <SchoolLogoTile school={school} />
                   <div className="overflow-hidden">
                     <p className="text-sidebar-accent-foreground font-semibold text-sm truncate">
                       {school?.name || "SolomonQuest"}
@@ -319,8 +315,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
 
-          <div className="md:hidden font-semibold text-foreground truncate min-w-0">
-            {school?.name || "SolomonQuest"}
+          <div className="md:hidden flex items-center gap-2 font-semibold text-foreground min-w-0">
+            <SchoolLogoTile school={school} className="h-7 w-7" />
+            <span className="truncate">{school?.name || "SolomonQuest"}</span>
           </div>
 
           <div className="hidden md:block flex-1" />

@@ -39,7 +39,7 @@ import { useGetMySchool, useGetMyCourses } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { navIconActive, navIconIdle, navItemActive, navItemBase, navItemIdle, navSectionLabel } from "@/components/layout/navStyles";
 
-import { BrandTile } from "@/components/brand/BrandMark";
+import { SchoolLogoTile } from "@/components/brand/SchoolLogo";
 interface TeacherLayoutProps {
   children: React.ReactNode;
 }
@@ -92,7 +92,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="px-4 border-b border-sidebar-border flex items-center gap-2.5 h-16">
-        <BrandTile className="h-8 w-8" />
+        <SchoolLogoTile school={school} />
         <Link href="/" className="min-w-0">
           <span className="block text-sm font-semibold text-sidebar-accent-foreground tracking-tight truncate">
             {school?.name || "SolomonQuest"}
@@ -242,8 +242,9 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
             <span className="font-semibold text-foreground hidden md:block">
               Teacher Dashboard
             </span>
-            <span className="font-semibold text-foreground md:hidden truncate">
-              {school?.name || "SolomonQuest"}
+            <span className="md:hidden flex items-center gap-2 min-w-0 font-semibold text-foreground">
+              <SchoolLogoTile school={school} className="h-7 w-7" />
+              <span className="truncate">{school?.name || "SolomonQuest"}</span>
             </span>
           </div>
 

@@ -4,6 +4,7 @@ import { Link, useParams } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { hexToRgb, rgbToHsl, readableOn, hslHex } from "@/lib/schoolTheme";
 import {
   BookOpen,
   Users,
@@ -11,6 +12,12 @@ import {
   Star,
   Globe,
   Clock,
+  Lightbulb,
+  Heart,
+  Shield,
+  Zap,
+  Target,
+  Layers,
   ChevronLeft,
   ChevronRight,
   Facebook,
@@ -65,7 +72,34 @@ interface SocialLinks {
 
 interface HeroSettings {
   interval_seconds?: number;
+  auto_advance?: boolean;
+  animation?: string;
 }
+
+// The branding editor offers these icon names (PascalCase).
+const ICONS: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
+  users: Users, award: Award, star: Star, book: BookOpen, bookopen: BookOpen, clock: Clock, globe: Globe,
+  lightbulb: Lightbulb, heart: Heart, shield: Shield, zap: Zap, target: Target, layers: Layers,
+};
+
+/** Only http(s) links; anything else (javascript:, data:, …) is dropped. */
+function webUrl(v: unknown): string | undefined {
+  return typeof v === "string" && /^https?:\/\/[^\s"'()<>]+$/i.test(v.trim()) ? v.trim() : undefined;
+}
+
+/** White or near-black text, whichever is readable on this fill. */
+function textOn(hex: string): string {
+  const rgb = hexToRgb(hex);
+  return rgb ? hslHex(readableOn(rgbToHsl(rgb))) : "#ffffff";
+}
+
+// Fonts the editor offers, and how to ask Google Fonts for them.
+const GOOGLE_FONTS: Record<string, string> = {
+  Inter: "Inter", Poppins: "Poppins", Montserrat: "Montserrat", "Playfair Display": "Playfair+Display",
+  Merriweather: "Merriweather", Lora: "Lora", Raleway: "Raleway", "Open Sans": "Open+Sans", Roboto: "Roboto",
+  Lato: "Lato", "Source Sans Pro": "Source+Sans+3",
+};
+const fontStack = (f?: string) => (f ? `'${f}'${f === "Source Sans Pro" ? ", 'Source Sans 3'" : ""}, var(--app-font-sans)` : undefined);
 
 interface Course {
   id: string | number;
@@ -203,15 +237,7 @@ function StatCard({ stat, primaryColor }: { stat: Stat; primaryColor: string }) 
     return () => observer.disconnect();
   }, []);
 
-  const IconMap: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
-    users: Users,
-    award: Award,
-    star: Star,
-    book: BookOpen,
-    clock: Clock,
-    globe: Globe,
-  };
-  const IconComp = stat.icon ? IconMap[stat.icon.toLowerCase()] ?? BookOpen : BookOpen;
+  const IconComp = stat.icon ? ICONS[stat.icon.toLowerCase()] ?? BookOpen : BookOpen;
 
   return (
     <div ref={ref} className="reveal-el flex flex-col items-center gap-2 p-6">
@@ -233,6 +259,7 @@ function HeroCarousel({
   slides,
   animation,
   intervalSeconds,
+  autoAdvance,
   headingFont,
   primaryColor,
   secondaryColor,
@@ -241,6 +268,7 @@ function HeroCarousel({
   slides: BannerSlide[];
   animation: string;
   intervalSeconds: number;
+  autoAdvance: boolean;
   headingFont?: string;
   primaryColor: string;
   secondaryColor: string;
@@ -269,12 +297,12 @@ function HeroCarousel({
   }, [current, slides.length, goTo]);
 
   useEffect(() => {
-    if (slides.length <= 1) return;
+    if (slides.length <= 1 || !autoAdvance || animation === "none") return;
     timerRef.current = setInterval(next, intervalSeconds * 1000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [next, intervalSeconds, slides.length]);
+  }, [next, intervalSeconds, slides.length, autoAdvance, animation]);
 
   const getSlideStyle = (index: number): React.CSSProperties => {
     const isActive = index === current;
@@ -316,11 +344,13 @@ function HeroCarousel({
         const rawOpacity = slide.overlay_opacity ?? 0.5;
         const overlayOpacity = rawOpacity > 1 ? rawOpacity / 100 : rawOpacity;
         const ctaLabel = slide.cta_label ?? slide.cta_text;
+        const imageUrl = webUrl(slide.image_url);
+        const ctaHref = slide.cta_url && (webUrl(slide.cta_url) || (/^\/(?!\/)/.test(slide.cta_url) ? slide.cta_url : undefined));
         return (
           <div key={i} style={getSlideStyle(i)}>
             <div
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(${sizedImageUrl(slide.image_url)})` }}
+              style={{ backgroundImage: imageUrl ? `url("${sizedImageUrl(imageUrl)}")` : undefined }}
             />
             <div
               className="absolute inset-0"
@@ -344,15 +374,23 @@ function HeroCarousel({
                   {slide.subtitle}
                 </p>
               )}
-              {ctaLabel && (
+              {ctaLabel && (ctaHref ? (
+                <a
+                  href={ctaHref}
+                  className="px-8 py-3 rounded-lg font-semibold text-lg shadow-lg hover:opacity-90 transition-opacity"
+                  style={{ background: primaryColor, color: textOn(primaryColor) }}
+                >
+                  {ctaLabel}
+                </a>
+              ) : (
                 <button
                   onClick={onApply}
-                  className="px-8 py-3 rounded-lg font-semibold text-white text-lg shadow-lg hover:opacity-90 transition-opacity"
-                  style={{ background: primaryColor }}
+                  className="px-8 py-3 rounded-lg font-semibold text-lg shadow-lg hover:opacity-90 transition-opacity"
+                  style={{ background: primaryColor, color: textOn(primaryColor) }}
                 >
                   {ctaLabel}
                 </button>
-              )}
+              ))}
             </div>
           </div>
         );
@@ -423,13 +461,17 @@ export default function SchoolPublicPage() {
   useEffect(() => {
     if (!slug) return;
     setLoading(true);
-    fetch(`/api/schools/slug/${slug}`)
-      .then((r) => r.json())
-      .then((data: School) => {
+    fetch(`/api/schools/slug/${encodeURIComponent(slug)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: School | null) => {
+        if (!data?.id) {
+          setSchool(null);
+          return null;
+        }
         setSchool(data);
         return fetch(`/api/courses/public?school_id=${data.id}`);
       })
-      .then((r) => r.json())
+      .then((r) => (r && r.ok ? r.json() : []))
       .then((data: Course[]) => setCourses(Array.isArray(data) ? data : []))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -437,8 +479,10 @@ export default function SchoolPublicPage() {
 
   // Derived values — prefer branding JSONB for rich fields, fall back to individual columns
   const b = school?.branding ?? {};
-  const primaryColor = (b.primary_color as string) ?? school?.primary_color ?? school?.primaryColor ?? "#141d33";
-  const secondaryColor = (b.secondary_color as string) ?? school?.secondary_color ?? school?.secondaryColor ?? "#c9a054";
+  // Primary/secondary colour, logo and tagline are real columns (always
+  // written on save); copies in the JSON can be stale, so they come last.
+  const primaryColor = school?.primary_color ?? school?.primaryColor ?? (b.primary_color as string) ?? "#141d33";
+  const secondaryColor = school?.secondary_color ?? school?.secondaryColor ?? (b.secondary_color as string) ?? "#c9a054";
   const accentColor = (b.accent_color as string) ?? "#f59e0b";
   const headingFont = (b.heading_font as string) ?? school?.heading_font ?? school?.headingFont;
   const headingColor = (b.heading_text_color as string) ?? school?.heading_color ?? school?.headingColor;
@@ -448,9 +492,13 @@ export default function SchoolPublicPage() {
     borderRadius === "sharp" ? "rounded-none" : borderRadius === "pill" ? "rounded-3xl" : "rounded-xl";
   const heroAnimation = ((b.hero_settings as Record<string, unknown>)?.animation as string) ?? school?.hero_animation ?? "fade";
   const heroIntervalSeconds = ((b.hero_settings as Record<string, unknown>)?.interval_seconds as number) ?? 5;
-  const logoUrl = (b.logo_url as string) ?? school?.logo_url ?? school?.logoUrl;
-  const tagline = (b.tagline as string) ?? school?.tagline;
-  const customCss = (b.custom_css as string) ?? school?.custom_css ?? school?.customCss;
+  const heroAutoAdvance = ((b.hero_settings as Record<string, unknown>)?.auto_advance as boolean) ?? true;
+  const logoUrl = webUrl(school?.logo_url ?? school?.logoUrl ?? (b.logo_url as string));
+  const tagline = school?.tagline ?? (b.tagline as string);
+  // Only on this page, inside a <style> React fills as text. The server
+  // already refuses "<" and @import; this is a second line of defence.
+  const rawCss = (b.custom_css as string) ?? school?.custom_css ?? school?.customCss;
+  const customCss = rawCss && !/[<]|@import/i.test(rawCss) ? rawCss : undefined;
   const showAnnouncement = (b.show_announcement as boolean) ?? school?.show_announcement ?? false;
   const announcementText = (b.announcement_text as string) ?? school?.announcement_banner ?? "";
   const announcementBgColor = (b.announcement_bg_color as string) ?? school?.announcement_color ?? primaryColor;
@@ -461,13 +509,31 @@ export default function SchoolPublicPage() {
   const features: Feature[] = (b.features as Feature[]) ?? school?.features ?? school?.features_section ?? [];
   const testimonials: Testimonial[] = (b.testimonials as Testimonial[]) ?? school?.testimonials ?? [];
   const socialLinks: SocialLinks = {
-    facebook: (b.social_facebook as string) || school?.social_facebook || (school?.social_links as SocialLinks)?.facebook,
-    instagram: (b.social_instagram as string) || school?.social_instagram || (school?.social_links as SocialLinks)?.instagram,
-    linkedin: (b.social_linkedin as string) || school?.social_linkedin || (school?.social_links as SocialLinks)?.linkedin,
-    youtube: (b.social_youtube as string) || school?.social_youtube || (school?.social_links as SocialLinks)?.youtube,
-    twitter: (b.social_twitter as string) || school?.social_twitter || (school?.social_links as SocialLinks)?.twitter,
-    website: (b.social_website as string) || school?.social_website || (school?.social_links as SocialLinks)?.website,
+    facebook: webUrl((b.social_facebook as string) || school?.social_facebook || (school?.social_links as SocialLinks)?.facebook),
+    instagram: webUrl((b.social_instagram as string) || school?.social_instagram || (school?.social_links as SocialLinks)?.instagram),
+    linkedin: webUrl((b.social_linkedin as string) || school?.social_linkedin || (school?.social_links as SocialLinks)?.linkedin),
+    youtube: webUrl((b.social_youtube as string) || school?.social_youtube || (school?.social_links as SocialLinks)?.youtube),
+    twitter: webUrl((b.social_twitter as string) || school?.social_twitter || (school?.social_links as SocialLinks)?.twitter),
+    website: webUrl((b.social_website as string) || school?.social_website || (school?.social_links as SocialLinks)?.website),
   };
+  const hasSocial = Object.values(socialLinks).some(Boolean);
+
+  // Load the school's chosen Google fonts for this page only.
+  const fontsHref = (() => {
+    const fams = Array.from(new Set([headingFont, bodyFont].filter((f): f is string => !!f && f !== "Inter" && f in GOOGLE_FONTS)));
+    return fams.length
+      ? `https://fonts.googleapis.com/css2?${fams.map((f) => `family=${GOOGLE_FONTS[f]}:wght@400;600;700`).join("&")}&display=swap`
+      : null;
+  })();
+  useEffect(() => {
+    if (!fontsHref) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = fontsHref;
+    link.dataset.schoolFonts = "1";
+    document.head.appendChild(link);
+    return () => link.remove();
+  }, [fontsHref]);
 
   const handleApply = () => {
     if (user) {
@@ -528,7 +594,7 @@ export default function SchoolPublicPage() {
           "--school-secondary": secondaryColor,
           "--school-accent": accentColor,
           "--school-heading-color": headingColor,
-          fontFamily: bodyFont,
+          fontFamily: fontStack(bodyFont),
         } as React.CSSProperties
       }
     >
@@ -562,8 +628,8 @@ export default function SchoolPublicPage() {
       {/* 1. Announcement Bar */}
       {showAnnouncement && announcementText && (
         <div
-          className="text-white text-center py-2 px-4 text-sm font-medium"
-          style={{ background: announcementBgColor }}
+          className="text-center py-2 px-4 text-sm font-medium"
+          style={{ background: announcementBgColor, color: textOn(announcementBgColor) }}
         >
           {announcementText}
         </div>
@@ -582,7 +648,7 @@ export default function SchoolPublicPage() {
               fallback={
                 <span
                   className="text-xl font-bold truncate max-w-[60vw]"
-                  style={{ fontFamily: headingFont, color: primaryColor }}
+                  style={{ fontFamily: fontStack(headingFont), color: primaryColor }}
                 >
                   {school.name}
                 </span>
@@ -618,8 +684,8 @@ export default function SchoolPublicPage() {
             )}
             <button
               onClick={handleApply}
-              className="px-4 py-2 rounded-lg text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-              style={{ background: primaryColor }}
+              className="px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity"
+              style={{ background: primaryColor, color: textOn(primaryColor) }}
             >
               Apply Now
             </button>
@@ -677,8 +743,8 @@ export default function SchoolPublicPage() {
                 setMobileMenuOpen(false);
                 handleApply();
               }}
-              className="px-4 py-2 rounded-lg text-white text-sm font-semibold hover:opacity-90 transition-opacity w-fit"
-              style={{ background: primaryColor }}
+              className="px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity w-fit"
+              style={{ background: primaryColor, color: textOn(primaryColor) }}
             >
               Apply Now
             </button>
@@ -692,7 +758,8 @@ export default function SchoolPublicPage() {
           slides={bannerSlides}
           animation={heroAnimation}
           intervalSeconds={heroIntervalSeconds}
-          headingFont={headingFont}
+          autoAdvance={heroAutoAdvance}
+          headingFont={fontStack(headingFont)}
           primaryColor={primaryColor}
           secondaryColor={secondaryColor}
           onApply={handleApply}
@@ -711,7 +778,7 @@ export default function SchoolPublicPage() {
           />
           <h1
             className="text-4xl sm:text-5xl md:text-7xl font-bold mb-4 drop-shadow-xl text-balance break-words"
-            style={{ fontFamily: headingFont, textShadow: "0 2px 16px rgba(0,0,0,0.35)" }}
+            style={{ fontFamily: fontStack(headingFont), textShadow: "0 2px 16px rgba(0,0,0,0.35)" }}
           >
             {school.name}
           </h1>
@@ -721,7 +788,7 @@ export default function SchoolPublicPage() {
           <button
             onClick={handleApply}
             className="px-8 py-3 rounded-lg font-semibold text-lg shadow-lg hover:opacity-90 transition-opacity"
-            style={{ background: accentColor, color: "#fff" }}
+            style={{ background: accentColor, color: textOn(accentColor) }}
           >
             Apply Now
           </button>
@@ -744,7 +811,7 @@ export default function SchoolPublicPage() {
         <div ref={coursesRef} className="max-w-7xl mx-auto px-4">
           <h2
             className="text-3xl font-bold mb-10 text-center reveal-el"
-            style={{ fontFamily: headingFont, color: headingColor ?? primaryColor }}
+            style={{ fontFamily: fontStack(headingFont), color: headingColor ?? primaryColor }}
           >
             Available Courses
           </h2>
@@ -779,7 +846,7 @@ export default function SchoolPublicPage() {
                     </div>
                     <h3
                       className="text-lg font-bold leading-snug"
-                      style={{ fontFamily: headingFont, color: headingColor ?? primaryColor }}
+                      style={{ fontFamily: fontStack(headingFont), color: headingColor ?? primaryColor }}
                     >
                       {course.title}
                     </h3>
@@ -809,8 +876,8 @@ export default function SchoolPublicPage() {
                   <div className="px-5 pb-5">
                     <button
                       onClick={handleApply}
-                      className={`w-full py-2 text-sm font-semibold text-white ${borderRadiusClass} hover:opacity-90 transition-opacity`}
-                      style={{ background: primaryColor }}
+                      className={`w-full py-2 text-sm font-semibold ${borderRadiusClass} hover:opacity-90 transition-opacity`}
+                      style={{ background: primaryColor, color: textOn(primaryColor) }}
                     >
                       Enroll
                     </button>
@@ -833,21 +900,13 @@ export default function SchoolPublicPage() {
           <div ref={featuresRef} className="max-w-6xl mx-auto px-4">
             <h2
               className="text-3xl font-bold mb-10 text-center reveal-el"
-              style={{ fontFamily: headingFont, color: headingColor ?? primaryColor }}
+              style={{ fontFamily: fontStack(headingFont), color: headingColor ?? primaryColor }}
             >
               Why Choose Us
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {features.map((feature, i) => {
-                const IconMap: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
-                  users: Users,
-                  award: Award,
-                  star: Star,
-                  book: BookOpen,
-                  clock: Clock,
-                  globe: Globe,
-                };
-                const IconComp = feature.icon ? (IconMap[feature.icon.toLowerCase()] ?? Star) : Star;
+                const IconComp = feature.icon ? (ICONS[feature.icon.toLowerCase()] ?? Star) : Star;
                 return (
                   <div
                     key={i}
@@ -862,7 +921,7 @@ export default function SchoolPublicPage() {
                     </div>
                     <h3
                       className="text-lg font-bold mb-2"
-                      style={{ fontFamily: headingFont, color: headingColor ?? primaryColor }}
+                      style={{ fontFamily: fontStack(headingFont), color: headingColor ?? primaryColor }}
                     >
                       {feature.title}
                     </h3>
@@ -881,7 +940,7 @@ export default function SchoolPublicPage() {
           <div ref={testimonialsRef} className="max-w-6xl mx-auto px-4">
             <h2
               className="text-3xl font-bold mb-10 text-center reveal-el"
-              style={{ fontFamily: headingFont, color: headingColor ?? primaryColor }}
+              style={{ fontFamily: fontStack(headingFont), color: headingColor ?? primaryColor }}
             >
               What Our Students Say
             </h2>
@@ -910,9 +969,9 @@ export default function SchoolPublicPage() {
                     </div>
                     <p className="text-gray-700 text-sm leading-relaxed mb-5">{t.quote}</p>
                     <div className="flex items-center gap-3">
-                      {t.avatar_url ? (
+                      {webUrl(t.avatar_url) ? (
                         <SafeImage
-                          src={t.avatar_url}
+                          src={webUrl(t.avatar_url)}
                           alt=""
                           loading="lazy"
                           width={40}
@@ -960,7 +1019,7 @@ export default function SchoolPublicPage() {
           >
             <h2
               className="text-3xl md:text-4xl font-bold text-white mb-4"
-              style={{ fontFamily: headingFont }}
+              style={{ fontFamily: fontStack(headingFont) }}
             >
               Ready to join {school.name}?
             </h2>
@@ -970,7 +1029,7 @@ export default function SchoolPublicPage() {
             <button
               onClick={handleApply}
               className="px-10 py-4 rounded-xl text-lg font-bold shadow-xl hover:scale-105 transition-transform"
-              style={{ background: accentColor, color: "#fff" }}
+              style={{ background: accentColor, color: textOn(accentColor) }}
             >
               Apply Now
             </button>
@@ -988,7 +1047,7 @@ export default function SchoolPublicPage() {
               loading="lazy"
               className="h-10 w-auto max-w-[70vw] object-contain brightness-0 invert opacity-80"
               fallback={
-                <span className="text-xl font-bold text-white text-center" style={{ fontFamily: headingFont }}>
+                <span className="text-xl font-bold text-white text-center" style={{ fontFamily: fontStack(headingFont) }}>
                   {school.name}
                 </span>
               }
@@ -999,7 +1058,7 @@ export default function SchoolPublicPage() {
           </div>
 
           {/* Social links */}
-          {Object.keys(socialLinks).length > 0 && (
+          {hasSocial && (
             <div className="flex gap-4">
               {(Object.entries(socialLinks) as [string, string][]).map(([platform, url]) => {
                 if (!url) return null;
@@ -1037,7 +1096,7 @@ export default function SchoolPublicPage() {
       <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: headingFont }}>
+            <DialogTitle style={{ fontFamily: fontStack(headingFont) }}>
               Join {school.name}
             </DialogTitle>
           </DialogHeader>
@@ -1052,8 +1111,8 @@ export default function SchoolPublicPage() {
             </Link>
             <Link href="/auth/register" onClick={() => setShowAuthDialog(false)} className="flex-1">
               <Button
-                className="w-full text-white"
-                style={{ background: primaryColor }}
+                className="w-full"
+                style={{ background: primaryColor, color: textOn(primaryColor) }}
               >
                 Sign Up
               </Button>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { SidebarSchoolBrand, SchoolHeaderName } from "@/components/brand/SchoolLogo";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -136,15 +137,7 @@ function Sidebar({ onClose, onOpenHelp }: { onClose?: () => void; onOpenHelp: ()
       {/* Logo */}
       <div className="px-4 h-16 border-b border-sidebar-border flex items-center justify-between shrink-0">
         <Link href="/dashboard/teacher">
-          <div className="flex items-center gap-2.5 cursor-pointer">
-            <div className="h-8 w-8 rounded-lg bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm shrink-0" aria-hidden="true">
-              S
-            </div>
-            <div>
-              <p className="text-sidebar-accent-foreground font-semibold text-sm leading-tight">SolomonQuest</p>
-              <p className="text-sidebar-foreground/60 text-xs">Teacher Portal</p>
-            </div>
-          </div>
+          <SidebarSchoolBrand subtitle="Teacher Portal" />
         </Link>
         {onClose && (
           <button onClick={onClose} aria-label="Close navigation" className="p-1.5 rounded-md text-sidebar-foreground/70 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 md:hidden">
@@ -344,7 +337,7 @@ export default function TeacherOverview() {
             <h1 className="text-base font-semibold text-foreground hidden md:block">
               Teacher Dashboard
             </h1>
-            <h1 className="text-base font-semibold text-foreground md:hidden">SolomonQuest</h1>
+            <h1 className="text-base font-semibold text-foreground md:hidden min-w-0"><SchoolHeaderName /></h1>
           </div>
           <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-full">
             <Calendar className="h-3.5 w-3.5" />

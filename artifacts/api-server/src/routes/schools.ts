@@ -8,6 +8,7 @@ import { invalidateCachedProfile } from "../lib/profileCache";
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { requireSchoolFeature } from "../lib/featureFlags";
 import { notifyUsers } from "../lib/notifications";
+import { validateBranding } from "../lib/brandingValidation";
 
 const router: IRouter = Router();
 
@@ -271,8 +272,15 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
     }
   }
 
-  const body = req.body as Record<string, unknown>;
-  const { slug, logo_url, tagline, primary_color, secondary_color } = body;
+  const raw = (req.body ?? {}) as Record<string, unknown>;
+  const { slug } = raw;
+  const checked = validateBranding(raw);
+  if (!checked.ok) {
+    res.status(400).json({ error: checked.error });
+    return;
+  }
+  const body = checked.values;
+  const { logo_url, tagline, primary_color, secondary_color } = body;
 
   // Validate slug if provided
   if (slug !== undefined) {
@@ -318,36 +326,39 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
   ];
   const { data: currentRow } = await supabaseAdmin
     .from("schools").select("branding").eq("id", id).single();
-  const existingBranding = (currentRow?.branding as Record<string, unknown>) ?? {};
+  const existingBranding = { ...((currentRow?.branding as Record<string, unknown>) ?? {}) };
+  // Older saves copied the whole request body into this JSON, including
+  // values that live in real columns (slug, logo, tagline, primary and
+  // secondary colour). Readers prefer the JSON, so those stale copies
+  // would shadow every later save. Drop them; the columns are the truth.
+  for (const k of ["slug", "logo_url", "tagline", "primary_color", "secondary_color", "school_name", "name"]) {
+    delete existingBranding[k];
+  }
   const brandingPatch: Record<string, unknown> = {};
   for (const key of BRANDING_KEYS) {
     if (body[key] !== undefined) brandingPatch[key] = body[key];
   }
   const mergedBranding = { ...existingBranding, ...brandingPatch };
 
-  // Try saving with branding JSONB; fall back to core columns only if branding column missing
-  let { data, error } = await supabaseAdmin
+  // One update for the columns and the JSON. (This used to retry with the
+  // columns alone when it failed, and still answer 200 — so a database
+  // missing the `branding` column silently dropped slides, sections,
+  // fonts and the rest while the admin was told it all saved.)
+  const { data, error } = await supabaseAdmin
     .from("schools")
     .update({ ...coreUpdates, branding: mergedBranding })
     .eq("id", id)
     .select()
     .single();
 
-  if (error) {
-    logger.warn({ error }, "branding update failed, retrying with core columns only");
-    const fallback = await supabaseAdmin
-      .from("schools")
-      .update(coreUpdates)
-      .eq("id", id)
-      .select()
-      .single();
-    data = fallback.data;
-    error = fallback.error;
-  }
-
   if (error || !data) {
     logger.error({ error }, "Error updating school branding");
-    res.status(500).json({ error: error?.message ?? "Update failed" });
+    const missingColumn = error && /column .* does not exist|Could not find the .* column/i.test(error.message);
+    res.status(500).json({
+      error: missingColumn
+        ? "Branding could not be saved: the database is missing a branding column. Run school-branding.sql in Supabase."
+        : error?.message ?? "Update failed",
+    });
     return;
   }
 
@@ -578,6 +589,19 @@ router.patch("/schools/:id", requireAuth, async (req: AuthenticatedRequest, res)
     }
   }
   const { name, primaryColor, secondaryColor, logoUrl, isActive, applicationsOpen, assignment_routing } = req.body;
+  const hex = /^#[0-9a-fA-F]{6}$/;
+  if ((primaryColor !== undefined && !hex.test(primaryColor)) || (secondaryColor !== undefined && !hex.test(secondaryColor))) {
+    res.status(400).json({ error: "Colours must look like #1a2b3c" });
+    return;
+  }
+  if (logoUrl !== undefined && logoUrl !== null && logoUrl !== "" && !/^https?:\/\//i.test(String(logoUrl))) {
+    res.status(400).json({ error: "Logo must be a web address starting with https://" });
+    return;
+  }
+  if (name !== undefined && (typeof name !== "string" || !name.trim() || name.length > 120)) {
+    res.status(400).json({ error: "School name must be 1–120 characters" });
+    return;
+  }
 
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name;

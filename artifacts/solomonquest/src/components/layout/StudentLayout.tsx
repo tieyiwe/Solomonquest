@@ -40,7 +40,7 @@ import {
 import { cn } from "@/lib/utils";
 import { navIconActive, navIconIdle, navItemActive, navItemBase, navItemIdle, navSectionLabel } from "@/components/layout/navStyles";
 
-import { BrandTile } from "@/components/brand/BrandMark";
+import { SchoolLogoTile } from "@/components/brand/SchoolLogo";
 interface StudentLayoutProps {
   children: React.ReactNode;
 }
@@ -95,7 +95,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       <div className="px-4 border-b border-sidebar-border flex items-center gap-2.5 h-16">
-        <BrandTile className="h-8 w-8" />
+        <SchoolLogoTile school={school} />
         <Link href="/" className="min-w-0">
           <span className="block text-sm font-semibold text-sidebar-accent-foreground tracking-tight truncate">
             {school?.name || "SolomonQuest"}
@@ -237,7 +237,10 @@ export function StudentLayout({ children }: StudentLayoutProps) {
               </SheetContent>
             </Sheet>
             <span className="font-semibold text-foreground hidden md:block">Student Dashboard</span>
-            <span className="font-semibold text-foreground md:hidden truncate">{school?.name || "SolomonQuest"}</span>
+            <span className="md:hidden flex items-center gap-2 min-w-0 font-semibold text-foreground">
+              <SchoolLogoTile school={school} className="h-7 w-7" />
+              <span className="truncate">{school?.name || "SolomonQuest"}</span>
+            </span>
           </div>
 
           <div className="flex items-center gap-2">

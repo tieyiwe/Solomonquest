@@ -11,6 +11,7 @@ import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { TestModeSwitcher } from "@/components/TestModeSwitcher";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { registerServiceWorker } from "@/lib/pwa";
+import { SchoolThemeSync } from "@/hooks/useSchoolTheme";
 
 export const queryClient = new QueryClient();
 
@@ -67,6 +68,7 @@ function App() {
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <AuthProvider>
+              <SchoolThemeSync />
               <NotesProvider>
                 <ImpersonationBanner />
                 <Router />
