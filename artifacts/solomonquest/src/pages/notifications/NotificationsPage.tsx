@@ -116,7 +116,7 @@ function NotificationsList() {
                       }`}
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground leading-snug">{notif.message}</p>
+                      <p className="text-sm text-foreground leading-snug whitespace-pre-line">{notif.message}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">{timeAgo(notif.created_at)}</p>
                     </div>
                   </button>

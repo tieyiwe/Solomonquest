@@ -32,6 +32,7 @@ import {
   Award,
   Upload,
   Library,
+  Mail,
 } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter } from "@/components/help/HelpCenter";
@@ -66,6 +67,7 @@ const adminLinks = [
   { href: "/dashboard/admin/at-risk", label: "At-risk students", icon: AlertTriangle },
   { href: "/dashboard/admin/audit-log", label: "Audit Log", icon: History },
   { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/dashboard/admin/parent-digest", label: "Parent digest", icon: Mail },
   { href: "/help", label: "Help Center", icon: HelpCircle },
   // Settings sub-links kept here so BottomNav includes them
   { href: "/dashboard/admin/reminders", label: "Reminders", icon: Bell },
@@ -92,7 +94,7 @@ const NAV_GROUPS: { label: string; hrefs: string[] }[] = [
     ],
   },
   { label: "Finance", hrefs: ["/dashboard/admin/tuition", "/dashboard/admin/accounting"] },
-  { label: "Communication", hrefs: ["/chat", "/help"] },
+  { label: "Communication", hrefs: ["/chat", "/dashboard/admin/parent-digest", "/help"] },
   // Danger Zone lives under Settings (after Branding), not here.
   { label: "Administration", hrefs: ["/dashboard/admin/audit-log", "/dashboard/admin/bulk-import"] },
 ];

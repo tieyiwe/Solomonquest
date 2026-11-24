@@ -68,6 +68,7 @@ const AtRiskStudents = lazy(() => import("@/pages/reports/AtRiskStudents"));
 const StudentProgressReport = lazy(() => import("@/pages/reports/StudentProgressReport"));
 const AdminCertificates = lazy(() => import("@/pages/admin/AdminCertificates"));
 const AdminBulkImport = lazy(() => import("@/pages/admin/AdminBulkImport"));
+const AdminParentDigest = lazy(() => import("@/pages/admin/AdminParentDigest"));
 const QuestionBanksPage = lazy(() => import("@/pages/question-banks/QuestionBanksPage"));
 const StudentCertificates = lazy(() => import("@/pages/student/StudentCertificates"));
 const CertificatePage = lazy(() => import("@/pages/certificates/CertificatePage"));
@@ -358,6 +359,9 @@ export function Router() {
         {/* Certificates, question banks, bulk import */}
         <Route path="/dashboard/admin/certificates">
           <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminCertificates /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/admin/parent-digest">
+          <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminParentDigest /></ProtectedRoute>
         </Route>
         <Route path="/dashboard/admin/bulk-import">
           <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminBulkImport /></ProtectedRoute>
