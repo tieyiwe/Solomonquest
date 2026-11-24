@@ -186,6 +186,11 @@ export default function ParentOverview() {
                     ) : (
                       <p className="text-sm text-muted-foreground">No tuition records.</p>
                     )}
+                    {overview && overview.tuition.length > 0 && (
+                      <Link href={`/dashboard/parent/tuition?student=${child.id}`} className="mt-2 inline-block text-sm text-primary hover:underline">
+                        Balance, payments and receipts
+                      </Link>
+                    )}
                   </div>
                 </CardContent>
               </Card>

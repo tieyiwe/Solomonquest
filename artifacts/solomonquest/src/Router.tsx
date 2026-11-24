@@ -41,6 +41,8 @@ const CalendarPage = lazy(() => import("@/pages/calendar/CalendarPage"));
 const TeacherResources = lazy(() => import("@/pages/teacher/TeacherResources"));
 
 const ParentOverview = lazy(() => import("@/pages/parent/ParentOverview"));
+const ParentTuition = lazy(() => import("@/pages/parent/ParentTuition"));
+const ReceiptPage = lazy(() => import("@/pages/receipts/ReceiptPage"));
 
 const StudentOverview = lazy(() => import("@/pages/student/StudentOverview"));
 const StudentCourseDetail = lazy(() => import("@/pages/student/StudentCourseDetail"));
@@ -287,6 +289,14 @@ export function Router() {
         {/* Parent/Guardian Routes */}
         <Route path="/dashboard/parent">
           <ProtectedRoute allowedRoles={["parent"]}><ParentOverview /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/parent/tuition">
+          <ProtectedRoute allowedRoles={["parent"]}><ParentTuition /></ProtectedRoute>
+        </Route>
+
+        {/* Tuition receipt (admin of the school, the student, or a linked parent; the API checks) */}
+        <Route path="/receipts/:id">
+          <ProtectedRoute><ReceiptPage /></ProtectedRoute>
         </Route>
 
         {/* Chat & Forum Routes */}

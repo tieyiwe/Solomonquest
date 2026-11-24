@@ -17,6 +17,7 @@ import {
   Layers,
   Megaphone,
   Newspaper,
+  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,6 +47,7 @@ interface NotificationPrefs {
   applicationStatusUpdates: boolean;
   announcements: boolean;
   progressDigest: boolean;
+  tuition: boolean;
 }
 
 const defaultPrefs: NotificationPrefs = {
@@ -59,6 +61,7 @@ const defaultPrefs: NotificationPrefs = {
   applicationStatusUpdates: true,
   announcements: true,
   progressDigest: true,
+  tuition: true,
 };
 
 // The API stores prefs under the same keys lib/notifications.ts checks
@@ -78,6 +81,7 @@ const API_KEY: Record<keyof NotificationPrefs, string> = {
   announcements: "announcements",
   // The school's parent progress digest (a missing key means on).
   progressDigest: "digest",
+  tuition: "tuition",
 };
 
 function fromApi(stored: Record<string, unknown> | null | undefined): NotificationPrefs {
@@ -273,6 +277,12 @@ export default function NotificationPreferences() {
           },
         ]
       : []),
+    {
+      id: "tuition",
+      label: "Tuition & balances",
+      description: "Balance reminders and payment receipts from your school (parents: for your children).",
+      icon: <Wallet className="h-4 w-4" />,
+    },
   ];
 
   return (

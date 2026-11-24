@@ -11,6 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { CreditCard, Loader2, Wallet } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { BalanceSummary, PaymentHistory, PaymentInstructions } from "@/components/accounting/TuitionStatementView";
+import type { StatementPayload } from "@/components/accounting/shared";
 
 // Shape of GET /tuition-payments/me (mapPayment in routes/tuition.ts).
 interface Installment {
@@ -70,11 +72,28 @@ export default function StudentTuition() {
     },
   });
 
+  // Ledger-based balance (billed, paid, discounts, outstanding), payment
+  // history with receipts and the school's payment instructions. Optional:
+  // if it can't load, the page still shows the plans below.
+  const { data: statement } = useQuery<StatementPayload | null>({
+    queryKey: ["tuition-statement-me"],
+    queryFn: async () => {
+      const res = await fetch("/api/tuition/me/statement", { headers: await authHeaders() });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    retry: false,
+  });
+  const remainingById = new Map((statement?.statement.items ?? []).map((i) => [i.id, i]));
+  // Hide "Pay" only when we know online payment isn't available.
+  const canPayOnline = statement ? statement.onlinePayments : true;
+
   useEffect(() => {
     const checkout = new URLSearchParams(search).get("checkout");
     if (checkout === "success") {
       toast.success("Payment received — it can take a moment to show here.");
       queryClient.invalidateQueries({ queryKey: ["tuition-payments-me"] });
+      queryClient.invalidateQueries({ queryKey: ["tuition-statement-me"] });
     } else if (checkout === "cancelled") {
       toast.info("Payment cancelled.");
     }
@@ -133,11 +152,18 @@ export default function StudentTuition() {
           </Card>
         ) : (
           <>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Card><CardContent className="pt-6"><p className="text-xs text-muted-foreground">Total</p><p className="text-2xl font-semibold">{money(totalOwed, currency)}</p></CardContent></Card>
-              <Card><CardContent className="pt-6"><p className="text-xs text-muted-foreground">Paid</p><p className="text-2xl font-semibold text-success">{money(totalPaid, currency)}</p></CardContent></Card>
-              <Card><CardContent className="pt-6"><p className="text-xs text-muted-foreground">Balance</p><p className="text-2xl font-semibold">{money(Math.max(totalOwed - totalPaid, 0), currency)}</p></CardContent></Card>
-            </div>
+            {statement ? (
+              <>
+                <BalanceSummary data={statement} />
+                <PaymentInstructions data={statement} />
+              </>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Card><CardContent className="pt-6"><p className="text-xs text-muted-foreground">Total</p><p className="text-2xl font-semibold">{money(totalOwed, currency)}</p></CardContent></Card>
+                <Card><CardContent className="pt-6"><p className="text-xs text-muted-foreground">Paid</p><p className="text-2xl font-semibold text-success">{money(totalPaid, currency)}</p></CardContent></Card>
+                <Card><CardContent className="pt-6"><p className="text-xs text-muted-foreground">Balance</p><p className="text-2xl font-semibold">{money(Math.max(totalOwed - totalPaid, 0), currency)}</p></CardContent></Card>
+              </div>
+            )}
 
             {all.map((p) => {
               const nextUnpaid = p.installments.find((i) => i.status !== "paid");
@@ -153,10 +179,12 @@ export default function StudentTuition() {
                     </div>
                     {fullyPaid ? (
                       <Badge className="bg-success/10 text-success">Paid in full</Badge>
+                    ) : !canPayOnline ? (
+                      <Badge variant="outline" className="shrink-0">Pay the school directly</Badge>
                     ) : (
                       <Button onClick={() => payNext(p.id)} disabled={payingId !== null} className="gap-2 shrink-0">
                         {payingId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-                        {nextUnpaid ? `Pay ${money(nextUnpaid.amountCents, p.currency)}` : "Pay now"}
+                        {nextUnpaid ? `Pay ${money(remainingById.get(nextUnpaid.id)?.remainingCents ?? nextUnpaid.amountCents, p.currency)}` : "Pay now"}
                       </Button>
                     )}
                   </CardHeader>
@@ -164,12 +192,18 @@ export default function StudentTuition() {
                     <CardContent>
                       <div className="divide-y rounded-md border">
                         {p.installments.map((i) => (
-                          <div key={i.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                          <div key={i.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 text-sm">
                             <span>Payment {i.installmentNumber}</span>
                             <span className="text-muted-foreground">Due {safeDate(i.dueDate)}</span>
                             <span>{money(i.amountCents, p.currency)}</span>
                             <Badge variant={i.status === "paid" ? "default" : "outline"} className="capitalize">
-                              {i.status === "paid" && i.paidAt ? `Paid ${safeDate(i.paidAt)}` : i.status}
+                              {i.status === "paid" && i.paidAt
+                                ? `Paid ${safeDate(i.paidAt)}`
+                                : i.status === "partial"
+                                ? `Part paid · ${money(remainingById.get(i.id)?.remainingCents ?? 0, p.currency)} left`
+                                : remainingById.get(i.id)?.overdue
+                                ? "Overdue"
+                                : i.status}
                             </Badge>
                           </div>
                         ))}
@@ -179,6 +213,7 @@ export default function StudentTuition() {
                 </Card>
               );
             })}
+            {statement && <PaymentHistory data={statement} />}
           </>
         )}
       </div>

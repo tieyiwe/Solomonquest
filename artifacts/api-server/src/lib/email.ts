@@ -647,10 +647,14 @@ export async function sendGenericNotificationEmail({
 /**
  * Like `send`, but reports failure instead of swallowing it, for emails whose
  * delivery the UI tracks (the admission congratulations email shows
- * "could not be sent" with a Resend button).
+ * "could not be sent" with a Resend button; tuition reminders and receipts
+ * report sent / failed counts).
  */
 export async function sendEmailOrThrow(to: string, subject: string, html: string, text?: string): Promise<void> {
   const t = getTransporter();
   if (!t) throw new Error("Email is not set up on this platform (SMTP is not configured)");
   await t.sendMail({ from: FROM, to, subject, html, ...(text ? { text } : {}) });
 }
+
+/** Alias kept for the tuition ledger code. */
+export const sendEmailStrict = sendEmailOrThrow;

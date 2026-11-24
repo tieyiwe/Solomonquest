@@ -7,6 +7,18 @@ select * from (values
     exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='tuition_installments' and column_name='payment_id')),
 
+  ('tuition-ledger.sql: tuition_ledger_entries + tuition_reminders + schools.payment_instructions',
+    exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='tuition_ledger_entries')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='tuition_ledger_entries' and column_name='void_reason')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='tuition_reminders')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='schools' and column_name='payment_instructions')
+    and exists (select 1 from pg_constraint
+      where conname='tuition_installments_status_check' and pg_get_constraintdef(oid) like '%partial%')),
+
   ('supabase-perf-denormalize-email.sql: profiles.email index + trigger fn',
     exists (select 1 from pg_indexes where schemaname='public' and indexname='profiles_email_idx')
     and exists (select 1 from pg_proc where proname='handle_new_user_email')),

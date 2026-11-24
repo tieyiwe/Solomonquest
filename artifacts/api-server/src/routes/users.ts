@@ -87,6 +87,8 @@ router.put("/users/me/notification-prefs", requireAuth, async (req: Authenticate
   if (announcements !== undefined) notification_prefs.announcements = announcements;
   // Parent progress digest (lib/parentDigest.ts); missing = on.
   if (digest !== undefined) notification_prefs.digest = digest;
+  // Tuition balance reminders and receipts (missing = on).
+  if (typeof req.body?.tuition === "boolean") notification_prefs.tuition = req.body.tuition;
 
   const { data, error } = await supabaseAdmin
     .from("profiles")
