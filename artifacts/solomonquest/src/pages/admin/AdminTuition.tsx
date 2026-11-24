@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { CheckCircle2, DollarSign, CreditCard, ExternalLink, Loader2, Receipt } from "lucide-react";
 import { EmptyState } from "@/components/common/States";
 import PageHeader from "@/components/layout/PageHeader";
+import { HelpLink } from "@/help/components/HelpLink";
 
 async function apiFetch(path: string, options: RequestInit = {}) {
   const {
@@ -183,6 +184,7 @@ export default function AdminTuition() {
         <PageHeader
           icon={DollarSign}
           title="Tuition"
+          actions={<HelpLink slug="admin-stripe-connect" label="Tuition and Stripe help" />}
           description={
             <>
               Track tuition plans and payments across your school.{" "}

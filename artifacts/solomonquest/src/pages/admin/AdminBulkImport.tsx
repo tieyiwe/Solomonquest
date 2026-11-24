@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiJson } from "@/lib/apiClient";
 import { downloadCsv, parseCsv } from "@/lib/csv";
+import { HelpLink } from "@/help/components/HelpLink";
 
 const MAX_ROWS = 500;
 type Kind = "students" | "courses";
@@ -188,6 +189,7 @@ export default function AdminBulkImport() {
       <PageHeader
         icon={Upload}
         title="Bulk import"
+        actions={<HelpLink slug="admin-bulk-import" label="How bulk import works" />}
         description="Add many students or courses at once from a CSV file. Everything is checked before anything is saved."
       />
 

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { X, Search, ChevronLeft, ChevronRight, HelpCircle, AlertCircle, CheckCircle2, PlayCircle } from "lucide-react";
+import { X, Search, ChevronLeft, ChevronRight, HelpCircle, AlertCircle, CheckCircle2, PlayCircle, BookOpen } from "lucide-react";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getHelpData, type HelpCategory, type HelpArticle, type HelpRole } from "./helpData";
@@ -177,6 +178,23 @@ export function HelpCenter({ role, onClose, onStartTour }: HelpCenterProps) {
               {/* No search: show categories + tour CTA */}
               {!search.trim() && (
                 <>
+                  {/* Full Help Center: animated, role-specific guides with deep links */}
+                  <Link
+                    href="/help"
+                    onClick={handleClose}
+                    className="flex items-center gap-3 rounded-xl bg-brand p-4 text-left text-white transition-opacity hover:opacity-95"
+                    data-testid="drawer-full-help"
+                  >
+                    <div className="h-10 w-10 rounded-lg bg-gold/20 flex items-center justify-center shrink-0">
+                      <BookOpen className="h-5 w-5 text-gold" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">Open the full Help Center</p>
+                      <p className="text-xs text-white/70">Animated walkthroughs for every task</p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-gold ml-auto shrink-0" />
+                  </Link>
+
                   {/* Take the tour CTA */}
                   <button
                     onClick={() => { handleClose(); setTimeout(onStartTour, 350); }}
