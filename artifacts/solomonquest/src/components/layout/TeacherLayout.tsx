@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  HelpCircle,
   Bell,
   Menu,
   LogOut,
@@ -70,6 +71,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
     { href: "/dashboard/teacher/reminders", label: "Reminders", icon: AlarmClock, exact: false },
     { href: "/dashboard/teacher/question-banks", label: "Question Banks", icon: Library, exact: false },
     { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
+    { href: "/help", label: "Help Center", icon: HelpCircle, exact: false },
   ];
 
   // Only the 4 most-used destinations get their own bottom-nav tab — the

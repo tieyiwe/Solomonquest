@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  HelpCircle,
   Bell,
   Menu,
   LogOut,
@@ -71,6 +72,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
     { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
     { href: "/dashboard/student/tuition", label: "Tuition", icon: Wallet, exact: false },
     { href: "/dashboard/student/certificates", label: "Certificates", icon: Award, exact: false },
+    { href: "/help", label: "Help Center", icon: HelpCircle, exact: false },
     ...(user?.role === "staff"
       ? [{ href: "/dashboard/admin/terms", label: "Terms & Scheduling", icon: CalendarDays, exact: false }]
       : []),

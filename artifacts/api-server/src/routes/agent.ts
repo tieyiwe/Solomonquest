@@ -44,7 +44,7 @@ function isRateLimited(userId: string): boolean {
 }
 
 const RATE_LIMIT_MESSAGE =
-  "You've sent quite a few messages in a short time! For step-by-step guides on most topics, check the Help Center (the ? button) — it's usually faster than chatting. Feel free to come back to me for anything it doesn't cover.";
+  "You've sent quite a few messages in a short time! The Help Center (Help in your menu) has short step-by-step guides for your role, and it's usually faster than chatting. Feel free to come back to me for anything it doesn't cover.";
 
 // ─── Tool definitions ──────────────────────────────────────────────────────────
 // Each tool maps to a real write operation. The agent proposes a tool call;

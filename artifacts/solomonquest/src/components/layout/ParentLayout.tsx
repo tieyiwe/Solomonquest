@@ -5,7 +5,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { LogOut } from "lucide-react";
+import { HelpCircle, LogOut } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 
@@ -34,6 +34,10 @@ export function ParentLayout({ children }: ParentLayoutProps) {
         </div>
 
         <div className="flex items-center gap-3">
+          <Link href="/help" className="inline-flex h-10 items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground" aria-label="Help Center">
+            <HelpCircle className="h-4 w-4" />
+            <span className="hidden sm:inline">Help</span>
+          </Link>
           <div className="hidden sm:flex items-center gap-2">
             <Avatar className="h-8 w-8 border">
               <AvatarImage src={user?.avatarUrl || ""} />
