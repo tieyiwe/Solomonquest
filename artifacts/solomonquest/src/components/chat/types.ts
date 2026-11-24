@@ -7,6 +7,8 @@ export interface ChannelLastMessage {
   senderId?: string | null;
   senderName?: string | null;
   attachmentName?: string | null;
+  /** The latest message was deleted — preview shows "Message deleted". */
+  deleted?: boolean;
 }
 
 export interface Channel {
@@ -18,6 +20,8 @@ export interface Channel {
   member_count?: number | null;
   active_call?: { jitsi_room: string } | null;
   createdAt?: string | null;
+  /** Channel creator; for group channels they can moderate messages. */
+  createdBy?: string | null;
   isArchived?: boolean;
   /** When the current user last read this conversation (server-provided). */
   lastReadAt?: string | null;
@@ -51,6 +55,9 @@ export interface ChatMessage {
   reactions?: Reaction[];
   isEdited?: boolean;
   editedAt?: string | null;
+  /** Soft-deleted: rendered as a "Message deleted" placeholder. */
+  deleted?: boolean;
+  deletedAt?: string | null;
   sender: {
     id: string;
     name: string;

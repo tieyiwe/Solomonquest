@@ -242,7 +242,7 @@ export function NewConversationDialog({
 function previewText(ch: Channel, currentUserId: string): string {
   const lm = ch.lastMessage;
   if (!lm) return ch.type === "direct" ? roleLabel(ch.otherUser?.role) ?? "No messages yet" : "No messages yet";
-  const body = lm.attachmentName ? `📎 ${lm.attachmentName}` : lm.content;
+  const body = lm.deleted ? "Message deleted" : lm.attachmentName ? `📎 ${lm.attachmentName}` : lm.content;
   if (lm.senderId === currentUserId) return `You: ${body}`;
   if (ch.type !== "direct" && lm.senderName) return `${lm.senderName.split(" ")[0]}: ${body}`;
   return body;

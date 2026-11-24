@@ -7,15 +7,27 @@ import { dashboardPathForRole } from "@/lib/roleHome";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { NotificationBell } from "@/components/NotificationBell";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ChatAvatar, ParticipantColorProvider, useParticipantColorRegistry } from "@/components/chat/ChatAvatar";
 import { ConversationList } from "@/components/chat/ConversationList";
 import { MessageList } from "@/components/chat/MessageList";
 import { MessageActionsSheet } from "@/components/chat/MessageActionsSheet";
 import { Composer, type ComposerHandle } from "@/components/chat/Composer";
-import { ThreadPanel, type ThreadListener } from "@/components/chat/ThreadPanel";
+import { ThreadPanel, type ThreadEventMode, type ThreadListener } from "@/components/chat/ThreadPanel";
+import { TypingIndicator } from "@/components/chat/TypingIndicator";
+import { useTyping } from "@/components/chat/useTyping";
 import { ActiveCallOverlay, DashboardRail, IncomingCallBanner } from "@/components/chat/ChatChrome";
 import { canEditMessage, type MessageHandlers } from "@/components/chat/MessageRow";
-import { apiFetch, errorMessage, normalizeChannel, normalizeMessage, uploadAttachment } from "@/components/chat/chatApi";
+import { apiFetch, errorMessage, markDeleted, normalizeChannel, normalizeMessage, uploadAttachment } from "@/components/chat/chatApi";
 import { formatLastSeen, isOnline } from "@/components/chat/format";
 import { useVisualViewport } from "@/components/chat/useVisualViewport";
 import type { ActiveCall, Channel, ChatMessage, IncomingCall } from "@/components/chat/types";
@@ -45,6 +57,12 @@ function toggleReactionLocally(msg: ChatMessage, emoji: string, userId: string):
   return { ...msg, reactions: reactions.filter((x) => x.count > 0) };
 }
 
+/** Preview patch when the conversation's latest message was deleted. */
+function deletedPreview(c: Channel, messageId: string): Partial<Channel> {
+  const lm = c.lastMessage;
+  return lm && lm.id === messageId ? { lastMessage: { ...lm, content: "", attachmentName: null, deleted: true } } : {};
+}
+
 export default function ChatPage() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
@@ -60,6 +78,7 @@ export default function ChatPage() {
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
   const [sheetMsg, setSheetMsg] = useState<ChatMessage | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ChatMessage | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
@@ -145,6 +164,7 @@ export default function ChatPage() {
     setThreadParentId(null);
     setEditing(null);
     setSheetMsg(null);
+    setConfirmDelete(null);
     patchChannel(ch.id, { unread_count: 0, lastReadAt: new Date().toISOString() });
     apiFetch(`/api/chat/channels/${ch.id}/read`, { method: "POST" }).catch(() => {});
     if (pushHistory && isPhoneWidth() && !wasOpen) {
@@ -270,6 +290,16 @@ export default function ChatPage() {
   const cacheSenders = useCallback((msgs: ChatMessage[]) => {
     for (const m of msgs) if (m.sender?.id && m.sender.name) senderCacheRef.current.set(m.sender.id, m.sender);
   }, []);
+  // Deleted placeholders only carry a sender id; name them from the cache.
+  const withKnownSenders = useCallback(
+    (msgs: ChatMessage[]) =>
+      msgs.map((m) => {
+        if (m.sender?.name || !m.sender?.id) return m;
+        const known = senderCacheRef.current.get(m.sender.id);
+        return known ? { ...m, sender: known } : m;
+      }),
+    []
+  );
   useEffect(() => {
     if (currentUserId)
       senderCacheRef.current.set(currentUserId, { id: currentUserId, name: currentUserName, avatar_url: user?.avatarUrl ?? null });
@@ -284,9 +314,10 @@ export default function ChatPage() {
       try {
         const res = await apiFetch(`/api/chat/channels/${ch.id}/messages?limit=${PAGE_SIZE}`);
         if (!res.ok) throw new Error(await errorMessage(res, "Failed to load messages"));
-        const data: ChatMessage[] = ((await res.json()) as any[]).map(normalizeMessage);
+        const loaded: ChatMessage[] = ((await res.json()) as any[]).map(normalizeMessage);
         if (!alive) return;
-        cacheSenders(data);
+        cacheSenders(loaded);
+        const data = withKnownSenders(loaded);
         // Keep anything optimistic that was sent while the page loaded.
         setMessages((prev) => [...data, ...prev.filter((m) => m._optimistic && m.channel_id === ch.id)]);
         setHasMore(data.length >= PAGE_SIZE);
@@ -316,9 +347,10 @@ export default function ChatPage() {
     try {
       const res = await apiFetch(`/api/chat/channels/${ch.id}/messages?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest.id)}`);
       if (!res.ok) throw new Error(await errorMessage(res, "Failed to load older messages"));
-      const page: ChatMessage[] = ((await res.json()) as any[]).map(normalizeMessage);
+      const loaded: ChatMessage[] = ((await res.json()) as any[]).map(normalizeMessage);
       if (activeChannelRef.current?.id !== ch.id) return 0;
-      cacheSenders(page);
+      cacheSenders(loaded);
+      const page = withKnownSenders(loaded);
       const have = new Set(messagesRef.current.map((m) => m.id));
       const older = page.filter((m) => !have.has(m.id));
       if (older.length) setMessages((prev) => [...older.filter((m) => !prev.some((p) => p.id === m.id)), ...prev]);
@@ -328,7 +360,7 @@ export default function ChatPage() {
       toast.error(err instanceof Error ? err.message : "Failed to load older messages");
       return 0;
     }
-  }, [cacheSenders]);
+  }, [cacheSenders, withKnownSenders]);
 
   // -------------------------------------------------------------------------
   // Realtime — one socket for the open conversation (messages, edits,
@@ -368,7 +400,7 @@ export default function ChatPage() {
           if (!cached && raw.sender_id) resolveSender(raw.sender_id);
 
           if (msg.thread_parent_id) {
-            threadListeners.current.forEach((fn) => fn(msg));
+            threadListeners.current.forEach((fn) => fn(msg, "insert"));
             // Own replies were already counted optimistically by the thread panel.
             if (msg.sender.id !== currentUserId) {
               setMessages((prev) =>
@@ -388,16 +420,32 @@ export default function ChatPage() {
           }
         }
       )
-      // Edits made by others (or in another tab) show up live.
+      // Edits and deletions made by others (or in another tab) show up live.
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "chat_messages", filter: `channel_id=eq.${channelId}` },
         (payload) => {
-          const row = payload.new as { id?: string; content?: string; is_edited?: boolean; edited_at?: string | null };
+          const row = payload.new as {
+            id?: string;
+            content?: string;
+            is_edited?: boolean;
+            edited_at?: string | null;
+            deleted_at?: string | null;
+            thread_parent_id?: string | null;
+          };
           if (!row?.id) return;
+          if (row.deleted_at) {
+            applyDeletion(row.id, row.deleted_at, row.thread_parent_id ?? null);
+            return;
+          }
+          if (row.thread_parent_id) {
+            const edited = normalizeMessage({ ...row, sender: { id: "", name: "" } });
+            threadListeners.current.forEach((fn) => fn(edited, "edit"));
+            return;
+          }
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === row.id && (m.content !== row.content || m.isEdited !== !!row.is_edited)
+              m.id === row.id && !m.deleted && (m.content !== row.content || m.isEdited !== !!row.is_edited)
                 ? { ...m, content: row.content ?? m.content, isEdited: !!row.is_edited, editedAt: row.edited_at ?? m.editedAt }
                 : m
             )
@@ -468,6 +516,13 @@ export default function ChatPage() {
           },
           unread_count: fromOther && !isActive ? (c.unread_count ?? 0) + 1 : c.unread_count,
         }));
+      })
+      // A deleted latest message turns that conversation's preview into
+      // "Message deleted" (the active conversation is handled by applyDeletion).
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chat_messages" }, (payload) => {
+        const row = payload.new as { id?: string; channel_id?: string; deleted_at?: string | null; thread_parent_id?: string | null };
+        if (!row?.id || !row.channel_id || !row.deleted_at || row.thread_parent_id) return;
+        patchChannel(row.channel_id, (c) => deletedPreview(c, row.id!));
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_calls" }, (payload) => {
         const call = payload.new as { id: string; channel_id: string; jitsi_room: string; status: string; started_by?: string | null };
@@ -642,6 +697,43 @@ export default function ChatPage() {
     }
   }
 
+  /** Turn a message (top-level or thread reply) into its deleted placeholder. */
+  function applyDeletion(id: string, deletedAt: string | null, threadParentId: string | null) {
+    if (threadParentId) {
+      const stub = { id, thread_parent_id: threadParentId, deletedAt } as ChatMessage;
+      threadListeners.current.forEach((fn) => fn(stub, "delete"));
+    } else {
+      setMessages((prev) => prev.map((m) => (m.id === id && !m.deleted ? markDeleted(m, deletedAt) : m)));
+      const ch = activeChannelRef.current;
+      if (ch) {
+        patchChannel(ch.id, (c) => deletedPreview(c, id));
+      }
+    }
+    setEditing((e) => (e?.id === id ? null : e));
+    setSheetMsg((m) => (m?.id === id ? null : m));
+    if (threadParentCache.current?.id === id) threadParentCache.current = markDeleted(threadParentCache.current, deletedAt);
+  }
+
+  // Optimistic delete with rollback.
+  async function performDelete(msg: ChatMessage) {
+    const channelId = msg.channel_id;
+    const prevPreview = channelsRef.current.find((c) => c.id === channelId)?.lastMessage ?? null;
+    applyDeletion(msg.id, new Date().toISOString(), msg.thread_parent_id ?? null);
+    try {
+      const res = await apiFetch(`/api/chat/messages/${msg.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await errorMessage(res, "Couldn't delete message"));
+    } catch (err) {
+      if (msg.thread_parent_id) {
+        threadListeners.current.forEach((fn) => fn(msg, "replace" as ThreadEventMode));
+      } else {
+        setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)));
+        if (prevPreview?.id === msg.id) patchChannel(channelId, { lastMessage: prevPreview });
+      }
+      if (threadParentCache.current?.id === msg.id) threadParentCache.current = msg;
+      toast.error(err instanceof Error ? err.message : "Couldn't delete message");
+    }
+  }
+
   function editLastOwn() {
     const mine = [...messagesRef.current].reverse().find((m) => canEditMessage(m, currentUserId));
     if (mine) setEditing({ id: mine.id, content: mine.content });
@@ -650,6 +742,14 @@ export default function ChatPage() {
   // -------------------------------------------------------------------------
   // Row handlers — one stable object so memoised rows don't re-render
   // -------------------------------------------------------------------------
+
+  // Group-channel creators and school admins can remove anyone's message
+  // (mirrors DELETE /chat/messages/:id); everyone can remove their own.
+  const userRole = user?.role;
+  const canModerate =
+    userRole === "admin" ||
+    userRole === "super_admin" ||
+    (!!activeChannel && activeChannel.type !== "direct" && !!activeChannel.createdBy && activeChannel.createdBy === currentUserId);
 
   const handlers: MessageHandlers = useMemo(
     () => ({
@@ -689,10 +789,22 @@ export default function ChatPage() {
           .catch(() => toast.error("Couldn't copy"));
       },
       onOpenActions: (msg) => setSheetMsg(msg),
+      onDelete: (msg) => setConfirmDelete(msg),
+      canDelete: (msg) => !msg.deleted && !msg._optimistic && (msg.sender?.id === currentUserId || canModerate),
     }),
-    [currentUserId, sendFile, sendText]
+    [currentUserId, sendFile, sendText, canModerate]
   );
   const listHandlers = useMemo(() => (isMobile ? handlers : { ...handlers, onOpenActions: undefined }), [handlers, isMobile]);
+
+  const typing = useTyping({
+    channelId: activeChannel?.id ?? null,
+    currentUserId,
+    currentUserName,
+    resolveName: (id) => senderCacheRef.current.get(id)?.name || undefined,
+  });
+  const mainTypers = useMemo(() => typing.typers.filter((t) => !t.threadParentId), [typing.typers]);
+  const onMainTyping = useCallback(() => typing.notify(null), [typing.notify]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onMainStopTyping = useCallback(() => typing.stop(null), [typing.stop]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const threadSubscribe = useCallback((fn: ThreadListener) => {
     threadListeners.current.add(fn);
@@ -919,6 +1031,8 @@ export default function ChatPage() {
                   label={`Messages in ${isDirect ? "" : "#"}${activeChannel.name}`}
                 />
 
+                <TypingIndicator typers={mainTypers} />
+
                 <Composer
                   key={activeChannel.id}
                   ref={composerRef}
@@ -929,6 +1043,8 @@ export default function ChatPage() {
                   onSaveEdit={saveEdit}
                   onCancelEdit={() => setEditing(null)}
                   onEditLast={isMobile ? undefined : editLastOwn}
+                  onTyping={onMainTyping}
+                  onStopTyping={onMainStopTyping}
                 />
               </div>
 
@@ -945,6 +1061,9 @@ export default function ChatPage() {
                   subscribe={threadSubscribe}
                   onReplyCountChange={onReplyCountChange}
                   onCopy={handlers.onCopy}
+                  typers={typing.typers.filter((t) => t.threadParentId === threadParent.id)}
+                  onTyping={() => typing.notify(threadParent.id)}
+                  onStopTyping={() => typing.stop(threadParent.id)}
                 />
               )}
 
@@ -977,6 +1096,33 @@ export default function ChatPage() {
         {isMobile && (
           <MessageActionsSheet msg={sheetMsg} currentUserId={currentUserId} handlers={handlers} onClose={() => setSheetMsg(null)} />
         )}
+
+        <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this message?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmDelete && confirmDelete.sender?.id !== currentUserId
+                  ? `This removes ${confirmDelete.sender?.name?.split(" ")[0] || "their"}'s message for everyone. `
+                  : "This removes the message for everyone. "}
+                Replies in its thread stay. This can't be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  const msg = confirmDelete;
+                  setConfirmDelete(null);
+                  if (msg) void performDelete(msg);
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </ParticipantColorProvider>
   );

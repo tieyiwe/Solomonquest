@@ -41,6 +41,10 @@ export interface ComposerProps {
   /** Desktop: ArrowUp in an empty composer edits your last message. */
   onEditLast?: () => void;
   autoFocus?: boolean;
+  /** Text present while composing (not editing) — drives "typing…". */
+  onTyping?: () => void;
+  /** Sent, emptied or blurred. */
+  onStopTyping?: () => void;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
@@ -56,6 +60,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onCancelEdit,
     onEditLast,
     autoFocus,
+    onTyping,
+    onStopTyping,
   },
   ref
 ) {
@@ -158,6 +164,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       return;
     }
     if (!trimmed && pending.length === 0) return;
+    onStopTyping?.();
     onSend(trimmed, pending.map((p) => p.file));
     pending.forEach((p) => p.preview && URL.revokeObjectURL(p.preview));
     setPending([]);
@@ -305,7 +312,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           } focus:outline-none placeholder:text-muted-foreground`}
           placeholder={placeholder}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            if (editing) return;
+            if (e.target.value.trim()) onTyping?.();
+            else onStopTyping?.();
+          }}
+          onBlur={() => onStopTyping?.()}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           disabled={disabled}

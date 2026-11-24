@@ -238,7 +238,19 @@ select * from (values
     and exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='schools' and column_name='tagline')
     and exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='schools' and column_name='logo_url'))
+      where table_schema='public' and table_name='schools' and column_name='logo_url')),
+
+  ('chat-message-delete.sql: chat_messages.deleted_at + deleted_by',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='chat_messages' and column_name='deleted_at')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='chat_messages' and column_name='deleted_by')),
+
+  ('chat-typing.sql: realtime.messages typing policies',
+    exists (select 1 from pg_policies
+      where schemaname='realtime' and tablename='messages' and policyname='chat_typing_select_member')
+    and exists (select 1 from pg_policies
+      where schemaname='realtime' and tablename='messages' and policyname='chat_typing_insert_member'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

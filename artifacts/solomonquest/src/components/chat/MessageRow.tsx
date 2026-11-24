@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
+  Ban,
   Check,
   CheckCheck,
   Copy,
@@ -29,11 +30,16 @@ export interface MessageHandlers {
   onCopy: (msg: ChatMessage) => void;
   /** Phones: long-press opens the action sheet. */
   onOpenActions?: (msg: ChatMessage) => void;
+  /** Asks to delete (the page confirms first). */
+  onDelete?: (msg: ChatMessage) => void;
+  /** Whether the current user may delete this message. */
+  canDelete?: (msg: ChatMessage) => boolean;
 }
 
 export function canEditMessage(msg: ChatMessage, currentUserId: string): boolean {
   return (
     msg.sender?.id === currentUserId &&
+    !msg.deleted &&
     !msg.attachmentUrl &&
     !msg._optimistic &&
     Date.now() - new Date(msg.created_at).getTime() < EDIT_WINDOW_MS
@@ -252,6 +258,17 @@ function HoverToolbar({
           <Copy className="w-4 h-4" />
         </button>
       )}
+      {handlers.onDelete && handlers.canDelete?.(msg) && (
+        <button
+          type="button"
+          className={`${btn} hover:text-destructive`}
+          onClick={() => handlers.onDelete!(msg)}
+          aria-label="Delete message"
+          title="Delete message"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 }
@@ -352,6 +369,23 @@ export const MessageRow = memo(function MessageRow({
   const time = timeLabel(msg.created_at);
   const ts = fullTimestamp(msg.created_at);
   const failed = !!msg._failed;
+
+  if (msg.deleted) {
+    return (
+      <DeletedRow
+        msg={msg}
+        bubbles={bubbles}
+        isOwn={isOwn}
+        groupStart={groupStart}
+        name={msg.sender?.name || ""}
+        threadChip={
+          !inThread && threadCount > 0 && handlers.onOpenThread ? (
+            <ThreadChip count={threadCount} onOpen={() => handlers.onOpenThread!(msg)} align={bubbles && isOwn ? "end" : "start"} />
+          ) : null
+        }
+      />
+    );
+  }
 
   const content = hasText ? (
     <p className="text-[15px] md:text-sm whitespace-pre-wrap break-words leading-relaxed [overflow-wrap:anywhere]">
@@ -490,6 +524,81 @@ export const MessageRow = memo(function MessageRow({
     </div>
   );
 });
+
+function DeletedRow({
+  msg,
+  bubbles,
+  isOwn,
+  groupStart,
+  name,
+  threadChip,
+}: {
+  msg: ChatMessage;
+  bubbles: boolean;
+  isOwn: boolean;
+  groupStart: boolean;
+  name: string;
+  threadChip: React.ReactNode;
+}) {
+  const time = timeLabel(msg.created_at);
+  const ts = fullTimestamp(msg.created_at);
+  const label = (
+    <span className="inline-flex items-center gap-1.5 text-sm italic text-muted-foreground" data-deleted-message>
+      <Ban className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+      Message deleted
+    </span>
+  );
+  if (bubbles) {
+    return (
+      <div className={`flex gap-2 px-3 ${isOwn ? "justify-end" : "justify-start"} ${groupStart ? "mt-3" : "mt-0.5"}`}>
+        {!isOwn && <div className="w-8 shrink-0" />}
+        <div className={`min-w-0 max-w-[82%] flex flex-col ${isOwn ? "items-end" : "items-start"}`}>
+          <div
+            className="rounded-2xl border border-dashed px-3 py-2 bg-transparent"
+            aria-label={`${isOwn ? "You" : name || "Someone"}, ${ts}. Message deleted`}
+            role="note"
+          >
+            {label}
+            <span className="flex justify-end mt-0.5 text-[11px] leading-none text-muted-foreground">
+              <time dateTime={msg.created_at}>{time}</time>
+            </span>
+          </div>
+          {threadChip}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={`relative flex gap-3 px-4 md:px-5 py-0.5 ${groupStart ? "mt-2 pt-1.5" : ""}`}>
+      <div className="w-9 shrink-0">
+        {groupStart && name ? (
+          <div className="pt-0.5">
+            <ChatAvatar name={name} userId={msg.sender?.id} url={msg.sender?.avatar_url} size="md" />
+          </div>
+        ) : null}
+      </div>
+      <div className="min-w-0 flex-1">
+        {groupStart && name && (
+          <div className="flex items-baseline gap-2 min-w-0">
+            <span className="font-semibold text-sm truncate">{name}</span>
+            <time dateTime={msg.created_at} title={ts} className="text-xs text-muted-foreground shrink-0 tabular-nums">
+              {time}
+            </time>
+          </div>
+        )}
+        <div className="flex items-baseline gap-2" title={ts}>
+          {label}
+          {!(groupStart && name) && (
+            <time dateTime={msg.created_at} className="text-[11px] text-muted-foreground tabular-nums">
+              {time}
+            </time>
+          )}
+        </div>
+        {threadChip}
+      </div>
+    </div>
+  );
+}
 
 function isImageMsg(msg: ChatMessage): boolean {
   return !!(msg.attachmentUrl || msg._uploading) && (msg.attachmentType ?? "").startsWith("image/");

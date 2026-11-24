@@ -54,6 +54,87 @@ function isUUID(value: unknown): value is string {
   );
 }
 
+// ─── Soft delete (chat-message-delete.sql) ─────────────────────────────────
+// Deleted messages keep their row (thread_parent_id is `on delete set null`,
+// so a hard delete would turn a thread's replies into top-level messages);
+// content and attachment are blanked and deleted_at/deleted_by are set.
+// Message reads use `select *` so they keep working before the migration has
+// been run; filters on deleted_at are only added once the column exists.
+
+let deletedColumnCheck: { at: number; ok: Promise<boolean> } | null = null;
+function hasDeletedAtColumn(): Promise<boolean> {
+  const now = Date.now();
+  // Cache a positive answer for good; re-probe a negative one every minute so
+  // running the migration takes effect without a restart.
+  if (deletedColumnCheck && (now - deletedColumnCheck.at < 60_000)) return deletedColumnCheck.ok;
+  const ok = Promise.resolve(
+    supabaseAdmin
+      .from("chat_messages")
+      .select("deleted_at")
+      .limit(1)
+      .then(({ error }) => !error, () => false)
+  );
+  deletedColumnCheck = { at: now, ok };
+  ok.then((v) => {
+    if (v && deletedColumnCheck) deletedColumnCheck.at = Number.POSITIVE_INFINITY;
+  });
+  return ok;
+}
+
+function isDeletedRow(m: Record<string, unknown> | null | undefined): boolean {
+  return !!m && m.deleted_at != null;
+}
+
+/** What lists and threads return in place of a deleted message, so a thread
+ * keeps its parent and the list keeps its order — nothing of the content. */
+function deletedPlaceholder(m: Record<string, unknown>, channelId: string, replyCount: number) {
+  return {
+    id: m.id,
+    deleted: true,
+    deletedAt: m.deleted_at ?? null,
+    senderId: m.sender_id ?? null,
+    createdAt: m.created_at,
+    threadReplyCount: replyCount,
+    channelId,
+    threadParentId: m.thread_parent_id ?? null,
+  };
+}
+
+/**
+ * The object path inside the chat-attachments bucket for a stored
+ * attachment URL, or null when the URL isn't one of ours. Only paths under
+ * that bucket, on this project's storage host, under the message's own
+ * channel folder (how uploads are named) are ever returned.
+ */
+function chatAttachmentPath(url: unknown, channelId: string): string | null {
+  if (typeof url !== "string" || !url) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const projectUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
+  if (projectUrl) {
+    try {
+      if (new URL(projectUrl).host !== parsed.host) return null;
+    } catch {
+      return null;
+    }
+  }
+  const prefix = `/storage/v1/object/public/${ATTACHMENTS_BUCKET}/`;
+  if (!parsed.pathname.startsWith(prefix)) return null;
+  let path: string;
+  try {
+    path = decodeURIComponent(parsed.pathname.slice(prefix.length));
+  } catch {
+    return null;
+  }
+  if (!path || path.startsWith("/") || path.split("/").some((seg) => seg === ".." || seg === ".")) return null;
+  if (!path.startsWith(`${channelId}/`)) return null;
+  return path;
+}
+
 // ─── GET /chat/channels ──────────────────────────────────────────────────────
 
 router.get(
@@ -86,6 +167,7 @@ router.get(
           type,
           course_id,
           created_at,
+          created_by,
           is_archived
         )
       `
@@ -107,6 +189,7 @@ router.get(
           type: channel.type,
           courseId: channel.course_id,
           createdAt: channel.created_at,
+          createdBy: (channel.created_by as string | null) ?? null,
           isArchived: channel.is_archived ?? false,
           lastReadAt: (m.last_read_at as string | null) ?? null,
           // Unread counting starts from the last read mark, or from when the
@@ -132,13 +215,15 @@ router.get(
       }
     }
 
+    const softDelete = await hasDeletedAtColumn();
     const summaries = await Promise.all(
       baseChannels.map(async (c) => {
         const channelId = c.id as string;
         const [lastRes, unreadRes] = await Promise.all([
           supabaseAdmin
             .from("chat_messages")
-            .select("id, content, created_at, sender_id, attachment_name, profiles:sender_id ( first_name, last_name )")
+            // `*` (not a column list) so this works before deleted_at exists.
+            .select("*, profiles:sender_id ( first_name, last_name )")
             .eq("channel_id", channelId)
             .is("thread_parent_id", null)
             .order("created_at", { ascending: false })
@@ -151,13 +236,16 @@ router.get(
               .eq("channel_id", channelId)
               .is("thread_parent_id", null)
               .neq("sender_id", req.userId ?? "");
+            // A message deleted before it was read no longer counts as unread.
+            if (softDelete) q = q.is("deleted_at", null);
             if (c._unreadSince) q = q.gt("created_at", c._unreadSince);
             return q;
           })(),
         ]);
         const last = lastRes.data as Record<string, unknown> | null;
         const profile = (last?.profiles ?? null) as Record<string, unknown> | null;
-        const content = (last?.content as string | undefined) ?? "";
+        const lastDeleted = isDeletedRow(last);
+        const content = lastDeleted ? "" : ((last?.content as string | undefined) ?? "");
         return {
           unreadCount: unreadRes.count ?? 0,
           lastMessage: last
@@ -167,7 +255,8 @@ router.get(
                 createdAt: last.created_at,
                 senderId: last.sender_id,
                 senderName: [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || null,
-                attachmentName: last.attachment_name ?? null,
+                attachmentName: lastDeleted ? null : (last.attachment_name ?? null),
+                deleted: lastDeleted,
               }
             : null,
         };
@@ -513,19 +602,11 @@ router.get(
 
     let query = supabaseAdmin
       .from("chat_messages")
+      // `*` rather than a column list: picks up deleted_at once
+      // chat-message-delete.sql has run, without failing before it has.
       .select(
         `
-        id,
-        content,
-        thread_parent_id,
-        created_at,
-        is_edited,
-        edited_at,
-        sender_id,
-        attachment_url,
-        attachment_name,
-        attachment_type,
-        attachment_size,
+        *,
         profiles:sender_id (
           first_name,
           last_name,
@@ -587,6 +668,7 @@ router.get(
     const reactionsByMessage = await fetchReactions(messageIds);
 
     const result = (messages ?? []).map((m: Record<string, unknown>) => {
+      if (isDeletedRow(m)) return deletedPlaceholder(m, channelId, replyCounts[m.id as string] ?? 0);
       const profile = m.profiles as Record<string, unknown> | null;
       return {
         id: m.id,
@@ -907,17 +989,7 @@ router.get(
       .from("chat_messages")
       .select(
         `
-        id,
-        content,
-        thread_parent_id,
-        created_at,
-        is_edited,
-        edited_at,
-        sender_id,
-        attachment_url,
-        attachment_name,
-        attachment_type,
-        attachment_size,
+        *,
         profiles:sender_id (
           first_name,
           last_name,
@@ -938,6 +1010,7 @@ router.get(
     const reactionsByMessage = await fetchReactions(replyIds);
 
     const result = (replies ?? []).map((m: Record<string, unknown>) => {
+      if (isDeletedRow(m)) return deletedPlaceholder(m, channelId, 0);
       const profile = m.profiles as Record<string, unknown> | null;
       return {
         id: m.id,
@@ -1018,7 +1091,7 @@ router.post(
 
     const { data: message } = await supabaseAdmin
       .from("chat_messages")
-      .select("channel_id")
+      .select("*")
       .eq("id", messageId)
       .maybeSingle();
 
@@ -1030,6 +1103,11 @@ router.post(
     const isMember = await assertChannelMember(message.channel_id as string, req.userId!);
     if (!isMember) {
       res.status(403).json({ error: "Not a member of this channel" });
+      return;
+    }
+
+    if (isDeletedRow(message)) {
+      res.status(409).json({ error: "This message was deleted" });
       return;
     }
 
@@ -1076,12 +1154,17 @@ router.patch(
 
     const { data: message } = await supabaseAdmin
       .from("chat_messages")
-      .select("id, sender_id, content, created_at")
+      .select("*")
       .eq("id", messageId)
       .maybeSingle();
 
     if (!message) {
       res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    if (isDeletedRow(message)) {
+      res.status(409).json({ error: "This message was deleted and can't be edited" });
       return;
     }
 
@@ -1132,6 +1215,115 @@ router.patch(
   }
 );
 
+// ─── DELETE /chat/messages/:messageId ──────────────────────────────────────────
+// Soft delete. Allowed for: the sender (while still a member of the
+// channel); the channel's creator for group channels (the same "owner" the
+// channel DELETE route recognises — there are no per-member roles); a school
+// admin of the channel's school; a super_admin.
+
+router.delete(
+  "/chat/messages/:messageId",
+  requireAuth, requireSchoolFeature("chat"),
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const messageId = Array.isArray(req.params.messageId) ? req.params.messageId[0] : req.params.messageId;
+    if (!isUUID(messageId)) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    const { data: message } = await supabaseAdmin
+      .from("chat_messages")
+      .select("*")
+      .eq("id", messageId)
+      .maybeSingle();
+
+    if (!message) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    const channelId = message.channel_id as string;
+    const [{ data: channel }, isMember] = await Promise.all([
+      supabaseAdmin.from("chat_channels").select("id, type, school_id, created_by").eq("id", channelId).maybeSingle(),
+      assertChannelMember(channelId, req.userId!),
+    ]);
+
+    if (!channel) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    const isSender = message.sender_id === req.userId && isMember;
+    const isChannelOwner = channel.type !== "direct" && channel.created_by === req.userId && isMember;
+    const isSchoolAdmin =
+      req.userRole === "super_admin" ||
+      (req.userRole === "admin" && !!req.schoolId && channel.school_id === req.schoolId);
+
+    if (!isSender && !isChannelOwner && !isSchoolAdmin) {
+      // Don't confirm the message exists to someone outside the channel.
+      res.status(isMember ? 403 : 404).json({
+        error: isMember ? "You can only delete your own messages" : "Message not found",
+      });
+      return;
+    }
+
+    const replyCountRes = await supabaseAdmin
+      .from("chat_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("thread_parent_id", messageId);
+    const replyCount = replyCountRes.count ?? 0;
+
+    if (isDeletedRow(message)) {
+      res.json(deletedPlaceholder(message, channelId, replyCount));
+      return;
+    }
+
+    const deletedAt = new Date().toISOString();
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from("chat_messages")
+      .update({
+        content: "",
+        attachment_url: null,
+        attachment_name: null,
+        attachment_type: null,
+        attachment_size: null,
+        deleted_at: deletedAt,
+        deleted_by: req.userId,
+      })
+      .eq("id", messageId)
+      .select("*")
+      .single();
+
+    if (updateError || !updated) {
+      const missingColumn = /deleted_(at|by)/i.test(updateError?.message ?? "");
+      logger.error({ err: updateError, messageId }, "Failed to delete chat message");
+      res.status(missingColumn ? 503 : 500).json({
+        error: missingColumn
+          ? "Message deletion isn't set up yet (run chat-message-delete.sql)"
+          : "Failed to delete message",
+      });
+      return;
+    }
+
+    // Old versions and reactions go with it. Failures are logged, not
+    // surfaced: the message itself is already blanked.
+    const [editsRes, reactionsRes] = await Promise.all([
+      supabaseAdmin.from("chat_message_edits").delete().eq("message_id", messageId),
+      supabaseAdmin.from("chat_message_reactions").delete().eq("message_id", messageId),
+    ]);
+    if (editsRes.error) logger.error({ err: editsRes.error, messageId }, "Failed to remove edit history of deleted chat message");
+    if (reactionsRes.error) logger.error({ err: reactionsRes.error, messageId }, "Failed to remove reactions of deleted chat message");
+
+    const storagePath = chatAttachmentPath(message.attachment_url, channelId);
+    if (storagePath) {
+      const { error: storageError } = await supabaseAdmin.storage.from(ATTACHMENTS_BUCKET).remove([storagePath]);
+      if (storageError) logger.error({ err: storageError, messageId }, "Failed to remove deleted chat attachment from storage");
+    }
+
+    res.json(deletedPlaceholder(updated as Record<string, unknown>, channelId, replyCount));
+  }
+);
+
 // ─── GET /chat/messages/:messageId/edits ───────────────────────────────────────
 
 router.get(
@@ -1142,7 +1334,7 @@ router.get(
 
     const { data: message } = await supabaseAdmin
       .from("chat_messages")
-      .select("channel_id, content")
+      .select("*")
       .eq("id", messageId)
       .maybeSingle();
 
@@ -1154,6 +1346,12 @@ router.get(
     const isMember = await assertChannelMember(message.channel_id as string, req.userId!);
     if (!isMember) {
       res.status(403).json({ error: "Not a member of this channel" });
+      return;
+    }
+
+    // Deleting a message removes its history too; never serve old versions.
+    if (isDeletedRow(message)) {
+      res.json({ history: [] });
       return;
     }
 

@@ -31,11 +31,14 @@ export async function errorMessage(res: Response, fallback: string): Promise<str
  */
 export function normalizeMessage(raw: any): ChatMessage {
   const sender = raw.sender ?? {};
-  return {
+  const deletedAt = raw.deletedAt ?? raw.deleted_at ?? null;
+  const msg: ChatMessage = {
     ...raw,
     channel_id: raw.channel_id ?? raw.channelId,
+    content: raw.content ?? "",
     thread_parent_id: raw.thread_parent_id ?? raw.threadParentId ?? null,
-    thread_count: raw.thread_count ?? raw.replyCount ?? 0,
+    // Deleted placeholders carry `threadReplyCount` instead of `replyCount`.
+    thread_count: raw.thread_count ?? raw.replyCount ?? raw.threadReplyCount ?? 0,
     created_at: raw.created_at ?? raw.createdAt,
     attachmentUrl: raw.attachmentUrl ?? raw.attachment_url ?? null,
     attachmentName: raw.attachmentName ?? raw.attachment_name ?? null,
@@ -44,12 +47,33 @@ export function normalizeMessage(raw: any): ChatMessage {
     isEdited: raw.isEdited ?? raw.is_edited ?? false,
     editedAt: raw.editedAt ?? raw.edited_at ?? null,
     reactions: raw.reactions ?? [],
+    deleted: !!(raw.deleted ?? deletedAt),
+    deletedAt,
     sender: {
       ...sender,
-      id: sender.id ?? raw.sender_id ?? "",
+      id: sender.id ?? raw.sender_id ?? raw.senderId ?? "",
       name: sender.name ?? "",
       avatar_url: sender.avatar_url ?? sender.avatarUrl ?? null,
     },
+  };
+  return msg.deleted ? markDeleted(msg, deletedAt) : msg;
+}
+
+/** The local "Message deleted" placeholder for a message: content,
+ * attachment, reactions and edit state dropped; thread count kept. */
+export function markDeleted(msg: ChatMessage, deletedAt?: string | null): ChatMessage {
+  return {
+    ...msg,
+    deleted: true,
+    deletedAt: deletedAt ?? msg.deletedAt ?? new Date().toISOString(),
+    content: "",
+    attachmentUrl: null,
+    attachmentName: null,
+    attachmentType: null,
+    attachmentSize: null,
+    reactions: [],
+    isEdited: false,
+    editedAt: null,
   };
 }
 
@@ -60,6 +84,7 @@ export function normalizeChannel(raw: any): Channel {
     unread_count: raw.unread_count ?? raw.unreadCount ?? 0,
     member_count: raw.member_count ?? raw.memberCount ?? null,
     lastReadAt: raw.lastReadAt ?? null,
+    createdBy: raw.createdBy ?? raw.created_by ?? null,
     lastMessage: raw.lastMessage ?? null,
   };
 }

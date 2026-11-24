@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, History, MessageSquare, Pencil, Plus } from "lucide-react";
+import { Copy, History, MessageSquare, Pencil, Plus, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { EmojiGrid, QUICK_REACTIONS } from "./EmojiPicker";
 import { EditHistoryList, canEditMessage, type MessageHandlers } from "./MessageRow";
@@ -23,6 +23,7 @@ export function MessageActionsSheet({
   const [view, setView] = useState<"main" | "emoji" | "history">("main");
   useEffect(() => setView("main"), [msg?.id]);
   const canEdit = msg ? canEditMessage(msg, currentUserId) : false;
+  const canDelete = !!(msg && !msg.deleted && handlers.onDelete && handlers.canDelete?.(msg));
   const mineReacted = new Set((msg?.reactions ?? []).filter((r) => r.userIds.includes(currentUserId)).map((r) => r.emoji));
 
   const item =
@@ -89,6 +90,11 @@ export function MessageActionsSheet({
               {msg.isEdited && (
                 <button type="button" className={item} onClick={() => setView("history")}>
                   <History className="w-5 h-5 text-muted-foreground" aria-hidden="true" /> Edit history
+                </button>
+              )}
+              {canDelete && (
+                <button type="button" className={`${item} text-destructive`} onClick={() => act(() => handlers.onDelete!(msg))}>
+                  <Trash2 className="w-5 h-5" aria-hidden="true" /> Delete
                 </button>
               )}
             </div>

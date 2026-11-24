@@ -4,12 +4,20 @@ import { toast } from "sonner";
 import { MessageRow, type MessageHandlers } from "./MessageRow";
 import { MessageActionsSheet } from "./MessageActionsSheet";
 import { Composer, type ComposerHandle } from "./Composer";
-import { apiFetch, errorMessage, normalizeMessage, uploadAttachment } from "./chatApi";
+import { apiFetch, errorMessage, markDeleted, normalizeMessage, uploadAttachment } from "./chatApi";
+import { TypingIndicator } from "./TypingIndicator";
+import type { Typer } from "./useTyping";
 import { GROUP_GAP_MS } from "./format";
 import { prefersReducedMotion } from "./MessageList";
 import type { ChatMessage } from "./types";
 
-export type ThreadListener = (msg: ChatMessage) => void;
+/**
+ * Thread events forwarded from the conversation's realtime subscription:
+ * "insert" appends a new reply, "edit" applies new content, "delete" turns
+ * a reply into its placeholder, "replace" swaps a reply wholesale (rollback).
+ */
+export type ThreadEventMode = "insert" | "edit" | "delete" | "replace";
+export type ThreadListener = (msg: ChatMessage, mode: ThreadEventMode) => void;
 
 export function ThreadPanel({
   parent,
@@ -22,6 +30,9 @@ export function ThreadPanel({
   subscribe,
   onReplyCountChange,
   onCopy,
+  typers = [],
+  onTyping,
+  onStopTyping,
 }: {
   parent: ChatMessage;
   channelName: string;
@@ -35,6 +46,10 @@ export function ThreadPanel({
   subscribe: (fn: ThreadListener) => () => void;
   onReplyCountChange: (parentId: string, delta: number) => void;
   onCopy: (msg: ChatMessage) => void;
+  /** People typing in this thread. */
+  typers?: Typer[];
+  onTyping?: () => void;
+  onStopTyping?: () => void;
 }) {
   const channelId = parent.channel_id;
   const [replies, setReplies] = useState<ChatMessage[]>([]);
@@ -68,9 +83,20 @@ export function ThreadPanel({
 
   useEffect(
     () =>
-      subscribe((msg) => {
+      subscribe((msg, mode) => {
         if (msg.thread_parent_id !== parent.id) return;
-        setReplies((prev) => (prev.some((r) => r.id === msg.id) ? prev : [...prev, msg]));
+        setReplies((prev) => {
+          const has = prev.some((r) => r.id === msg.id);
+          if (mode === "insert") return has ? prev : [...prev, msg];
+          if (!has) return prev;
+          return prev.map((r) => {
+            if (r.id !== msg.id) return r;
+            if (mode === "delete") return markDeleted(r, msg.deletedAt);
+            if (mode === "edit") return r.deleted ? r : { ...r, content: msg.content, isEdited: msg.isEdited, editedAt: msg.editedAt };
+            return msg;
+          });
+        });
+        if (mode === "delete") setEditing((e) => (e?.id === msg.id ? null : e));
       }),
     [subscribe, parent.id]
   );
@@ -186,6 +212,8 @@ export function ThreadPanel({
       },
       onCopy,
       onOpenActions: mobile ? (msg) => setSheetMsg(msg) : undefined,
+      onDelete: parentHandlers.onDelete,
+      canDelete: parentHandlers.canDelete,
     }),
     [parent.id, parentHandlers, sendFile, sendText, onReplyCountChange, onCopy, mobile]
   );
@@ -273,6 +301,7 @@ export function ThreadPanel({
           </ul>
         )}
       </div>
+      <TypingIndicator typers={typers} />
       <Composer
         key={`thread-${parent.id}`}
         ref={composerRef}
@@ -286,6 +315,8 @@ export function ThreadPanel({
         editing={editing}
         onSaveEdit={saveEdit}
         onCancelEdit={() => setEditing(null)}
+        onTyping={onTyping}
+        onStopTyping={onStopTyping}
       />
       {mobile && (
         <MessageActionsSheet msg={sheetMsg} currentUserId={currentUserId} handlers={handlers} onClose={() => setSheetMsg(null)} inThread />
