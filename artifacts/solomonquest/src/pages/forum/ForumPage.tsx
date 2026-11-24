@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ import {
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MentionTextarea } from "@/components/forum/MentionTextarea";
 
 // ─── API helper ──────────────────────────────────────────────────────────────
 
@@ -68,6 +70,7 @@ interface ForumTopic {
   id: string;
   title: string;
   content: string;
+  coverImage?: string | null;
   author_id: string;
   author_name: string;
   author_avatar_url?: string | null;
@@ -77,6 +80,8 @@ interface ForumTopic {
   reaction_counts: ReactionCounts;
   course_id: string | null;
   course_name?: string | null;
+  program_id: string | null;
+  program_name?: string | null;
   is_pinned: boolean;
   school_id: string;
 }
@@ -84,6 +89,45 @@ interface ForumTopic {
 interface Course {
   id: string;
   name: string;
+}
+
+interface Program {
+  id: string;
+  name: string;
+}
+
+/** Translates the API's camelCase response into the shape this page renders. */
+function normalizeTopic(
+  raw: any,
+  courseById: Map<string, string>,
+  programById: Map<string, string>
+): ForumTopic {
+  const authorName =
+    [raw.postedByProfile?.first_name, raw.postedByProfile?.last_name].filter(Boolean).join(" ") ||
+    "Unknown";
+  return {
+    id: raw.id,
+    title: raw.title,
+    content: raw.content ?? "",
+    coverImage: raw.coverImage ?? null,
+    author_id: raw.postedBy,
+    author_name: authorName,
+    author_avatar_url: raw.postedByProfile?.avatar_url ?? null,
+    created_at: raw.createdAt,
+    updated_at: raw.updatedAt,
+    comment_count: raw.commentCount ?? 0,
+    reaction_counts: {
+      like: raw.reactionCounts?.like ?? 0,
+      heart: raw.reactionCounts?.heart ?? 0,
+      celebrate: raw.reactionCounts?.celebrate ?? 0,
+    },
+    course_id: raw.courseId ?? null,
+    course_name: raw.courseId ? courseById.get(raw.courseId) ?? null : null,
+    program_id: raw.programId ?? null,
+    program_name: raw.programId ? programById.get(raw.programId) ?? null : null,
+    is_pinned: !!raw.isPinned,
+    school_id: raw.schoolId,
+  };
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -132,17 +176,8 @@ function Avatar({
   url?: string | null;
   size?: "sm" | "md";
 }) {
-  const dim = size === "sm" ? "w-7 h-7 text-[10px]" : "w-9 h-9 text-xs";
-  if (url) {
-    return (
-      <img
-        src={url}
-        alt={name}
-        className={cn("rounded-full object-cover shrink-0 border border-border", dim)}
-      />
-    );
-  }
-  return (
+  const dim = size === "sm" ? "w-7 h-7 text-[11px]" : "w-9 h-9 text-xs";
+  const initials = (
     <div
       className={cn(
         "rounded-full bg-primary/10 text-primary font-semibold flex items-center justify-center shrink-0 select-none",
@@ -151,6 +186,15 @@ function Avatar({
     >
       {getInitials(name)}
     </div>
+  );
+  // A dead avatar URL shows the initials instead of a broken-image icon.
+  return (
+    <SafeImage
+      src={url || undefined}
+      alt=""
+      className={cn("rounded-full object-cover shrink-0 border border-border", dim)}
+      fallback={initials}
+    />
   );
 }
 
@@ -187,8 +231,8 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
 
       {/* Cover image thumbnail */}
       {topic.coverImage && (
-        <div className="hidden sm:block shrink-0 w-20 h-14 rounded-md overflow-hidden border border-border self-center">
-          <img src={topic.coverImage} alt="" className="w-full h-full object-cover" />
+        <div className="hidden sm:has-[img]:block shrink-0 w-20 h-14 rounded-md overflow-hidden border border-border bg-muted self-center">
+          <SafeImage src={topic.coverImage} alt="" loading="lazy" className="w-full h-full object-cover" />
         </div>
       )}
 
@@ -196,8 +240,8 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
       <div className="flex-1 min-w-0 flex flex-col gap-1.5">
         {/* Cover image on mobile */}
         {topic.coverImage && (
-          <div className="sm:hidden w-full h-28 rounded-md overflow-hidden border border-border mb-1">
-            <img src={topic.coverImage} alt="" className="w-full h-full object-cover" />
+          <div className="hidden has-[img]:block sm:has-[img]:hidden w-full h-28 rounded-md overflow-hidden border border-border bg-muted mb-1">
+            <SafeImage src={topic.coverImage} alt="" loading="lazy" className="w-full h-full object-cover" />
           </div>
         )}
         {/* Title row */}
@@ -205,7 +249,7 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
           <div className="flex items-center gap-2 flex-wrap">
             {topic.is_pinned && (
               <span title="Pinned">
-                <Pin size={13} className="text-amber-500 shrink-0" />
+                <Pin size={13} className="text-warning shrink-0" />
               </span>
             )}
             <span className="font-semibold text-foreground leading-snug group-hover:text-primary transition-colors">
@@ -214,17 +258,22 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
           </div>
           <div className="flex shrink-0 items-center gap-1.5 mt-0.5">
             {topic.is_pinned && (
-              <Badge variant="outline" className="text-amber-600 border-amber-300 text-[10px] px-1.5 py-0">
+              <Badge variant="outline" className="text-warning border-warning/30 text-[11px] px-1.5 py-0">
                 Pinned
               </Badge>
             )}
             {topic.course_id ? (
-              <Badge className="bg-primary/10 text-primary hover:bg-primary/20 text-[10px] px-1.5 py-0 border-0">
+              <Badge className="bg-primary/10 text-primary hover:bg-primary/20 text-[11px] px-1.5 py-0 border-0">
                 <BookOpen size={10} className="mr-1" />
                 {topic.course_name ?? "Course"}
               </Badge>
+            ) : topic.program_id ? (
+              <Badge className="bg-primary/10 text-primary text-[11px] px-1.5 py-0 border-0">
+                <BookOpen size={10} className="mr-1" />
+                {topic.program_name ?? "Program"}
+              </Badge>
             ) : (
-              <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[10px] px-1.5 py-0 border-0 hover:bg-green-100">
+              <Badge className="bg-success/10 text-success text-[11px] px-1.5 py-0 border-0 hover:bg-success/20">
                 <School size={10} className="mr-1" />
                 School-wide
               </Badge>
@@ -265,28 +314,32 @@ function NewTopicModal({
   open,
   onClose,
   courses,
-  schoolId,
+  programs,
   onCreated,
 }: {
   open: boolean;
   onClose: () => void;
   courses: Course[];
-  schoolId: string;
+  programs: Program[];
   onCreated: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
   const [coverImage, setCoverImage] = useState("");
-  const [scope, setScope] = useState<"school-wide" | "course">("school-wide");
+  const [scope, setScope] = useState<"school-wide" | "course" | "program">("school-wide");
   const [courseId, setCourseId] = useState<string>("");
+  const [programId, setProgramId] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
   function reset() {
     setTitle("");
     setContent("");
+    setMentionedUserIds([]);
     setCoverImage("");
     setScope("school-wide");
     setCourseId("");
+    setProgramId("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -295,15 +348,17 @@ function NewTopicModal({
     if (content.trim().length < 20)
       return toast.error("Content must be at least 20 characters.");
     if (scope === "course" && !courseId) return toast.error("Please select a course.");
+    if (scope === "program" && !programId) return toast.error("Please select a program.");
 
     setSubmitting(true);
     try {
-      const body: Record<string, string> = {
-        school_id: schoolId,
+      const body: Record<string, unknown> = {
         title: title.trim(),
         content: content.trim(),
+        mentionedUserIds,
       };
-      if (scope === "course" && courseId) body.course_id = courseId;
+      if (scope === "course" && courseId) body.courseId = courseId;
+      if (scope === "program" && programId) body.programId = programId;
       if (coverImage.trim()) body.coverImage = coverImage.trim();
 
       const res = await apiFetch("/api/forum/topics", {
@@ -323,6 +378,7 @@ function NewTopicModal({
     } finally {
       setSubmitting(false);
     }
+    return;
   }
 
   return (
@@ -339,7 +395,14 @@ function NewTopicModal({
           {/* Scope */}
           <div className="grid gap-1.5">
             <Label htmlFor="new-scope">Visibility</Label>
-            <Select value={scope} onValueChange={(v) => { setScope(v as typeof scope); setCourseId(""); }}>
+            <Select
+              value={scope}
+              onValueChange={(v) => {
+                setScope(v as typeof scope);
+                setCourseId("");
+                setProgramId("");
+              }}
+            >
               <SelectTrigger id="new-scope">
                 <SelectValue />
               </SelectTrigger>
@@ -351,7 +414,12 @@ function NewTopicModal({
                 </SelectItem>
                 <SelectItem value="course">
                   <span className="flex items-center gap-2">
-                    <BookOpen size={14} /> Specific course
+                    <BookOpen size={14} /> Specific class
+                  </span>
+                </SelectItem>
+                <SelectItem value="program">
+                  <span className="flex items-center gap-2">
+                    <BookOpen size={14} /> Specific program
                   </span>
                 </SelectItem>
               </SelectContent>
@@ -361,20 +429,46 @@ function NewTopicModal({
           {/* Course selector */}
           {scope === "course" && (
             <div className="grid gap-1.5">
-              <Label htmlFor="new-course">Course</Label>
+              <Label htmlFor="new-course">Class</Label>
               <Select value={courseId} onValueChange={setCourseId}>
                 <SelectTrigger id="new-course">
-                  <SelectValue placeholder="Select a course…" />
+                  <SelectValue placeholder="Select a class…" />
                 </SelectTrigger>
                 <SelectContent>
                   {courses.length === 0 && (
-                    <SelectItem value="__none" disabled>No courses found</SelectItem>
+                    <SelectItem value="__none" disabled>No classes found</SelectItem>
                   )}
                   {courses.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Only visible to this class's teacher and enrolled students.
+              </p>
+            </div>
+          )}
+
+          {/* Program selector */}
+          {scope === "program" && (
+            <div className="grid gap-1.5">
+              <Label htmlFor="new-program">Program</Label>
+              <Select value={programId} onValueChange={setProgramId}>
+                <SelectTrigger id="new-program">
+                  <SelectValue placeholder="Select a program…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {programs.length === 0 && (
+                    <SelectItem value="__none" disabled>No programs found</SelectItem>
+                  )}
+                  {programs.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Only visible to teachers and students in this program's classes.
+              </p>
             </div>
           )}
 
@@ -395,11 +489,13 @@ function NewTopicModal({
           {/* Content */}
           <div className="grid gap-1.5">
             <Label htmlFor="new-content">Content</Label>
-            <Textarea
+            <MentionTextarea
               id="new-content"
-              placeholder="Share details, questions, or announcements… (min. 20 characters)"
+              placeholder="Share details, questions, or announcements… (min. 20 characters). Type @ to tag someone."
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={setContent}
+              mentionedUserIds={mentionedUserIds}
+              onMentionedUserIdsChange={setMentionedUserIds}
               required
               minLength={20}
               className="min-h-[140px] resize-y"
@@ -459,7 +555,7 @@ function FilterPill({
     <button
       onClick={onClick}
       className={cn(
-        "px-3 py-1 rounded-full text-sm font-medium transition-all whitespace-nowrap",
+        "shrink-0 px-3 py-2 sm:py-1 rounded-full text-sm font-medium transition-all whitespace-nowrap max-w-[16rem] truncate",
         active
           ? "bg-primary text-primary-foreground shadow-sm"
           : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -478,6 +574,7 @@ export default function ForumPage() {
 
   const [topics, setTopics] = useState<ForumTopic[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -489,53 +586,78 @@ export default function ForumPage() {
     user?.role === "super_admin";
   const schoolId = (user?.schoolId ?? (user as any)?.school_id) as string | undefined;
 
-  const fetchTopics = useCallback(async () => {
-    if (!schoolId) return;
-    setIsLoading(true);
+  const fetchCourses = useCallback(async () => {
+    if (!schoolId) return [] as Course[];
     try {
-      const res = await apiFetch(`/api/forum/topics?school_id=${schoolId}`);
-      if (!res.ok) throw new Error("Failed to load topics");
+      const res = await apiFetch("/api/courses");
+      if (!res.ok) return [] as Course[];
       const data = await res.json();
-      setTopics(data);
-    } catch (err: any) {
-      toast.error(err?.message ?? "Could not load forum topics.");
-    } finally {
-      setIsLoading(false);
+      const mapped: Course[] = (data ?? []).map((c: any) => ({ id: c.id, name: c.title }));
+      setCourses(mapped);
+      return mapped;
+    } catch {
+      return [] as Course[];
     }
   }, [schoolId]);
 
-  const fetchCourses = useCallback(async () => {
-    if (!schoolId) return;
+  const fetchPrograms = useCallback(async () => {
+    if (!schoolId) return [] as Program[];
     try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select("id, name")
-        .eq("school_id", schoolId)
-        .order("name");
-      if (error) throw error;
-      setCourses(data ?? []);
+      const res = await apiFetch("/api/programs");
+      if (!res.ok) return [] as Program[];
+      const data = await res.json();
+      const mapped: Program[] = (data ?? []).map((p: any) => ({ id: p.id, name: p.name }));
+      setPrograms(mapped);
+      return mapped;
     } catch {
-      // non-critical
+      return [] as Program[];
     }
   }, [schoolId]);
+
+  const fetchTopics = useCallback(
+    async (courseList?: Course[], programList?: Program[]) => {
+      if (!schoolId) return;
+      setIsLoading(true);
+      try {
+        const res = await apiFetch("/api/forum/topics");
+        if (!res.ok) throw new Error("Failed to load topics");
+        const data = await res.json();
+        const courseById = new Map((courseList ?? courses).map((c) => [c.id, c.name]));
+        const programById = new Map((programList ?? programs).map((p) => [p.id, p.name]));
+        setTopics((data ?? []).map((raw: any) => normalizeTopic(raw, courseById, programById)));
+      } catch (err: any) {
+        toast.error(err?.message ?? "Could not load forum topics.");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [schoolId]
+  );
 
   useEffect(() => {
-    fetchTopics();
-    fetchCourses();
-  }, [fetchTopics, fetchCourses]);
+    (async () => {
+      const [courseList, programList] = await Promise.all([fetchCourses(), fetchPrograms()]);
+      fetchTopics(courseList, programList);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schoolId]);
 
   // ── Filtering ──
   const filterTabs = [
     { key: "all", label: "All Topics" },
     { key: "school-wide", label: "School-wide" },
-    ...courses.map((c) => ({ key: c.id, label: c.name })),
+    ...courses.map((c) => ({ key: `course:${c.id}`, label: c.name })),
+    ...programs.map((p) => ({ key: `program:${p.id}`, label: p.name })),
   ];
 
   const displayedTopics = topics
     .filter((t) => {
       if (activeFilter === "all") return true;
-      if (activeFilter === "school-wide") return t.course_id === null;
-      return t.course_id === activeFilter;
+      if (activeFilter === "school-wide") return t.course_id === null && t.program_id === null;
+      if (activeFilter.startsWith("course:")) return t.course_id === activeFilter.slice(7);
+      if (activeFilter.startsWith("program:")) return t.program_id === activeFilter.slice(8);
+      return true;
     })
     .filter((t) => {
       if (!searchQuery.trim()) return true;
@@ -651,9 +773,9 @@ export default function ForumPage() {
       ) : (
         <div className="rounded-xl border bg-card overflow-hidden divide-y">
           {pinnedCount > 0 && (
-            <div className="px-5 py-2 bg-amber-50/60 dark:bg-amber-900/10 flex items-center gap-2">
-              <Pin size={12} className="text-amber-500" />
-              <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            <div className="px-5 py-2 bg-warning/10 flex items-center gap-2">
+              <Pin size={12} className="text-warning" />
+              <span className="text-xs font-medium text-warning ">
                 {pinnedCount} pinned {pinnedCount === 1 ? "topic" : "topics"}
               </span>
             </div>
@@ -685,8 +807,8 @@ export default function ForumPage() {
           open={modalOpen}
           onClose={() => setModalOpen(false)}
           courses={courses}
-          schoolId={schoolId}
-          onCreated={fetchTopics}
+          programs={programs}
+          onCreated={() => fetchTopics()}
         />
       )}
     </div>

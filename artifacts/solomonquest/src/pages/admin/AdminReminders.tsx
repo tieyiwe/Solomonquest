@@ -37,6 +37,7 @@ import {
 import { ArrowLeft, Bell, Loader2, Trash2, Search, Users } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { EmptyState } from "@/components/common/States";
 
 interface Reminder {
   id: string;
@@ -146,6 +147,7 @@ export default function AdminReminders() {
       return () => clearTimeout(timeout);
     } else {
       setTeachers([]);
+      return undefined;
     }
   }, [teacherSearch, targetType]);
 
@@ -241,7 +243,7 @@ export default function AdminReminders() {
     <AdminLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/admin">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
@@ -250,7 +252,7 @@ export default function AdminReminders() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Reminders</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Reminders</h1>
           <p className="text-muted-foreground mt-0.5">
             Schedule reminders to teachers.
           </p>
@@ -268,9 +270,9 @@ export default function AdminReminders() {
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Target */}
               <div className="space-y-1.5">
-                <Label>Target</Label>
+                <Label htmlFor="adminreminders-target">Target</Label>
                 <Select value={targetType} onValueChange={(v) => { setTargetType(v as "all" | "specific"); setSelectedTeacherId(null); setTeacherSearch(""); }}>
-                  <SelectTrigger>
+                  <SelectTrigger id="adminreminders-target">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -283,10 +285,10 @@ export default function AdminReminders() {
               {/* Teacher search */}
               {targetType === "specific" && (
                 <div className="space-y-1.5">
-                  <Label>Search Teacher</Label>
+                  <Label htmlFor="adminreminders-search-teacher">Search Teacher</Label>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
+                    <Input id="adminreminders-search-teacher"
                       className="pl-9"
                       placeholder="Type teacher name or email..."
                       value={teacherSearch}
@@ -294,7 +296,7 @@ export default function AdminReminders() {
                     />
                   </div>
                   {selectedTeacherId && (
-                    <p className="text-sm text-emerald-600 font-medium">
+                    <p className="text-sm text-success font-medium">
                       Selected: {teachers.find((t) => t.id === selectedTeacherId)
                         ? `${teachers.find((t) => t.id === selectedTeacherId)?.firstName ?? ""} ${teachers.find((t) => t.id === selectedTeacherId)?.lastName ?? ""}`.trim()
                         : "Teacher selected"}
@@ -311,7 +313,7 @@ export default function AdminReminders() {
                         <button
                           key={t.id}
                           type="button"
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
                           onClick={() => {
                             setSelectedTeacherId(t.id);
                             setTeacherSearch(`${t.firstName ?? ""} ${t.lastName ?? ""}`.trim() || t.email || "");
@@ -329,9 +331,9 @@ export default function AdminReminders() {
 
               {/* Course (optional) */}
               <div className="space-y-1.5">
-                <Label>Link to Course <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Label htmlFor="adminreminders-link-to-course">Link to Course <span className="text-muted-foreground font-normal">(optional)</span></Label>
                 <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
-                  <SelectTrigger>
+                  <SelectTrigger id="adminreminders-link-to-course">
                     <SelectValue placeholder="Select a course..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -345,8 +347,8 @@ export default function AdminReminders() {
 
               {/* Message */}
               <div className="space-y-1.5">
-                <Label>Message</Label>
-                <Textarea
+                <Label htmlFor="adminreminders-message">Message</Label>
+                <Textarea id="adminreminders-message"
                   placeholder="Enter reminder message..."
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -356,8 +358,8 @@ export default function AdminReminders() {
 
               {/* Send At */}
               <div className="space-y-1.5">
-                <Label>Send At</Label>
-                <Input
+                <Label htmlFor="adminreminders-send-at">Send At</Label>
+                <Input id="adminreminders-send-at"
                   type="datetime-local"
                   value={sendAt}
                   min={minDateTime}
@@ -389,14 +391,16 @@ export default function AdminReminders() {
                 ))}
               </div>
             ) : reminders.length === 0 ? (
-              <div className="text-center py-16 text-muted-foreground">
-                <Bell className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p className="text-sm">No reminders scheduled yet.</p>
-              </div>
+              <EmptyState
+                icon={Bell}
+                title="No reminders scheduled"
+                description="Scheduled reminders are sent automatically to the people you choose."
+                className="m-4"
+              />
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50">
+                  <TableRow className="bg-muted/30">
                     <TableHead className="font-semibold">Target</TableHead>
                     <TableHead className="font-semibold">Message</TableHead>
                     <TableHead className="font-semibold">Course</TableHead>
@@ -407,7 +411,7 @@ export default function AdminReminders() {
                 </TableHeader>
                 <TableBody>
                   {reminders.map((r) => (
-                    <TableRow key={r.id} className="hover:bg-gray-50/50">
+                    <TableRow key={r.id} className="hover:bg-muted/30">
                       <TableCell className="font-medium text-sm">{formatTarget(r)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
                         {r.message.length > 80 ? r.message.slice(0, 80) + "..." : r.message}
@@ -418,15 +422,15 @@ export default function AdminReminders() {
                       </TableCell>
                       <TableCell>
                         {r.sent ? (
-                          <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 border">Sent</Badge>
+                          <Badge className="bg-success/10 text-success border-success/30 border">Sent</Badge>
                         ) : (
-                          <Badge className="bg-yellow-100 text-yellow-700 border-yellow-300 border">Pending</Badge>
+                          <Badge className="bg-warning/10 text-warning border-warning/30 border">Pending</Badge>
                         )}
                       </TableCell>
                       <TableCell>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-600">
+                            <Button aria-label="Delete" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>
@@ -440,7 +444,7 @@ export default function AdminReminders() {
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction
-                                className="bg-red-600 hover:bg-red-700"
+                                className="bg-destructive hover:bg-destructive/90"
                                 onClick={() => handleDelete(r.id)}
                               >
                                 Delete

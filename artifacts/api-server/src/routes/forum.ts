@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { requireSchoolFeature } from "../lib/featureFlags";
+import { logUsageEvent } from "../lib/usageTracking";
 
 const router: IRouter = Router();
 
@@ -13,6 +15,30 @@ const CONTENT_MAX_LENGTH = 10000;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// The only reaction types the UI offers buttons for — always present in a
+// breakdown (as 0) even when nobody has used them yet, so the frontend
+// never has to guard against a missing key.
+const REACTION_TYPES = ["like", "heart", "celebrate"] as const;
+
+function emptyReactionCounts(): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const type of REACTION_TYPES) counts[type] = 0;
+  return counts;
+}
+
+function buildReactionBreakdown(
+  rows: { reaction: string; user_id: string }[],
+  viewerId: string | undefined
+): { reactionCounts: Record<string, number>; myReaction: string | null } {
+  const reactionCounts = emptyReactionCounts();
+  let myReaction: string | null = null;
+  for (const row of rows) {
+    reactionCounts[row.reaction] = (reactionCounts[row.reaction] ?? 0) + 1;
+    if (viewerId && row.user_id === viewerId) myReaction = row.reaction;
+  }
+  return { reactionCounts, myReaction };
+}
 
 async function getProfile(userId: string) {
   const { data } = await supabaseAdmin
@@ -36,8 +62,128 @@ async function createNotification(
   });
 }
 
-async function enrichTopic(topic: Record<string, unknown>) {
-  const [profile, commentCountRes, reactionCountRes] = await Promise.all([
+async function getMentions(topicId?: string, commentId?: string) {
+  let query = supabaseAdmin.from("forum_mentions").select("mentioned_user_id");
+  query = topicId ? query.eq("topic_id", topicId) : query.eq("comment_id", commentId as string);
+  const { data } = await query;
+  const userIds = (data ?? []).map((m) => m.mentioned_user_id as string);
+  if (userIds.length === 0) return [];
+
+  const { data: profiles } = await supabaseAdmin
+    .from("profiles")
+    .select("id, first_name, last_name")
+    .in("id", userIds);
+
+  return (profiles ?? []).map((p) => ({
+    id: p.id,
+    firstName: p.first_name,
+    lastName: p.last_name,
+  }));
+}
+
+/**
+ * Records @-mentions for a newly created topic/comment and notifies each
+ * mentioned user (skipping the author). userIds are trusted to already be
+ * validated (same-school) by the caller.
+ */
+async function recordMentions(
+  userIds: string[],
+  target: { topicId?: string; commentId?: string },
+  authorId: string | undefined,
+  notifTitle: string,
+  notifLink: string
+) {
+  const unique = Array.from(new Set(userIds)).filter((id) => id !== authorId);
+  if (unique.length === 0) return;
+
+  await supabaseAdmin.from("forum_mentions").insert(
+    unique.map((mentionedUserId) => ({
+      topic_id: target.topicId ?? null,
+      comment_id: target.commentId ?? null,
+      mentioned_user_id: mentionedUserId,
+    }))
+  );
+
+  await Promise.all(unique.map((uid) => createNotification(uid, notifTitle, notifLink)));
+}
+
+/**
+ * Validates that every id in mentionedUserIds actually belongs to this
+ * school, dropping any that don't rather than erroring — a stale/forged id
+ * in the mention list shouldn't block posting.
+ */
+async function filterValidMentionIds(
+  mentionedUserIds: unknown,
+  schoolId: string | null | undefined
+): Promise<string[]> {
+  if (!Array.isArray(mentionedUserIds) || mentionedUserIds.length === 0) return [];
+  const ids = mentionedUserIds.filter((id): id is string => typeof id === "string").slice(0, 20);
+  if (ids.length === 0) return [];
+
+  const { data } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .in("id", ids)
+    .eq("school_id", schoolId ?? "");
+
+  return (data ?? []).map((p) => p.id as string);
+}
+
+/**
+ * Whether the caller may see a topic scoped to this course/program.
+ * Unscoped topics (no course_id and no program_id) are open to the whole
+ * school. A course-scoped topic is visible to admins, the course's own
+ * teacher, and actively-enrolled students/staff. A program-scoped topic
+ * follows the same rule across every course in that program.
+ */
+async function canAccessForumScope(
+  req: AuthenticatedRequest,
+  courseId: string | null,
+  programId: string | null
+): Promise<boolean> {
+  if (req.userRole === "admin" || req.userRole === "super_admin") return true;
+  if (!courseId && !programId) return true;
+
+  if (courseId) {
+    const { data: course } = await supabaseAdmin
+      .from("courses")
+      .select("teacher_id")
+      .eq("id", courseId)
+      .maybeSingle();
+    if (!course) return false;
+    if (req.userRole === "teacher") return course.teacher_id === req.userId;
+    const { data: enrollment } = await supabaseAdmin
+      .from("course_enrollments")
+      .select("student_id")
+      .eq("course_id", courseId)
+      .eq("student_id", req.userId ?? "")
+      .eq("status", "active")
+      .maybeSingle();
+    return !!enrollment;
+  }
+
+  const { data: courses } = await supabaseAdmin
+    .from("courses")
+    .select("id, teacher_id")
+    .eq("program_id", programId as string);
+  const courseIds = (courses ?? []).map((c) => c.id as string);
+
+  if (req.userRole === "teacher") return (courses ?? []).some((c) => c.teacher_id === req.userId);
+  if (courseIds.length === 0) return false;
+
+  const { data: enrollment } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("student_id")
+    .in("course_id", courseIds)
+    .eq("student_id", req.userId ?? "")
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
+  return !!enrollment;
+}
+
+async function enrichTopic(topic: Record<string, unknown>, viewerId?: string) {
+  const [profile, commentCountRes, reactionsRes, mentions] = await Promise.all([
     topic.posted_by ? getProfile(topic.posted_by as string) : Promise.resolve(null),
     supabaseAdmin
       .from("forum_comments")
@@ -45,14 +191,18 @@ async function enrichTopic(topic: Record<string, unknown>) {
       .eq("topic_id", topic.id as string),
     supabaseAdmin
       .from("forum_reactions")
-      .select("id", { count: "exact", head: true })
+      .select("reaction, user_id")
       .eq("topic_id", topic.id as string),
+    getMentions(topic.id as string, undefined),
   ]);
+
+  const { reactionCounts, myReaction } = buildReactionBreakdown(reactionsRes.data ?? [], viewerId);
 
   return {
     id: topic.id,
     schoolId: topic.school_id,
     courseId: topic.course_id,
+    programId: topic.program_id ?? null,
     title: topic.title,
     content: topic.content,
     coverImage: topic.cover_image ?? null,
@@ -60,20 +210,25 @@ async function enrichTopic(topic: Record<string, unknown>) {
     postedBy: topic.posted_by,
     postedByProfile: profile,
     commentCount: commentCountRes.count ?? 0,
-    reactionCount: reactionCountRes.count ?? 0,
+    reactionCounts,
+    myReaction,
+    mentions,
     createdAt: topic.created_at,
     updatedAt: topic.updated_at,
   };
 }
 
-async function enrichComment(comment: Record<string, unknown>) {
-  const [profile, reactionCountRes] = await Promise.all([
+async function enrichComment(comment: Record<string, unknown>, viewerId?: string) {
+  const [profile, reactionsRes, mentions] = await Promise.all([
     comment.posted_by ? getProfile(comment.posted_by as string) : Promise.resolve(null),
     supabaseAdmin
       .from("forum_reactions")
-      .select("id", { count: "exact", head: true })
+      .select("reaction, user_id")
       .eq("comment_id", comment.id as string),
+    getMentions(undefined, comment.id as string),
   ]);
+
+  const { reactionCounts, myReaction } = buildReactionBreakdown(reactionsRes.data ?? [], viewerId);
 
   return {
     id: comment.id,
@@ -81,10 +236,156 @@ async function enrichComment(comment: Record<string, unknown>) {
     content: comment.content,
     postedBy: comment.posted_by,
     postedByProfile: profile,
-    reactionCount: reactionCountRes.count ?? 0,
+    reactionCounts,
+    myReaction,
+    mentions,
     createdAt: comment.created_at,
     updatedAt: comment.updated_at,
   };
+}
+
+// Batched version of enrichTopic for list endpoints — one profiles query,
+// one comment-count query, one reactions query, and one mentions query
+// across all topics, instead of 4 queries per topic.
+async function enrichTopics(topics: Record<string, unknown>[], viewerId?: string) {
+  if (topics.length === 0) return [];
+
+  const topicIds = topics.map((t) => t.id as string);
+  const posterIds = Array.from(
+    new Set(topics.filter((t) => t.posted_by).map((t) => t.posted_by as string))
+  );
+
+  const [profilesRes, commentsRes, reactionsRes, mentionsRes] = await Promise.all([
+    posterIds.length
+      ? supabaseAdmin.from("profiles").select("id, first_name, last_name, avatar_url").in("id", posterIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    supabaseAdmin.from("forum_comments").select("topic_id").in("topic_id", topicIds),
+    supabaseAdmin.from("forum_reactions").select("topic_id, reaction, user_id").in("topic_id", topicIds),
+    supabaseAdmin.from("forum_mentions").select("topic_id, mentioned_user_id").in("topic_id", topicIds),
+  ]);
+
+  const profileById = new Map((profilesRes.data ?? []).map((p) => [p.id as string, p]));
+
+  const commentCountByTopic = new Map<string, number>();
+  for (const c of commentsRes.data ?? []) {
+    const tid = c.topic_id as string;
+    commentCountByTopic.set(tid, (commentCountByTopic.get(tid) ?? 0) + 1);
+  }
+
+  const reactionRowsByTopic = new Map<string, { reaction: string; user_id: string }[]>();
+  for (const r of reactionsRes.data ?? []) {
+    const tid = r.topic_id as string;
+    const arr = reactionRowsByTopic.get(tid) ?? [];
+    arr.push({ reaction: r.reaction as string, user_id: r.user_id as string });
+    reactionRowsByTopic.set(tid, arr);
+  }
+
+  const mentionedIdsByTopic = new Map<string, string[]>();
+  for (const m of mentionsRes.data ?? []) {
+    const tid = m.topic_id as string;
+    const arr = mentionedIdsByTopic.get(tid) ?? [];
+    arr.push(m.mentioned_user_id as string);
+    mentionedIdsByTopic.set(tid, arr);
+  }
+
+  const allMentionedIds = Array.from(new Set(Array.from(mentionedIdsByTopic.values()).flat()));
+  const { data: mentionProfiles } = allMentionedIds.length
+    ? await supabaseAdmin.from("profiles").select("id, first_name, last_name").in("id", allMentionedIds)
+    : { data: [] as { id: string; first_name: string | null; last_name: string | null }[] };
+  const mentionProfileById = new Map((mentionProfiles ?? []).map((p) => [p.id, p]));
+
+  return topics.map((topic) => {
+    const tid = topic.id as string;
+    const profile = topic.posted_by ? profileById.get(topic.posted_by as string) ?? null : null;
+    const mentions = (mentionedIdsByTopic.get(tid) ?? []).map((id) => {
+      const p = mentionProfileById.get(id);
+      return { id, firstName: p?.first_name ?? null, lastName: p?.last_name ?? null };
+    });
+    const { reactionCounts, myReaction } = buildReactionBreakdown(reactionRowsByTopic.get(tid) ?? [], viewerId);
+
+    return {
+      id: topic.id,
+      schoolId: topic.school_id,
+      courseId: topic.course_id,
+      programId: topic.program_id ?? null,
+      title: topic.title,
+      content: topic.content,
+      coverImage: topic.cover_image ?? null,
+      isPinned: topic.is_pinned,
+      postedBy: topic.posted_by,
+      postedByProfile: profile,
+      commentCount: commentCountByTopic.get(tid) ?? 0,
+      reactionCounts,
+      myReaction,
+      mentions,
+      createdAt: topic.created_at,
+      updatedAt: topic.updated_at,
+    };
+  });
+}
+
+async function enrichComments(comments: Record<string, unknown>[], viewerId?: string) {
+  if (comments.length === 0) return [];
+
+  const commentIds = comments.map((c) => c.id as string);
+  const posterIds = Array.from(
+    new Set(comments.filter((c) => c.posted_by).map((c) => c.posted_by as string))
+  );
+
+  const [profilesRes, reactionsRes, mentionsRes] = await Promise.all([
+    posterIds.length
+      ? supabaseAdmin.from("profiles").select("id, first_name, last_name, avatar_url").in("id", posterIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    supabaseAdmin.from("forum_reactions").select("comment_id, reaction, user_id").in("comment_id", commentIds),
+    supabaseAdmin.from("forum_mentions").select("comment_id, mentioned_user_id").in("comment_id", commentIds),
+  ]);
+
+  const profileById = new Map((profilesRes.data ?? []).map((p) => [p.id as string, p]));
+
+  const reactionRowsByComment = new Map<string, { reaction: string; user_id: string }[]>();
+  for (const r of reactionsRes.data ?? []) {
+    const cid = r.comment_id as string;
+    const arr = reactionRowsByComment.get(cid) ?? [];
+    arr.push({ reaction: r.reaction as string, user_id: r.user_id as string });
+    reactionRowsByComment.set(cid, arr);
+  }
+
+  const mentionedIdsByComment = new Map<string, string[]>();
+  for (const m of mentionsRes.data ?? []) {
+    const cid = m.comment_id as string;
+    const arr = mentionedIdsByComment.get(cid) ?? [];
+    arr.push(m.mentioned_user_id as string);
+    mentionedIdsByComment.set(cid, arr);
+  }
+
+  const allMentionedIds = Array.from(new Set(Array.from(mentionedIdsByComment.values()).flat()));
+  const { data: mentionProfiles } = allMentionedIds.length
+    ? await supabaseAdmin.from("profiles").select("id, first_name, last_name").in("id", allMentionedIds)
+    : { data: [] as { id: string; first_name: string | null; last_name: string | null }[] };
+  const mentionProfileById = new Map((mentionProfiles ?? []).map((p) => [p.id, p]));
+
+  return comments.map((comment) => {
+    const cid = comment.id as string;
+    const profile = comment.posted_by ? profileById.get(comment.posted_by as string) ?? null : null;
+    const mentions = (mentionedIdsByComment.get(cid) ?? []).map((id) => {
+      const p = mentionProfileById.get(id);
+      return { id, firstName: p?.first_name ?? null, lastName: p?.last_name ?? null };
+    });
+    const { reactionCounts, myReaction } = buildReactionBreakdown(reactionRowsByComment.get(cid) ?? [], viewerId);
+
+    return {
+      id: comment.id,
+      topicId: comment.topic_id,
+      content: comment.content,
+      postedBy: comment.posted_by,
+      postedByProfile: profile,
+      reactionCounts,
+      myReaction,
+      mentions,
+      createdAt: comment.created_at,
+      updatedAt: comment.updated_at,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +393,7 @@ async function enrichComment(comment: Record<string, unknown>) {
 // ---------------------------------------------------------------------------
 router.get(
   "/forum/topics",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     let query = supabaseAdmin
       .from("forum_topics")
@@ -104,6 +405,9 @@ router.get(
     if (req.query.courseId) {
       query = query.eq("course_id", req.query.courseId as string);
     }
+    if (req.query.programId) {
+      query = query.eq("program_id", req.query.programId as string);
+    }
 
     const { data, error } = await query;
 
@@ -112,7 +416,21 @@ router.get(
       return;
     }
 
-    const topics = await Promise.all((data ?? []).map(enrichTopic));
+    // A course/program-scoped topic is only visible to admins, the
+    // course's teacher, and its actively-enrolled students/staff — a
+    // student shouldn't see another class's forum just by knowing/guessing
+    // its courseId.
+    const visible: Record<string, unknown>[] = [];
+    for (const topic of data ?? []) {
+      const ok = await canAccessForumScope(
+        req,
+        (topic.course_id as string | null) ?? null,
+        (topic.program_id as string | null) ?? null
+      );
+      if (ok) visible.push(topic);
+    }
+
+    const topics = await enrichTopics(visible, req.userId);
     res.json(topics);
   }
 );
@@ -122,7 +440,7 @@ router.get(
 // ---------------------------------------------------------------------------
 router.post(
   "/forum/topics",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     // Role check: only teachers and admins (including super_admin) may create topics
     if (
@@ -134,7 +452,7 @@ router.post(
       return;
     }
 
-    const { courseId, isPinned } = req.body;
+    const { courseId, programId, isPinned, mentionedUserIds } = req.body;
 
     // Content sanitization: trim and enforce length limits
     const title: string = typeof req.body.title === "string" ? req.body.title.trim() : "";
@@ -160,6 +478,16 @@ router.post(
       return;
     }
 
+    // A teacher may only scope a topic to a course/program they actually
+    // teach in — admins can scope to anything in their own school.
+    if ((courseId || programId) && req.userRole === "teacher") {
+      const ok = await canAccessForumScope(req, courseId ?? null, programId ?? null);
+      if (!ok) {
+        res.status(403).json({ error: "You can only post to a class or program you teach" });
+        return;
+      }
+    }
+
     const coverImage = typeof req.body.coverImage === "string" ? req.body.coverImage.trim() : null;
 
     const { data, error } = await supabaseAdmin
@@ -169,6 +497,7 @@ router.post(
         title,
         content: content || null,
         course_id: courseId ?? null,
+        program_id: programId ?? null,
         is_pinned: isPinned ?? false,
         posted_by: req.userId,
         cover_image: coverImage || null,
@@ -181,7 +510,18 @@ router.post(
       return;
     }
 
-    res.status(201).json(await enrichTopic(data));
+    logUsageEvent({ schoolId: req.schoolId!, userId: req.userId, eventType: "forum_post" });
+
+    const validMentionIds = await filterValidMentionIds(mentionedUserIds, req.schoolId);
+    await recordMentions(
+      validMentionIds,
+      { topicId: data.id as string },
+      req.userId,
+      `You were mentioned in: ${title}`,
+      `/forum/topics/${data.id as string}`
+    );
+
+    res.status(201).json(await enrichTopic(data, req.userId));
   }
 );
 
@@ -190,7 +530,7 @@ router.post(
 // ---------------------------------------------------------------------------
 router.get(
   "/forum/topics/:topicId",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { topicId } = req.params;
 
@@ -205,17 +545,28 @@ router.get(
       return;
     }
 
-    const [enrichedTopic, commentsRes, topicReactionsRes] = await Promise.all([
-      enrichTopic(topic),
+    if (req.userRole !== "super_admin" && topic.school_id !== req.schoolId) {
+      res.status(404).json({ error: "Topic not found" });
+      return;
+    }
+
+    const canAccess = await canAccessForumScope(
+      req,
+      (topic.course_id as string | null) ?? null,
+      (topic.program_id as string | null) ?? null
+    );
+    if (!canAccess) {
+      res.status(404).json({ error: "Topic not found" });
+      return;
+    }
+
+    const [enrichedTopic, commentsRes] = await Promise.all([
+      enrichTopic(topic, req.userId),
       supabaseAdmin
         .from("forum_comments")
         .select("*")
         .eq("topic_id", topicId)
         .order("created_at", { ascending: true }),
-      supabaseAdmin
-        .from("forum_reactions")
-        .select("*")
-        .eq("topic_id", topicId),
     ]);
 
     if (commentsRes.error) {
@@ -223,30 +574,11 @@ router.get(
       return;
     }
 
-    const enrichedComments = await Promise.all(
-      (commentsRes.data ?? []).map(enrichComment)
-    );
-
-    // Attach per-comment reactions
-    const commentIds = (commentsRes.data ?? []).map((c) => c.id as string);
-    let commentReactions: Record<string, unknown>[] = [];
-    if (commentIds.length > 0) {
-      const { data: cr } = await supabaseAdmin
-        .from("forum_reactions")
-        .select("*")
-        .in("comment_id", commentIds);
-      commentReactions = cr ?? [];
-    }
-
-    const commentsWithReactions = enrichedComments.map((c) => ({
-      ...c,
-      reactions: commentReactions.filter((r) => r.comment_id === c.id),
-    }));
+    const enrichedComments = await enrichComments(commentsRes.data ?? [], req.userId);
 
     res.json({
       ...enrichedTopic,
-      reactions: topicReactionsRes.data ?? [],
-      comments: commentsWithReactions,
+      comments: enrichedComments,
     });
   }
 );
@@ -260,7 +592,7 @@ router.get(
 // ---------------------------------------------------------------------------
 router.post(
   "/forum/topics/:topicId/comments",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { topicId } = req.params;
 
@@ -283,11 +615,26 @@ router.post(
     // Verify topic exists
     const { data: topic, error: topicError } = await supabaseAdmin
       .from("forum_topics")
-      .select("id, title, posted_by")
+      .select("id, title, posted_by, course_id, program_id, school_id")
       .eq("id", topicId)
       .single();
 
     if (topicError || !topic) {
+      res.status(404).json({ error: "Topic not found" });
+      return;
+    }
+
+    if (req.userRole !== "super_admin" && topic.school_id !== req.schoolId) {
+      res.status(404).json({ error: "Topic not found" });
+      return;
+    }
+
+    const canAccess = await canAccessForumScope(
+      req,
+      (topic.course_id as string | null) ?? null,
+      (topic.program_id as string | null) ?? null
+    );
+    if (!canAccess) {
       res.status(404).json({ error: "Topic not found" });
       return;
     }
@@ -334,7 +681,16 @@ router.post(
       )
     );
 
-    res.status(201).json(await enrichComment(newComment));
+    const validMentionIds = await filterValidMentionIds(req.body.mentionedUserIds, req.schoolId);
+    await recordMentions(
+      validMentionIds,
+      { commentId: newComment.id as string },
+      req.userId,
+      `You were mentioned in a comment on: ${topic.title as string}`,
+      notifLink
+    );
+
+    res.status(201).json(await enrichComment(newComment, req.userId));
   }
 );
 
@@ -343,20 +699,20 @@ router.post(
 // ---------------------------------------------------------------------------
 router.post(
   "/forum/topics/:topicId/react",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { topicId } = req.params;
     const { reaction } = req.body;
 
-    if (!reaction) {
-      res.status(400).json({ error: "reaction is required" });
+    if (!reaction || !REACTION_TYPES.includes(reaction)) {
+      res.status(400).json({ error: `reaction must be one of: ${REACTION_TYPES.join(", ")}` });
       return;
     }
 
     // Verify topic exists and get author
     const { data: topic, error: topicError } = await supabaseAdmin
       .from("forum_topics")
-      .select("id, title, posted_by")
+      .select("id, title, posted_by, course_id, program_id, school_id")
       .eq("id", topicId)
       .single();
 
@@ -365,9 +721,39 @@ router.post(
       return;
     }
 
-    const { data, error } = await supabaseAdmin
+    if (req.userRole !== "super_admin" && topic.school_id !== req.schoolId) {
+      res.status(404).json({ error: "Topic not found" });
+      return;
+    }
+
+    const canAccess = await canAccessForumScope(
+      req,
+      (topic.course_id as string | null) ?? null,
+      (topic.program_id as string | null) ?? null
+    );
+    if (!canAccess) {
+      res.status(404).json({ error: "Topic not found" });
+      return;
+    }
+
+    // Clicking the reaction you already have toggles it off; picking a
+    // different one replaces it — a user only ever has one active
+    // reaction per topic, matching the unique (topic_id, user_id) index.
+    const { data: existing } = await supabaseAdmin
       .from("forum_reactions")
-      .upsert(
+      .select("id, reaction")
+      .eq("topic_id", topicId)
+      .eq("user_id", req.userId ?? "")
+      .maybeSingle();
+
+    if (existing && existing.reaction === reaction) {
+      const { error: deleteError } = await supabaseAdmin.from("forum_reactions").delete().eq("id", existing.id);
+      if (deleteError) {
+        res.status(400).json({ error: deleteError.message });
+        return;
+      }
+    } else {
+      const { error: upsertError } = await supabaseAdmin.from("forum_reactions").upsert(
         {
           topic_id: topicId,
           comment_id: null,
@@ -375,26 +761,30 @@ router.post(
           reaction,
         },
         { onConflict: "topic_id,user_id" }
-      )
-      .select()
-      .single();
-
-    if (error) {
-      res.status(400).json({ error: error.message });
-      return;
-    }
-
-    // Notify topic author if not self
-    const authorId = topic.posted_by as string | null;
-    if (authorId && authorId !== req.userId) {
-      await createNotification(
-        authorId,
-        `Someone reacted to your topic: ${topic.title as string}`,
-        `/forum/topics/${topicId}`
       );
+      if (upsertError) {
+        res.status(400).json({ error: upsertError.message });
+        return;
+      }
+
+      // Notify topic author if not self — only on a new/changed reaction,
+      // not when toggling one off.
+      const authorId = topic.posted_by as string | null;
+      if (authorId && authorId !== req.userId) {
+        await createNotification(
+          authorId,
+          `Someone reacted to your topic: ${topic.title as string}`,
+          `/forum/topics/${topicId}`
+        );
+      }
     }
 
-    res.status(201).json(data);
+    const { data: allReactions } = await supabaseAdmin
+      .from("forum_reactions")
+      .select("reaction, user_id")
+      .eq("topic_id", topicId);
+
+    res.json(buildReactionBreakdown(allReactions ?? [], req.userId));
   }
 );
 
@@ -403,20 +793,20 @@ router.post(
 // ---------------------------------------------------------------------------
 router.post(
   "/forum/comments/:commentId/react",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { commentId } = req.params;
     const { reaction } = req.body;
 
-    if (!reaction) {
-      res.status(400).json({ error: "reaction is required" });
+    if (!reaction || !REACTION_TYPES.includes(reaction)) {
+      res.status(400).json({ error: `reaction must be one of: ${REACTION_TYPES.join(", ")}` });
       return;
     }
 
     // Verify comment exists and get author + topic info
     const { data: comment, error: commentError } = await supabaseAdmin
       .from("forum_comments")
-      .select("id, posted_by, topic_id")
+      .select("id, posted_by, topic_id, forum_topics:topic_id (course_id, program_id, school_id)")
       .eq("id", commentId)
       .single();
 
@@ -425,9 +815,36 @@ router.post(
       return;
     }
 
-    const { data, error } = await supabaseAdmin
+    const parentTopic = comment.forum_topics as unknown as
+      | { course_id: string | null; program_id: string | null; school_id: string | null }
+      | null;
+
+    if (!parentTopic || (req.userRole !== "super_admin" && parentTopic.school_id !== req.schoolId)) {
+      res.status(404).json({ error: "Comment not found" });
+      return;
+    }
+
+    const canAccess = await canAccessForumScope(req, parentTopic.course_id, parentTopic.program_id);
+    if (!canAccess) {
+      res.status(404).json({ error: "Comment not found" });
+      return;
+    }
+
+    const { data: existing } = await supabaseAdmin
       .from("forum_reactions")
-      .upsert(
+      .select("id, reaction")
+      .eq("comment_id", commentId)
+      .eq("user_id", req.userId ?? "")
+      .maybeSingle();
+
+    if (existing && existing.reaction === reaction) {
+      const { error: deleteError } = await supabaseAdmin.from("forum_reactions").delete().eq("id", existing.id);
+      if (deleteError) {
+        res.status(400).json({ error: deleteError.message });
+        return;
+      }
+    } else {
+      const { error: upsertError } = await supabaseAdmin.from("forum_reactions").upsert(
         {
           topic_id: null,
           comment_id: commentId,
@@ -435,26 +852,30 @@ router.post(
           reaction,
         },
         { onConflict: "comment_id,user_id" }
-      )
-      .select()
-      .single();
-
-    if (error) {
-      res.status(400).json({ error: error.message });
-      return;
-    }
-
-    // Notify comment author if not self
-    const authorId = comment.posted_by as string | null;
-    if (authorId && authorId !== req.userId) {
-      await createNotification(
-        authorId,
-        "Someone reacted to your comment",
-        `/forum/topics/${comment.topic_id as string}`
       );
+      if (upsertError) {
+        res.status(400).json({ error: upsertError.message });
+        return;
+      }
+
+      // Notify comment author if not self — only on a new/changed
+      // reaction, not when toggling one off.
+      const authorId = comment.posted_by as string | null;
+      if (authorId && authorId !== req.userId) {
+        await createNotification(
+          authorId,
+          "Someone reacted to your comment",
+          `/forum/topics/${comment.topic_id as string}`
+        );
+      }
     }
 
-    res.status(201).json(data);
+    const { data: allReactions } = await supabaseAdmin
+      .from("forum_reactions")
+      .select("reaction, user_id")
+      .eq("comment_id", commentId);
+
+    res.json(buildReactionBreakdown(allReactions ?? [], req.userId));
   }
 );
 
@@ -463,17 +884,22 @@ router.post(
 // ---------------------------------------------------------------------------
 router.delete(
   "/forum/topics/:topicId",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { topicId } = req.params;
 
     const { data: topic, error: fetchError } = await supabaseAdmin
       .from("forum_topics")
-      .select("id, posted_by")
+      .select("id, posted_by, school_id")
       .eq("id", topicId)
       .single();
 
     if (fetchError || !topic) {
+      res.status(404).json({ error: "Topic not found" });
+      return;
+    }
+
+    if (req.userRole !== "super_admin" && topic.school_id !== req.schoolId) {
       res.status(404).json({ error: "Topic not found" });
       return;
     }
@@ -506,17 +932,23 @@ router.delete(
 // ---------------------------------------------------------------------------
 router.delete(
   "/forum/comments/:commentId",
-  requireAuth,
+  requireAuth, requireSchoolFeature("forum"),
   async (req: AuthenticatedRequest, res): Promise<void> => {
     const { commentId } = req.params;
 
     const { data: comment, error: fetchError } = await supabaseAdmin
       .from("forum_comments")
-      .select("id, posted_by")
+      .select("id, posted_by, forum_topics:topic_id (school_id)")
       .eq("id", commentId)
       .single();
 
     if (fetchError || !comment) {
+      res.status(404).json({ error: "Comment not found" });
+      return;
+    }
+
+    const commentSchoolId = (comment.forum_topics as unknown as { school_id: string | null } | null)?.school_id;
+    if (req.userRole !== "super_admin" && commentSchoolId !== req.schoolId) {
       res.status(404).json({ error: "Comment not found" });
       return;
     }
@@ -540,6 +972,52 @@ router.delete(
     }
 
     res.sendStatus(204);
+  }
+);
+
+// ---------------------------------------------------------------------------
+// GET /forum/mentionable-users?q= — @-mention autocomplete. Any teacher,
+// student, staff, or admin/super_admin in the caller's own school can be
+// tagged, matched by name against the search term.
+// ---------------------------------------------------------------------------
+router.get(
+  "/forum/mentionable-users",
+  requireAuth, requireSchoolFeature("forum"),
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+
+    let query = supabaseAdmin
+      .from("profiles")
+      .select("id, first_name, last_name, role")
+      .eq("school_id", req.schoolId ?? "")
+      .neq("id", req.userId ?? "")
+      .limit(20);
+
+    if (q) {
+      // See users.ts's search route for why this must be stripped down to
+      // plain search characters — PostgREST's .or() filter string treats
+      // ',', '(', ')' as condition/grouping syntax.
+      const safeQ = q.replace(/[^\p{L}\p{N}\s@._-]/gu, "").slice(0, 100);
+      if (safeQ) {
+        query = query.or(`first_name.ilike.%${safeQ}%,last_name.ilike.%${safeQ}%`);
+      }
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.json(
+      (data ?? []).map((p) => ({
+        id: p.id,
+        firstName: p.first_name,
+        lastName: p.last_name,
+        role: p.role,
+      }))
+    );
   }
 );
 

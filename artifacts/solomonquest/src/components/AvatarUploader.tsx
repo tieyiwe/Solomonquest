@@ -12,12 +12,13 @@ import Avatar from "@/components/Avatar";
 const DEFAULT_AVATARS = ["🦁", "🐻", "🦊", "🐼", "🦋", "🌟", "🎯", "🚀"];
 
 const BG_COLORS = [
-  "bg-indigo-500",
-  "bg-purple-500",
-  "bg-blue-500",
-  "bg-green-500",
-  "bg-orange-500",
-  "bg-red-500",
+  // Categorical identity colors (same in light and dark; all >= 4.5:1 with white initials)
+  "bg-indigo-600",
+  "bg-violet-600",
+  "bg-sky-700",
+  "bg-emerald-700",
+  "bg-amber-700",
+  "bg-rose-600",
   "bg-pink-500",
   "bg-teal-500",
 ];
@@ -104,7 +105,7 @@ export default function AvatarUploader({ open, onOpenChange, user, onSaved }: Av
 
           {/* Default avatar grid */}
           <div className="w-full">
-            <p className="text-sm font-medium text-gray-700 mb-2">Choose a Default Avatar</p>
+            <p className="text-sm font-medium text-foreground/80 mb-2">Choose a Default Avatar</p>
             <div className="grid grid-cols-4 gap-3">
               {DEFAULT_AVATARS.map((emoji, idx) => (
                 <button
@@ -118,7 +119,7 @@ export default function AvatarUploader({ open, onOpenChange, user, onSaved }: Av
                   className={`flex items-center justify-center rounded-full text-2xl w-14 h-14 mx-auto transition-all
                     ${BG_COLORS[idx]}
                     ${selectedDefaultIndex === idx
-                      ? "ring-4 ring-indigo-500 ring-offset-2 scale-110"
+                      ? "ring-4 ring-primary ring-offset-2 scale-110"
                       : "opacity-80 hover:opacity-100 hover:scale-105"
                     }`}
                   aria-label={`Default avatar ${idx + 1}`}
@@ -131,8 +132,8 @@ export default function AvatarUploader({ open, onOpenChange, user, onSaved }: Av
 
           {/* Custom image URL */}
           <div className="w-full">
-            <p className="text-sm font-medium text-gray-700 mb-1">Custom Image URL</p>
-            <p className="text-xs text-gray-500 mb-2">
+            <p className="text-sm font-medium text-foreground/80 mb-1">Custom Image URL</p>
+            <p className="text-xs text-muted-foreground mb-2">
               Upload your image to Supabase Storage and paste the public URL here.
             </p>
             <div className="flex gap-2">
@@ -159,7 +160,7 @@ export default function AvatarUploader({ open, onOpenChange, user, onSaved }: Av
           </div>
 
           {error && (
-            <p className="text-sm text-red-600 w-full">{error}</p>
+            <p className="text-sm text-destructive w-full">{error}</p>
           )}
 
           {/* Actions */}

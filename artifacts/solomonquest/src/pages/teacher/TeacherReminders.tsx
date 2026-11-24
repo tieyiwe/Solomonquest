@@ -37,6 +37,7 @@ import {
 import { ArrowLeft, Bell, Loader2, Trash2, Search } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { EmptyState } from "@/components/common/States";
 
 interface Reminder {
   id: string;
@@ -242,7 +243,7 @@ export default function TeacherReminders() {
     <TeacherLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/teacher">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
@@ -251,7 +252,7 @@ export default function TeacherReminders() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Reminders</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Reminders</h1>
           <p className="text-muted-foreground mt-0.5">
             Schedule reminders to students in your courses.
           </p>
@@ -320,7 +321,7 @@ export default function TeacherReminders() {
                     />
                   </div>
                   {selectedStudentId && (
-                    <p className="text-sm text-emerald-600 font-medium">
+                    <p className="text-sm text-success font-medium">
                       Selected: {students.find((s) => s.id === selectedStudentId)
                         ? `${students.find((s) => s.id === selectedStudentId)?.firstName ?? ""} ${students.find((s) => s.id === selectedStudentId)?.lastName ?? ""}`.trim()
                         : "Student selected"}
@@ -337,7 +338,7 @@ export default function TeacherReminders() {
                         <button
                           key={s.id}
                           type="button"
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
                           onClick={() => {
                             setSelectedStudentId(s.id);
                             setStudentSearch(`${s.firstName ?? ""} ${s.lastName ?? ""}`.trim() || s.email || "");
@@ -355,8 +356,8 @@ export default function TeacherReminders() {
 
               {/* Message */}
               <div className="space-y-1.5">
-                <Label>Message</Label>
-                <Textarea
+                <Label htmlFor="teacherreminders-message">Message</Label>
+                <Textarea id="teacherreminders-message"
                   placeholder="Enter reminder message..."
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -366,8 +367,8 @@ export default function TeacherReminders() {
 
               {/* Send At */}
               <div className="space-y-1.5">
-                <Label>Send At</Label>
-                <Input
+                <Label htmlFor="teacherreminders-send-at">Send At</Label>
+                <Input id="teacherreminders-send-at"
                   type="datetime-local"
                   value={sendAt}
                   min={minDateTime}
@@ -396,14 +397,16 @@ export default function TeacherReminders() {
                 ))}
               </div>
             ) : reminders.length === 0 ? (
-              <div className="text-center py-16 text-muted-foreground">
-                <Bell className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p className="text-sm">No reminders scheduled yet.</p>
-              </div>
+              <EmptyState
+                icon={Bell}
+                title="No reminders scheduled"
+                description="Scheduled reminders are sent automatically to the people you choose."
+                className="m-4"
+              />
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50">
+                  <TableRow className="bg-muted/30">
                     <TableHead className="font-semibold">Target</TableHead>
                     <TableHead className="font-semibold">Course</TableHead>
                     <TableHead className="font-semibold">Message</TableHead>
@@ -414,7 +417,7 @@ export default function TeacherReminders() {
                 </TableHeader>
                 <TableBody>
                   {reminders.map((r) => (
-                    <TableRow key={r.id} className="hover:bg-gray-50/50">
+                    <TableRow key={r.id} className="hover:bg-muted/30">
                       <TableCell className="font-medium text-sm">{formatTarget(r)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{r.courseName ?? "-"}</TableCell>
                       <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
@@ -425,15 +428,15 @@ export default function TeacherReminders() {
                       </TableCell>
                       <TableCell>
                         {r.sent ? (
-                          <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 border">Sent</Badge>
+                          <Badge className="bg-success/10 text-success border-success/30 border">Sent</Badge>
                         ) : (
-                          <Badge className="bg-yellow-100 text-yellow-700 border-yellow-300 border">Pending</Badge>
+                          <Badge className="bg-warning/10 text-warning border-warning/30 border">Pending</Badge>
                         )}
                       </TableCell>
                       <TableCell>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-600">
+                            <Button aria-label="Delete" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>
@@ -447,7 +450,7 @@ export default function TeacherReminders() {
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction
-                                className="bg-red-600 hover:bg-red-700"
+                                className="bg-destructive hover:bg-destructive/90"
                                 onClick={() => handleDelete(r.id)}
                               >
                                 Delete

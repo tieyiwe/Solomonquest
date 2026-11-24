@@ -11,6 +11,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getGetMeQueryKey } from "@workspace/api-client-react";
+import { acceptInvite, PENDING_INVITE_KEY } from "@/lib/joinSchool";
+import { dashboardPathForRole } from "@/lib/roleHome";
 
 const schema = z.object({
   firstName: z.string().min(2, "First name is required"),
@@ -25,6 +29,9 @@ interface InviteDetails {
   email: string;
   role: string;
   schoolName: string;
+  /** Set when the invite came from a CSV bulk import. */
+  firstName?: string | null;
+  lastName?: string | null;
 }
 
 export default function AcceptInvitePage() {
@@ -36,6 +43,7 @@ export default function AcceptInvitePage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!token) return;
@@ -54,6 +62,13 @@ export default function AcceptInvitePage() {
     defaultValues: { firstName: "", lastName: "", phone: "", password: "" },
   });
 
+  // Pre-fill the name an admin supplied in a bulk import (still editable).
+  useEffect(() => {
+    if (invite?.firstName || invite?.lastName) {
+      form.reset({ ...form.getValues(), firstName: invite.firstName ?? "", lastName: invite.lastName ?? "" });
+    }
+  }, [invite]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function onSubmit(data: FormValues) {
     if (!invite) return;
     setSubmitting(true);
@@ -66,33 +81,44 @@ export default function AcceptInvitePage() {
             first_name: data.firstName,
             last_name: data.lastName,
             phone: data.phone,
+            // Lets /onboarding/setup finish accepting after email
+            // confirmation, when signUp returns no session to accept with.
+            [PENDING_INVITE_KEY]: token,
           },
         },
       });
 
-      if (signUpError) throw signUpError;
-      if (!signUpData.session) throw new Error("Please check your email to confirm your account, then log in.");
+      let session = signUpData?.session ?? null;
+      if (signUpError) {
+        // Someone who already has an account (e.g. a parent invited to a
+        // second child's school) couldn't accept at all — signUp just
+        // errored. Sign them in with the password they typed instead.
+        if (!/already registered|already exists/i.test(signUpError.message)) throw signUpError;
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: invite.email,
+          password: data.password,
+        });
+        if (signInError) throw new Error("An account with this email already exists — enter its password to accept the invitation.");
+        session = signInData.session;
+      }
+      if (!session) {
+        toast.success("Check your email to confirm your account, then log in — your invitation will be applied automatically.");
+        setLocation("/auth/login");
+        return;
+      }
 
       // Accept the invitation (sets role + school_id on profile)
-      const res = await fetch(`/api/invitations/accept/${token}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${signUpData.session.access_token}`,
-        },
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Failed to accept invitation");
+      const result = await acceptInvite(token, session.access_token);
+      if ("error" in result) throw new Error(result.error);
+
+      // The /auth/me profile cached at sign-in has no role/school yet;
+      // without a refetch ProtectedRoute bounced the new user to "/".
+      await queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
 
       setSuccess(true);
-      toast.success("Account created! Welcome to " + invite.schoolName);
+      toast.success("Welcome to " + invite.schoolName);
 
-      setTimeout(() => {
-        const role = invite.role;
-        if (role === "teacher") setLocation("/dashboard/teacher");
-        else if (role === "staff" || role === "student") setLocation("/dashboard/student");
-        else setLocation("/dashboard");
-      }, 1500);
+      setTimeout(() => setLocation(dashboardPathForRole(result.role)), 1500);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -130,7 +156,7 @@ export default function AcceptInvitePage() {
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="w-full max-w-md text-center">
           <CardHeader>
-            <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-2" />
+            <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-2" />
             <CardTitle>Welcome aboard!</CardTitle>
             <CardDescription>Taking you to your dashboard...</CardDescription>
           </CardHeader>

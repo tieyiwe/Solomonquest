@@ -27,7 +27,12 @@ router.post(
       return;
     }
 
-    if (req.file.mimetype !== "application/pdf") {
+    // The mimetype is whatever the client claimed; also require the PDF
+    // magic bytes so arbitrary uploads never reach the parser.
+    if (
+      req.file.mimetype !== "application/pdf" ||
+      req.file.buffer.subarray(0, 5).toString("latin1") !== "%PDF-"
+    ) {
       res.status(400).json({ error: "Only PDF files are supported" });
       return;
     }
@@ -82,9 +87,17 @@ router.post(
 
       const buffer = await Packer.toBuffer(doc);
       const filename = `${originalName}.docx`;
+      // The raw upload name went straight into the header: Node throws on
+      // any non-Latin-1 character (so "Résumé.pdf" 500'd after the work was
+      // done) and a quote broke the header value. Send an ASCII fallback
+      // plus the RFC 5987 UTF-8 form.
+      const asciiName = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
 
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+      );
       res.send(buffer);
     } catch (err: any) {
       res.status(500).json({ error: "Failed to convert PDF: " + (err.message ?? "Unknown error") });

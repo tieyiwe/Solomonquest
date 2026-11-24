@@ -1,18 +1,21 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { requireSchoolFeature } from "../lib/featureFlags";
+import { assertChannelMember } from "./chat";
+import { logUsageEvent } from "../lib/usageTracking";
 
 const router: IRouter = Router();
 
 // POST /video/sessions - start a session (teacher only)
-router.post("/video/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/video/sessions", requireAuth, requireSchoolFeature("video_calls"), async (req: AuthenticatedRequest, res) => {
   try {
     const { course_id } = req.body;
     const userId = req.user!.id;
 
     const { data: course, error: courseError } = await supabaseAdmin
       .from("courses")
-      .select("id, name, teacher_id")
+      .select("id, title, teacher_id")
       .eq("id", course_id)
       .single();
 
@@ -24,27 +27,33 @@ router.post("/video/sessions", requireAuth, async (req: AuthenticatedRequest, re
       return res.status(403).json({ error: "Only the teacher can start a video session" });
     }
 
-    const jitsi_room = "solomonquest-" + course_id.slice(0, 8) + "-" + Date.now();
+    const room_name = "solomonquest-" + course_id.slice(0, 8) + "-" + Date.now();
 
     const { data: session, error: sessionError } = await supabaseAdmin
       .from("video_sessions")
       .insert({
         course_id,
-        jitsi_room,
-        status: "active",
+        title: `Live class: ${course.title}`,
+        room_name,
+        is_active: true,
+        created_by: userId,
+        started_by: userId,
         started_at: new Date().toISOString(),
       })
-      .select("id, jitsi_room, course_id, status, started_at")
+      .select("id, room_name, course_id, is_active, started_at")
       .single();
 
     if (sessionError) {
       return res.status(500).json({ error: sessionError.message });
     }
 
+    logUsageEvent({ schoolId: req.schoolId!, userId, eventType: "video_call" });
+
     const { data: enrollments, error: enrollError } = await supabaseAdmin
-      .from("enrollments")
-      .select("user_id")
-      .eq("course_id", course_id);
+      .from("course_enrollments")
+      .select("student_id")
+      .eq("course_id", course_id)
+      .eq("status", "active");
 
     if (enrollError) {
       return res.status(500).json({ error: enrollError.message });
@@ -52,11 +61,13 @@ router.post("/video/sessions", requireAuth, async (req: AuthenticatedRequest, re
 
     if (enrollments && enrollments.length > 0) {
       const notifications = enrollments.map((enrollment) => ({
-        user_id: enrollment.user_id,
+        user_id: enrollment.student_id,
         type: "video_session",
-        message: `Live class started for ${course.name}. Click to join.`,
+        message: `Live class started for ${course.title}. Click to join.`,
+        // "Click to join" had nowhere to go — the notification had no link.
+        link: `/dashboard/student/courses/${course_id}`,
         metadata: {
-          jitsi_room: session.jitsi_room,
+          room_name: session.room_name,
           session_id: session.id,
         },
       }));
@@ -77,7 +88,7 @@ router.post("/video/sessions", requireAuth, async (req: AuthenticatedRequest, re
 });
 
 // GET /video/sessions?course_id=X - get active session for a course (any enrolled user)
-router.get("/video/sessions", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/video/sessions", requireAuth, requireSchoolFeature("video_calls"), async (req: AuthenticatedRequest, res) => {
   try {
     const { course_id } = req.query;
     const userId = req.user!.id;
@@ -100,11 +111,11 @@ router.get("/video/sessions", requireAuth, async (req: AuthenticatedRequest, res
 
     if (!isTeacher) {
       const { data: enrollment, error: enrollError } = await supabaseAdmin
-        .from("enrollments")
-        .select("id")
+        .from("course_enrollments")
+        .select("student_id")
         .eq("course_id", course_id as string)
-        .eq("user_id", userId)
-        .single();
+        .eq("student_id", userId)
+        .maybeSingle();
 
       if (enrollError || !enrollment) {
         return res.status(403).json({ error: "Access denied: not enrolled in this course" });
@@ -113,9 +124,9 @@ router.get("/video/sessions", requireAuth, async (req: AuthenticatedRequest, res
 
     const { data: session, error: sessionError } = await supabaseAdmin
       .from("video_sessions")
-      .select("id, jitsi_room, course_id, status, started_at")
+      .select("id, room_name, course_id, is_active, started_at")
       .eq("course_id", course_id as string)
-      .eq("status", "active")
+      .eq("is_active", true)
       .order("started_at", { ascending: false })
       .limit(1)
       .single();
@@ -131,7 +142,7 @@ router.get("/video/sessions", requireAuth, async (req: AuthenticatedRequest, res
 });
 
 // PUT /video/sessions/:id/end - end session (teacher only)
-router.put("/video/sessions/:id/end", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/video/sessions/:id/end", requireAuth, requireSchoolFeature("video_calls"), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
@@ -153,9 +164,9 @@ router.put("/video/sessions/:id/end", requireAuth, async (req: AuthenticatedRequ
 
     const { data: updated, error: updateError } = await supabaseAdmin
       .from("video_sessions")
-      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .update({ is_active: false, ended_at: new Date().toISOString() })
       .eq("id", id)
-      .select("id, jitsi_room, course_id, status, started_at, ended_at")
+      .select("id, room_name, course_id, is_active, started_at, ended_at")
       .single();
 
     if (updateError) {
@@ -168,12 +179,43 @@ router.put("/video/sessions/:id/end", requireAuth, async (req: AuthenticatedRequ
   }
 });
 
-// POST /video/chat-calls - start group call in chat channel
-router.post("/video/chat-calls", requireAuth, async (req: AuthenticatedRequest, res) => {
+// POST /video/chat-calls - start (or join) the group call for a chat channel
+router.post("/video/chat-calls", requireAuth, requireSchoolFeature("video_calls"), async (req: AuthenticatedRequest, res) => {
   try {
     const { channel_id } = req.body;
 
-    const jitsi_room = "solomonquest-chat-" + channel_id.slice(0, 8) + "-" + Date.now();
+    if (!channel_id) {
+      return res.status(400).json({ error: "channel_id is required" });
+    }
+
+    // Security: this had no scoping — any authenticated user could POST an
+    // arbitrary channel_id and get back that channel's Jitsi room name, which
+    // is the only thing needed to walk into a private conversation's video
+    // call. Only members of the channel may start or join its call.
+    if (!(await assertChannelMember(String(channel_id), req.userId!))) {
+      return res.status(403).json({ error: "You are not a member of this channel" });
+    }
+
+    // If someone already started a call in this channel, reuse the same
+    // Jitsi room instead of minting a new one — otherwise each participant
+    // who clicks "Start Video Call" lands in their own separate room and
+    // never actually meets the other person.
+    const { data: existingCall } = await supabaseAdmin
+      .from("chat_calls")
+      .select("id, jitsi_room, channel_id, status, started_at, started_by")
+      .eq("channel_id", channel_id)
+      .eq("status", "active")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingCall) {
+      return res.status(200).json(existingCall);
+    }
+
+    // Stable, deterministic room name per channel (no timestamp) so it's
+    // reconstructible even if the chat_calls row is missing for any reason.
+    const jitsi_room = "solomonquest-chat-" + String(channel_id).slice(0, 8);
 
     const { data: call, error: callError } = await supabaseAdmin
       .from("chat_calls")
@@ -182,8 +224,9 @@ router.post("/video/chat-calls", requireAuth, async (req: AuthenticatedRequest, 
         jitsi_room,
         status: "active",
         started_at: new Date().toISOString(),
+        started_by: req.userId,
       })
-      .select("id, jitsi_room, channel_id, status, started_at")
+      .select("id, jitsi_room, channel_id, status, started_at, started_by")
       .single();
 
     if (callError) {
@@ -197,9 +240,27 @@ router.post("/video/chat-calls", requireAuth, async (req: AuthenticatedRequest, 
 });
 
 // PUT /video/chat-calls/:id/end - end chat call
-router.put("/video/chat-calls/:id/end", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/video/chat-calls/:id/end", requireAuth, requireSchoolFeature("video_calls"), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
+
+    // Security: ending a call was completely unscoped — any authenticated user
+    // could hang up any school's call by id, and the response handed back the
+    // call's jitsi_room (the join secret) and channel_id. Verify the caller is
+    // a member of the call's channel first.
+    const { data: call } = await supabaseAdmin
+      .from("chat_calls")
+      .select("channel_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!call) {
+      return res.status(404).json({ error: "Chat call not found" });
+    }
+
+    if (!(await assertChannelMember(call.channel_id as string, req.userId!))) {
+      return res.status(403).json({ error: "You are not a member of this channel" });
+    }
 
     const { data: updated, error: updateError } = await supabaseAdmin
       .from("chat_calls")

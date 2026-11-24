@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
 import { useParams, Link } from "wouter";
 import { StudentLayout } from "@/components/layout/StudentLayout";
 import { useAuth } from "@/contexts/AuthContext";
@@ -6,6 +7,7 @@ import {
   useGetCourse,
   useListAssignments,
   useSubmitAssignment,
+  useGetCourseStudents,
   getListAssignmentsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -38,11 +40,19 @@ import {
   Loader2,
   FileQuestion,
   AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
+
+function safeFormat(value: string | null | undefined, fmt: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return isValid(date) ? format(date, fmt) : null;
+}
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { StudentModulesView } from "@/components/modules/StudentModulesView";
 
 interface Resource {
   id: string;
@@ -125,9 +135,9 @@ function ResourcesTab({ courseId }: { courseId: string }) {
               {resource.description && (
                 <p className="text-sm text-muted-foreground truncate">{resource.description}</p>
               )}
-              {resource.uploadedAt && (
+              {safeFormat(resource.uploadedAt, "MMM d, yyyy") && (
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Uploaded {format(new Date(resource.uploadedAt), "MMM d, yyyy")}
+                  Uploaded {safeFormat(resource.uploadedAt, "MMM d, yyyy")}
                 </p>
               )}
             </div>
@@ -145,6 +155,49 @@ function ResourcesTab({ courseId }: { courseId: string }) {
             )}
           </CardContent>
         </Card>
+      ))}
+    </div>
+  );
+}
+
+function ClassmatesTab({ courseId }: { courseId: string }) {
+  const { user } = useAuth();
+  const { data: students, isLoading } = useGetCourseStudents(courseId, {
+    query: { enabled: !!courseId },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-14 w-full rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  const classmates = (students ?? []).filter((s) => s.id !== user?.id);
+
+  if (classmates.length === 0) {
+    return (
+      <div className="text-center py-12 border border-dashed rounded-lg">
+        <Users className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+        <p className="text-muted-foreground">No other students enrolled yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {classmates.map((s) => (
+        <div key={s.id} className="flex items-center gap-3 rounded-lg border p-3">
+          <div className="h-9 w-9 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center shrink-0">
+            {`${s.firstName?.[0] ?? ""}${s.lastName?.[0] ?? ""}`.toUpperCase() || "S"}
+          </div>
+          <span className="text-sm font-medium">
+            {s.firstName} {s.lastName}
+          </span>
+        </div>
       ))}
     </div>
   );
@@ -194,7 +247,9 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
     );
   }
 
-  if (!assignments || assignments.length === 0) {
+  const visibleAssignments = (assignments ?? []).filter((a: any) => a.isPublished !== false);
+
+  if (visibleAssignments.length === 0) {
     return (
       <Card className="border-dashed bg-muted/20">
         <CardContent className="flex flex-col items-center justify-center p-12 text-center">
@@ -211,46 +266,84 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
   return (
     <>
       <div className="space-y-3">
-        {assignments.map((assignment) => (
-          <Card
-            key={assignment.id}
-            className="hover:border-primary/40 transition-colors cursor-pointer"
-            onClick={() => {
-              setSelectedAssignmentId(assignment.id);
-              setSubmissionContent("");
-            }}
-          >
-            <CardContent className="flex items-start gap-4 p-4">
-              <div className="h-10 w-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
-                <CheckSquare className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2 flex-wrap">
-                  <p className="font-medium text-foreground">{assignment.title}</p>
-                  {assignment.pointsPossible != null && (
-                    <Badge variant="secondary" className="shrink-0">
-                      {assignment.pointsPossible} pts
-                    </Badge>
+        {visibleAssignments.map((assignment: any) => {
+          const isSubmitted = !!assignment.hasSubmitted;
+          const isOverdue =
+            !isSubmitted && assignment.dueDate && new Date(assignment.dueDate) < new Date();
+
+          return (
+            <Card
+              key={assignment.id}
+              className={cn(
+                "hover:border-primary/40 transition-colors cursor-pointer",
+                isSubmitted && "border-success/30 bg-success/10 ",
+                isOverdue && "border-destructive/30 "
+              )}
+              onClick={() => {
+                setSelectedAssignmentId(assignment.id);
+                setSubmissionContent("");
+              }}
+            >
+              <CardContent className="flex items-start gap-4 p-4">
+                <div
+                  className={cn(
+                    "h-10 w-10 rounded-lg flex items-center justify-center shrink-0",
+                    isSubmitted
+                      ? "bg-success/10 "
+                      : "bg-warning/10 "
+                  )}
+                >
+                  {isSubmitted ? (
+                    <CheckCircle2 className="h-5 w-5 text-success " />
+                  ) : (
+                    <CheckSquare className="h-5 w-5 text-warning " />
                   )}
                 </div>
-                {assignment.description && (
-                  <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                    {assignment.description}
-                  </p>
-                )}
-                {assignment.dueDate && (
-                  <p className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1 mt-1.5 font-medium">
-                    <Calendar className="h-3 w-3" />
-                    Due {format(new Date(assignment.dueDate), "MMM d, yyyy")}
-                  </p>
-                )}
-              </div>
-              <Button size="sm" variant="outline" className="shrink-0">
-                Submit
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <p className="font-medium text-foreground">{assignment.title}</p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {isSubmitted ? (
+                        <Badge className="bg-success hover:bg-success/90 text-success-foreground">
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Completed
+                        </Badge>
+                      ) : isOverdue ? (
+                        <Badge variant="destructive">Overdue</Badge>
+                      ) : (
+                        <Badge variant="secondary">Pending</Badge>
+                      )}
+                      {assignment.pointsPossible != null && (
+                        <Badge variant="outline">{assignment.pointsPossible} pts</Badge>
+                      )}
+                    </div>
+                  </div>
+                  {assignment.description && (
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                      {assignment.description}
+                    </p>
+                  )}
+                  {safeFormat(assignment.dueDate, "MMM d, yyyy") && (
+                    <p
+                      className={cn(
+                        "text-xs flex items-center gap-1 mt-1.5 font-medium",
+                        isOverdue
+                          ? "text-destructive "
+                          : "text-warning "
+                      )}
+                    >
+                      <Calendar className="h-3 w-3" />
+                      Due {safeFormat(assignment.dueDate, "MMM d, yyyy")}
+                    </p>
+                  )}
+                </div>
+                <Button size="sm" variant={isSubmitted ? "outline" : "default"} className="shrink-0">
+                  {isSubmitted ? "View Submission" : "Submit"}
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       <Dialog
@@ -260,10 +353,10 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{selectedAssignment?.title}</DialogTitle>
-            {selectedAssignment?.dueDate && (
-              <p className="text-sm text-orange-600 dark:text-orange-400 flex items-center gap-1 font-medium mt-1">
+            {safeFormat(selectedAssignment?.dueDate, "EEEE, MMMM d, yyyy") && (
+              <p className="text-sm text-warning flex items-center gap-1 font-medium mt-1">
                 <Calendar className="h-3.5 w-3.5" />
-                Due {format(new Date(selectedAssignment.dueDate), "EEEE, MMMM d, yyyy")}
+                Due {safeFormat(selectedAssignment?.dueDate, "EEEE, MMMM d, yyyy")}
               </p>
             )}
           </DialogHeader>
@@ -277,8 +370,18 @@ function AssignmentsTab({ courseId }: { courseId: string }) {
               </p>
             </div>
           )}
+          {(selectedAssignment as any)?.hasSubmitted ? (
+            <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 p-4">
+              <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
+              <p className="text-sm text-foreground">
+                You've already submitted this assignment. You can resubmit below to replace your answer.
+              </p>
+            </div>
+          ) : null}
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground">Your Submission</label>
+            <label className="text-sm font-semibold text-foreground">
+              {(selectedAssignment as any)?.hasSubmitted ? "Resubmit" : "Your Submission"}
+            </label>
             <Textarea
               placeholder="Type your answer or paste a link to your work..."
               className="min-h-[150px] resize-none"
@@ -313,7 +416,7 @@ function QuizzesTab({ courseId }: { courseId: string }) {
   const { data: quizzes, isLoading } = useQuery<Quiz[]>({
     queryKey: ["course-quizzes", courseId],
     queryFn: async () => {
-      const res = await fetch(`/api/courses/${courseId}/quizzes`, {
+      const res = await fetch(`/api/quizzes?course_id=${courseId}`, {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       if (!res.ok) throw new Error("Failed to fetch quizzes");
@@ -351,8 +454,8 @@ function QuizzesTab({ courseId }: { courseId: string }) {
       {quizzes.filter((q) => q.is_published).map((quiz) => (
         <Card key={quiz.id} className="hover:border-primary/40 transition-colors">
           <CardContent className="flex items-center gap-4 p-4">
-            <div className="h-10 w-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-              <FileQuestion className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <div className="h-10 w-10 rounded-lg bg-chart-5/10 flex items-center justify-center shrink-0">
+              <FileQuestion className="h-5 w-5 text-chart-5 " />
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-foreground">{quiz.title}</p>
@@ -369,10 +472,10 @@ function QuizzesTab({ courseId }: { courseId: string }) {
                     {quiz.time_limit_minutes} min
                   </span>
                 )}
-                {quiz.due_date && (
-                  <span className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1 font-medium">
+                {safeFormat(quiz.due_date, "MMM d") && (
+                  <span className="text-xs text-warning flex items-center gap-1 font-medium">
                     <Calendar className="h-3 w-3" />
-                    Due {format(new Date(quiz.due_date), "MMM d")}
+                    Due {safeFormat(quiz.due_date, "MMM d")}
                   </span>
                 )}
               </div>
@@ -397,7 +500,9 @@ function VideoTab({ courseId }: { courseId: string }) {
   const { data: videoSession, isLoading, refetch } = useQuery<VideoSession | null>({
     queryKey: ["course-video", courseId],
     queryFn: async () => {
-      const res = await fetch(`/api/courses/${courseId}/video/active`, {
+      // GET /video/sessions?course_id= returns the active session or null;
+      // /courses/:id/video/active never existed, so this always 404'd.
+      const res = await fetch(`/api/video/sessions?course_id=${encodeURIComponent(courseId)}`, {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       if (res.status === 404) return null;
@@ -405,7 +510,11 @@ function VideoTab({ courseId }: { courseId: string }) {
       return res.json();
     },
     enabled: !!courseId && !!session,
-    refetchInterval: 30000,
+    // A live class starting is a rare, teacher-initiated event, not
+    // something that needs near-real-time detection — this polls every
+    // open student course page, so the interval directly multiplies
+    // sustained query volume.
+    refetchInterval: 5 * 60 * 1000,
   });
 
   if (isLoading) {
@@ -441,20 +550,20 @@ function VideoTab({ courseId }: { courseId: string }) {
 
   return (
     <div className="space-y-4">
-      <Card className="border-green-200 bg-green-50 dark:border-green-900/40 dark:bg-green-900/10">
+      <Card className="border-success/30 bg-success/10  ">
         <CardContent className="flex items-center gap-4 p-4">
-          <div className="h-3 w-3 rounded-full bg-green-500 animate-pulse shrink-0" />
+          <div className="h-3 w-3 rounded-full bg-success animate-pulse shrink-0" />
           <div className="flex-1">
-            <p className="font-semibold text-green-700 dark:text-green-400">Live Class in Progress</p>
-            {videoSession.started_at && (
-              <p className="text-xs text-green-600/70 dark:text-green-400/70">
-                Started {format(new Date(videoSession.started_at), "h:mm a")}
+            <p className="font-semibold text-success ">Live Class in Progress</p>
+            {safeFormat(videoSession.started_at, "h:mm a") && (
+              <p className="text-xs text-success ">
+                Started {safeFormat(videoSession.started_at, "h:mm a")}
               </p>
             )}
           </div>
           <Button
             size="sm"
-            className="bg-green-600 hover:bg-green-700 text-white shrink-0"
+            className="bg-success hover:bg-success/90 text-success-foreground shrink-0"
             onClick={() => setJoining(true)}
           >
             <PlayCircle className="mr-1.5 h-4 w-4" />
@@ -563,11 +672,13 @@ export default function StudentCourseDetail() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="w-full grid grid-cols-5 h-auto p-1">
+          <TabsList className="w-full grid grid-cols-4 sm:grid-cols-7 h-auto p-1 gap-y-1">
             <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
+            <TabsTrigger value="modules" className="text-xs sm:text-sm">Modules</TabsTrigger>
             <TabsTrigger value="resources" className="text-xs sm:text-sm">Resources</TabsTrigger>
             <TabsTrigger value="assignments" className="text-xs sm:text-sm">Assignments</TabsTrigger>
             <TabsTrigger value="quizzes" className="text-xs sm:text-sm">Quizzes</TabsTrigger>
+            <TabsTrigger value="classmates" className="text-xs sm:text-sm">Classmates</TabsTrigger>
             <TabsTrigger value="video" className="text-xs sm:text-sm">Live</TabsTrigger>
           </TabsList>
 
@@ -598,7 +709,7 @@ export default function StudentCourseDetail() {
                 onClick={() => setActiveTab("assignments")}
               >
                 <CardContent className="flex items-center gap-3 p-4">
-                  <CheckSquare className="h-8 w-8 text-orange-500 shrink-0" />
+                  <CheckSquare className="h-8 w-8 text-warning shrink-0" />
                   <div>
                     <p className="font-semibold text-foreground">Assignments</p>
                     <p className="text-xs text-muted-foreground">View and submit work</p>
@@ -610,7 +721,7 @@ export default function StudentCourseDetail() {
                 onClick={() => setActiveTab("quizzes")}
               >
                 <CardContent className="flex items-center gap-3 p-4">
-                  <FileQuestion className="h-8 w-8 text-purple-500 shrink-0" />
+                  <FileQuestion className="h-8 w-8 text-chart-5 shrink-0" />
                   <div>
                     <p className="font-semibold text-foreground">Quizzes</p>
                     <p className="text-xs text-muted-foreground">Take tests and quizzes</p>
@@ -622,7 +733,7 @@ export default function StudentCourseDetail() {
                 onClick={() => setActiveTab("video")}
               >
                 <CardContent className="flex items-center gap-3 p-4">
-                  <Video className="h-8 w-8 text-green-500 shrink-0" />
+                  <Video className="h-8 w-8 text-success shrink-0" />
                   <div>
                     <p className="font-semibold text-foreground">Live Class</p>
                     <p className="text-xs text-muted-foreground">Join video session</p>
@@ -630,6 +741,12 @@ export default function StudentCourseDetail() {
                 </CardContent>
               </Card>
             </div>
+
+            <AnnouncementsPanel courseId={courseId} title="Course announcements" />
+          </TabsContent>
+
+          <TabsContent value="modules" className="mt-6">
+            <StudentModulesView courseId={courseId} onOpenAssignment={() => setActiveTab("assignments")} />
           </TabsContent>
 
           <TabsContent value="resources" className="mt-6">
@@ -642,6 +759,10 @@ export default function StudentCourseDetail() {
 
           <TabsContent value="quizzes" className="mt-6">
             <QuizzesTab courseId={courseId} />
+          </TabsContent>
+
+          <TabsContent value="classmates" className="mt-6">
+            <ClassmatesTab courseId={courseId} />
           </TabsContent>
 
           <TabsContent value="video" className="mt-6">

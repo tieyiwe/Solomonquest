@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { SafeImage, sizedImageUrl } from "@/components/common/SafeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,10 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { Link } from "wouter";
+import { LoadingRows } from "@/components/common/States";
+import { useQueryClient } from "@tanstack/react-query";
+import { getGetMySchoolQueryKey } from "@workspace/api-client-react";
+import { buildSchoolTheme, contrast, hslHex, type Hsl, type ModeTokens } from "@/lib/schoolTheme";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -136,6 +141,39 @@ const BORDER_RADIUS_OPTIONS: { value: "sharp" | "rounded" | "pill"; label: strin
 
 const INTERVAL_OPTIONS = [3, 5, 7, 10];
 
+const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+const isWebUrl = (v: string) => /^https?:\/\/[^\s]+$/i.test(v);
+
+/** Mirrors the server's checks (api-server lib/brandingValidation.ts) so the
+ *  admin hears about a bad value before the request goes out. */
+function brandingProblem(b: Branding): string | null {
+  const colours: [string, string][] = [
+    ["Primary colour", b.primary_color], ["Secondary colour", b.secondary_color],
+    ["Accent colour", b.accent_color], ["Heading text colour", b.heading_text_color],
+    ["Announcement colour", b.announcement_bg_color],
+    ...b.banner_slides.map((s, i) => [`Slide ${i + 1} overlay colour`, s.overlay_color] as [string, string]),
+  ];
+  for (const [label, v] of colours) if (!HEX_RE.test(v)) return `${label} must look like #1a2b3c`;
+  const urls: [string, string][] = [
+    ["Logo", b.logo_url],
+    ...b.banner_slides.map((s, i) => [`Slide ${i + 1} image URL`, s.image_url] as [string, string]),
+    ...b.testimonials.map((t, i) => [`Testimonial ${i + 1} avatar URL`, t.avatar_url] as [string, string]),
+    ["Website", b.social_website], ["Facebook", b.social_facebook], ["Twitter / X", b.social_twitter],
+    ["Instagram", b.social_instagram], ["LinkedIn", b.social_linkedin], ["YouTube", b.social_youtube],
+  ];
+  for (const [label, v] of urls) if (v && !isWebUrl(v)) return `${label} must start with https://`;
+  for (const [i, s] of b.banner_slides.entries()) {
+    if (s.cta_url && !isWebUrl(s.cta_url) && !(s.cta_url.startsWith("/") && !s.cta_url.startsWith("//"))) {
+      return `Slide ${i + 1} button link must start with https:// or /`;
+    }
+  }
+  if (b.custom_css.includes("<")) return "Custom CSS can't contain '<' (HTML tags aren't allowed)";
+  if (/@import/i.test(b.custom_css)) return "Custom CSS can't use @import";
+  return null;
+}
+
 const DEFAULT_BRANDING: Branding = {
   logo_url: "",
   school_name: "",
@@ -158,8 +196,8 @@ const DEFAULT_BRANDING: Branding = {
     auto_advance: true,
     interval_seconds: 5,
   },
-  primary_color: "#4f46e5",
-  secondary_color: "#7c3aed",
+  primary_color: "#141d33",
+  secondary_color: "#c9a054",
   accent_color: "#f59e0b",
   heading_text_color: "#1f2937",
   heading_font: "Inter",
@@ -232,12 +270,12 @@ function ColorPickerRow({
 }) {
   return (
     <div className="flex items-center gap-3 mb-4">
-      <label className="text-sm font-medium w-44 shrink-0 text-gray-700">{label}</label>
+      <label className="text-sm font-medium w-44 shrink-0 text-foreground/80">{label}</label>
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-10 h-10 rounded cursor-pointer border border-gray-200"
+        className="w-10 h-10 rounded cursor-pointer border border-border"
       />
       <Input
         value={value}
@@ -286,24 +324,24 @@ function SlugField({
 
   return (
     <div>
-      <Label className="text-sm font-medium text-gray-700 mb-1 block">URL Slug</Label>
+      <Label htmlFor="adminschoolbranding-url-slug" className="text-sm font-medium text-foreground/80 mb-1 block">URL Slug</Label>
       <div className="flex items-center gap-2">
-        <div className="text-sm text-gray-500 whitespace-nowrap">solomonquest.app/schools/</div>
+        <div className="text-sm text-muted-foreground whitespace-nowrap">solomonquest.app/schools/</div>
         <div className="relative flex-1">
-          <Input
+          <Input id="adminschoolbranding-url-slug"
             value={value}
             onChange={(e) => handleChange(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
             placeholder="my-school"
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2">
-            {status === "checking" && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
-            {status === "available" && <span className="text-green-500 text-lg">✓</span>}
-            {status === "taken" && <span className="text-red-500 text-lg">✗</span>}
+            {status === "checking" && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+            {status === "available" && <span className="text-success text-lg">✓</span>}
+            {status === "taken" && <span className="text-destructive text-lg">✗</span>}
           </div>
         </div>
       </div>
-      {status === "available" && <p className="text-xs text-green-600 mt-1">Slug is available!</p>}
-      {status === "taken" && <p className="text-xs text-red-500 mt-1">This slug is already taken.</p>}
+      {status === "available" && <p className="text-xs text-success mt-1">Slug is available!</p>}
+      {status === "taken" && <p className="text-xs text-destructive mt-1">This slug is already taken.</p>}
     </div>
   );
 }
@@ -318,12 +356,14 @@ function LogoUploadButton({ onUploaded, schoolId }: { onUploaded: (url: string) 
     const file = e.target.files?.[0];
     if (!file || !schoolId) return;
     if (file.size > 2 * 1024 * 1024) { toast.error("File must be under 2 MB"); return; }
+    // The school-assets bucket only accepts these (storage-buckets.sql).
+    if (!LOGO_TYPES.includes(file.type)) { toast.error("Logo must be a PNG, JPG, WebP or GIF image"); return; }
 
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop() ?? "png";
+      const ext = ({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" } as Record<string, string>)[file.type];
       const path = `school-logos/${schoolId}/logo.${ext}`;
-      const { error } = await supabase.storage.from("school-assets").upload(path, file, { upsert: true });
+      const { error } = await supabase.storage.from("school-assets").upload(path, file, { upsert: true, contentType: file.type });
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from("school-assets").getPublicUrl(path);
       onUploaded(publicUrl + `?v=${Date.now()}`);
@@ -338,7 +378,7 @@ function LogoUploadButton({ onUploaded, schoolId }: { onUploaded: (url: string) 
 
   return (
     <>
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <input ref={inputRef} type="file" accept={LOGO_TYPES.join(",")} className="hidden" onChange={handleFile} />
       <Button
         type="button"
         variant="outline"
@@ -353,7 +393,280 @@ function LogoUploadButton({ onUploaded, schoolId }: { onUploaded: (url: string) 
   );
 }
 
+// ─── Preview in app ───────────────────────────────────────────────────────────
+
+const hsl = (c: Hsl) => `hsl(${Math.round(c[0])} ${Math.round(c[1])}% ${Math.round(c[2])}%)`;
+
+function MiniApp({ t, dark, radius, logoUrl, name }: { t: ModeTokens; dark: boolean; radius: string; logoUrl: string; name: string }) {
+  const page: Hsl = dark ? [222, 38, 6] : [40, 30, 98];
+  const card: Hsl = dark ? [222, 32, 9] : [0, 0, 100];
+  const text: Hsl = dark ? [40, 20, 93] : [222, 35, 11];
+  const initial = (
+    <span className="h-6 w-6 rounded-md flex items-center justify-center text-[11px] font-bold shrink-0"
+      style={{ background: hsl(t.sidebarPrimary), color: hsl(t.sidebarPrimaryFg) }}>
+      {(name || "S")[0].toUpperCase()}
+    </span>
+  );
+  return (
+    <div className="flex overflow-hidden border border-border text-[11px]" style={{ borderRadius: radius === "0rem" ? 0 : 10, background: hsl(page) }}
+      data-testid={dark ? "preview-dark" : "preview-light"}>
+      <div className="w-28 shrink-0 p-2 space-y-1" style={{ background: hsl(t.sidebar), color: hsl(t.sidebarFg) }}>
+        <div className="flex items-center gap-1.5 pb-2 mb-1 border-b" style={{ borderColor: hsl([t.sidebar[0], t.sidebar[1], t.sidebar[2] + 8]) }}>
+          {logoUrl ? (
+            <SafeImage src={logoUrl} alt="" className="h-6 w-6 rounded-md bg-white object-contain p-0.5 shrink-0" fallback={initial} />
+          ) : initial}
+          <span className="truncate font-semibold" style={{ color: hsl(t.sidebarAccentFg) }}>{name || "Your school"}</span>
+        </div>
+        <div className="relative flex items-center gap-1.5 px-2 py-1 rounded-md font-semibold"
+          style={{ background: hsl(t.sidebarAccent), color: hsl(t.sidebarAccentFg) }}>
+          <span className="absolute left-0 top-1 bottom-1 w-[3px] rounded-r-full" style={{ background: hsl(t.sidebarPrimary) }} />
+          <BookOpen className="h-3 w-3" style={{ color: hsl(t.sidebarPrimary) }} /> Overview
+        </div>
+        <div className="flex items-center gap-1.5 px-2 py-1 opacity-75"><Clock className="h-3 w-3" /> Calendar</div>
+        <div className="flex items-center gap-1.5 px-2 py-1 opacity-75"><Award className="h-3 w-3" /> Grades</div>
+      </div>
+      <div className="flex-1 p-3 space-y-2 min-w-0" style={{ color: hsl(text) }}>
+        <p className="font-semibold">{dark ? "Dark mode" : "Light mode"}</p>
+        <div className="p-2 border" style={{ background: hsl(card), borderRadius: radius, borderColor: dark ? "hsl(222 22% 16%)" : "hsl(36 16% 88%)" }}>
+          <p className="mb-2">Welcome back! <span className="underline font-medium" style={{ color: hsl(t.primary) }}>View courses</span></p>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="px-2.5 py-1 font-medium" style={{ background: hsl(t.primary), color: hsl(t.primaryFg), borderRadius: radius }}>Primary button</span>
+            <span className="px-2 py-1 font-medium" style={{ background: hsl(t.gold), color: hsl(t.goldFg), borderRadius: radius }}>Badge</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InAppPreview({ primary, accent, radius, logoUrl, name }: {
+  primary: string; accent: string; radius: Branding["border_radius"]; logoUrl: string; name: string;
+}) {
+  const theme = buildSchoolTheme({ primary, accent, radius });
+  return (
+    <div className="border-t border-border pt-4" data-testid="in-app-preview">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-1">Preview in app</h3>
+      <p className="text-xs text-muted-foreground mb-3">
+        How your students, teachers and parents will see your colours on their dashboards.
+      </p>
+      {!theme ? (
+        <p className="text-xs text-destructive">Enter the primary colour as #RRGGBB to see the preview.</p>
+      ) : (
+        <>
+          <div className="space-y-2">
+            <MiniApp t={theme.light} dark={false} radius={theme.radius} logoUrl={logoUrl} name={name} />
+            <MiniApp t={theme.dark} dark radius={theme.radius} logoUrl={logoUrl} name={name} />
+          </div>
+          {theme.warnings.length > 0 && (
+            <div role="status" data-testid="contrast-warning" className="mt-3 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning space-y-1">
+              <p className="font-semibold">Adjusted for readability</p>
+              {theme.warnings.map((w) => <p key={w}>{w}</p>)}
+              <p>
+                Contrast now: buttons {contrast(theme.light.primary, theme.light.primaryFg).toFixed(1)}:1 (light),{" "}
+                {contrast(theme.dark.primary, theme.dark.primaryFg).toFixed(1)}:1 (dark). Your public page still uses {hslHex(theme.light.primary) === primary.toLowerCase() ? "this colour" : primary} as chosen.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
+
+interface DnsRecord {
+  type: string;
+  host: string;
+  value: string;
+  note: string;
+}
+
+type DomainStatus = "unset" | "requested" | "approved" | "verified" | "failed";
+
+function DomainTab({ schoolId }: { schoolId: string }) {
+  const [domain, setDomain] = useState("");
+  const [status, setStatus] = useState<DomainStatus>("unset");
+  const [dnsRecords, setDnsRecords] = useState<DnsRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+
+  const load = useCallback(() => {
+    if (!schoolId) return;
+    apiFetch(`/api/schools/${schoolId}/custom-domain`)
+      .then((r) => r.json())
+      .then((data) => {
+        setDomain(data.domain ?? "");
+        setStatus((data.status as DomainStatus) ?? "unset");
+        setDnsRecords(data.dnsRecords ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [schoolId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSubmitRequest = async () => {
+    if (!domain.trim()) {
+      toast.error("Enter a domain first, e.g. school.edu");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/api/schools/${schoolId}/custom-domain/request`, {
+        method: "POST",
+        body: JSON.stringify({ domain: domain.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to submit domain request");
+      setStatus("requested");
+      toast.success("Domain request submitted — we'll notify you once it's approved");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to submit domain request");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    setVerifying(true);
+    try {
+      const res = await apiFetch(`/api/schools/${schoolId}/custom-domain/verify`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.verified) throw new Error(data.error || "Verification failed");
+      setStatus("verified");
+      toast.success("Domain verified! Your custom domain is now connected.");
+    } catch (err: any) {
+      setStatus("failed");
+      toast.error(err.message || "Verification failed");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/api/schools/${schoolId}/custom-domain`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to disconnect domain");
+      setDomain("");
+      setStatus("unset");
+      setDnsRecords([]);
+      toast.success("Custom domain disconnected");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to disconnect domain");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <LoadingRows rows={2} />;
+  }
+
+  const statusBadge = {
+    unset: null,
+    requested: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/30">Awaiting platform approval</span>,
+    approved: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-warning/10 text-warning border border-warning/30">Approved — add DNS records</span>,
+    verified: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success border border-success/30">Connected</span>,
+    failed: <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive border border-destructive/30">Verification failed</span>,
+  }[status];
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <Label className="text-sm font-medium text-foreground/80 mb-1 block">Your domain</Label>
+        <p className="text-xs text-muted-foreground mb-3">
+          Use your own domain (e.g. <code className="bg-muted px-1 rounded font-mono">school.edu</code>) instead of the
+          shared SolomonQuest URL for your school's public page.
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="school.edu"
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            disabled={status === "requested" || status === "verified"}
+            className="max-w-xs"
+          />
+          {statusBadge}
+        </div>
+      </div>
+
+      {(status === "unset" || status === "failed") && (
+        <Button onClick={handleSubmitRequest} disabled={saving}>
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Submit Domain for Verification
+        </Button>
+      )}
+
+      {status === "requested" && (
+        <div className="rounded-lg border border-primary/30 bg-primary/10 p-4">
+          <p className="text-sm text-primary">
+            Your request to connect <strong>{domain}</strong> has been submitted to the platform team. You'll get a
+            notification here (and by email) once it's approved and ready for you to add the DNS records.
+          </p>
+        </div>
+      )}
+
+      {(status === "approved" || status === "failed") && dnsRecords.length > 0 && (
+        <div className="rounded-lg border border-border bg-muted/50 p-4 space-y-4">
+          <p className="text-sm font-medium text-foreground">Add these DNS records at your domain registrar</p>
+          <ol className="text-sm text-muted-foreground space-y-3 list-decimal list-inside">
+            <li>
+              Log in to wherever you manage DNS for <strong>{domain}</strong> (e.g. GoDaddy, Namecheap, Cloudflare,
+              Google Domains).
+            </li>
+            <li>Add the two records below exactly as shown.</li>
+            <li>DNS changes can take anywhere from a few minutes to a few hours to take effect.</li>
+            <li>Come back here and click "Verify" — once both records are visible, your domain goes live.</li>
+          </ol>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="py-2 pr-4 font-medium">Type</th>
+                  <th className="py-2 pr-4 font-medium">Host / Name</th>
+                  <th className="py-2 pr-4 font-medium">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dnsRecords.map((rec, i) => (
+                  <tr key={i} className="border-b border-border last:border-0">
+                    <td className="py-2 pr-4 font-mono">{rec.type}</td>
+                    <td className="py-2 pr-4 font-mono break-all">{rec.host}</td>
+                    <td className="py-2 pr-4 font-mono break-all">{rec.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <Button onClick={handleVerify} disabled={verifying} variant="outline">
+            {verifying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Verify DNS Records
+          </Button>
+        </div>
+      )}
+
+      {status === "verified" && (
+        <div className="rounded-lg border border-success/30 bg-success/10 p-4 space-y-3">
+          <p className="text-sm text-success">
+            <strong>{domain}</strong> is connected and verified. Visitors to this domain will see your school's public
+            page.
+          </p>
+          <Button onClick={handleDisconnect} disabled={saving} variant="outline" size="sm">
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Disconnect Domain
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AdminSchoolBranding() {
   const { user } = useAuth();
@@ -362,6 +675,8 @@ export default function AdminSchoolBranding() {
   const [branding, setBranding] = useState<Branding>(DEFAULT_BRANDING);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const queryClient = useQueryClient();
   const [addingSlide, setAddingSlide] = useState(false);
   const [newSlide, setNewSlide] = useState<Omit<HeroSlide, "id">>({
     image_url: "",
@@ -377,7 +692,10 @@ export default function AdminSchoolBranding() {
   useEffect(() => {
     if (!schoolId) return;
     apiFetch("/api/schools/my")
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         if (data) {
           // Prefer branding JSONB if available, otherwise fall back to individual columns
@@ -388,11 +706,13 @@ export default function AdminSchoolBranding() {
             ...prev,
             ...(b ?? {}),
             school_name: (data.name as string) ?? prev.school_name,
-            slug: (b?.slug as string) ?? (data.slug as string) ?? prev.slug,
-            logo_url: (b?.logo_url as string) ?? (data.logo_url as string) ?? (data.logoUrl as string) ?? prev.logo_url,
-            tagline: (b?.tagline as string) ?? (data.tagline as string) ?? prev.tagline,
-            primary_color: (b?.primary_color as string) ?? (data.primary_color as string) ?? (data.primaryColor as string) ?? prev.primary_color,
-            secondary_color: (b?.secondary_color as string) ?? (data.secondary_color as string) ?? (data.secondaryColor as string) ?? prev.secondary_color,
+            // These five live in real columns, which the server always
+            // writes; old saves may have left stale copies in the JSON.
+            slug: (data.slug as string) ?? prev.slug,
+            logo_url: (data.logo_url as string) ?? (data.logoUrl as string) ?? "",
+            tagline: (data.tagline as string) ?? "",
+            primary_color: (data.primary_color as string) ?? (data.primaryColor as string) ?? prev.primary_color,
+            secondary_color: (data.secondary_color as string) ?? (data.secondaryColor as string) ?? prev.secondary_color,
             accent_color: (b?.accent_color as string) ?? (data.accent_color as string) ?? prev.accent_color,
             heading_font: (b?.heading_font as string) ?? (data.heading_font as string) ?? prev.heading_font,
             heading_text_color: (b?.heading_text_color as string) ?? (data.heading_color as string) ?? prev.heading_text_color,
@@ -413,10 +733,13 @@ export default function AdminSchoolBranding() {
             social_youtube: (b?.social_youtube as string) ?? ((data.social_links as Record<string, string>)?.youtube) ?? prev.social_youtube,
             social_website: (b?.social_website as string) ?? ((data.social_links as Record<string, string>)?.website) ?? prev.social_website,
             custom_css: (b?.custom_css as string) ?? (data.custom_css as string) ?? prev.custom_css,
+            hero_settings: { ...prev.hero_settings, ...((b?.hero_settings as Branding["hero_settings"]) ?? {}) },
           }));
         }
       })
-      .catch(() => {})
+      // Saving the defaults over a school we failed to read would wipe its
+      // real branding, so block saving until a reload succeeds.
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, [schoolId]);
 
@@ -425,6 +748,15 @@ export default function AdminSchoolBranding() {
   }, []);
 
   const handleSave = async () => {
+    if (loadError) {
+      toast.error("Your current branding couldn't be loaded. Reload the page before saving.");
+      return;
+    }
+    const problem = brandingProblem(branding);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     setSaving(true);
     try {
       const res = await apiFetch(`/api/schools/${schoolId}/branding`, {
@@ -434,6 +766,8 @@ export default function AdminSchoolBranding() {
       const json = await res.json().catch(() => ({}));
       if (res.ok) {
         toast.success("Branding saved successfully!");
+        // Sidebars and the in-app theme read the school from this query.
+        queryClient.invalidateQueries({ queryKey: getGetMySchoolQueryKey() });
       } else {
         toast.error(json?.error ?? `Save failed (${res.status})`);
       }
@@ -512,8 +846,8 @@ export default function AdminSchoolBranding() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-        <span className="ml-3 text-gray-600">Loading branding settings...</span>
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="ml-3 text-muted-foreground">Loading branding settings...</span>
       </div>
     );
   }
@@ -522,19 +856,19 @@ export default function AdminSchoolBranding() {
   const firstSlide = branding.banner_slides[0];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex flex-col md:flex-row md:h-screen md:overflow-hidden bg-muted/50">
       {/* ── LEFT PANEL (60%) ── */}
-      <div className="w-[60%] flex flex-col h-full border-r border-gray-200 bg-white">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div className="w-full md:w-[60%] flex flex-col md:h-full border-r border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-border">
           <div className="flex items-center gap-3">
             <Link href="/dashboard/admin">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button aria-label="Back" variant="ghost" size="icon" className="h-8 w-8">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             </Link>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">School Branding</h1>
-              <p className="text-sm text-gray-500">Customize your school's public page</p>
+              <h1 className="text-xl font-bold text-foreground">School Branding</h1>
+              <p className="text-sm text-muted-foreground">Customize your school's public page</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -549,7 +883,7 @@ export default function AdminSchoolBranding() {
                 <ExternalLink className="w-3 h-3 ml-1" />
               </Button>
             )}
-            <Button onClick={handleSave} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+            <Button onClick={handleSave} disabled={saving || loadError} className="bg-primary hover:bg-primary/90 text-primary-foreground">
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               {saving ? "Saving..." : "Save Branding"}
             </Button>
@@ -558,8 +892,8 @@ export default function AdminSchoolBranding() {
 
         <div className="flex-1 overflow-y-auto">
           <Tabs defaultValue="identity" className="h-full">
-            <div className="px-6 pt-4 border-b border-gray-100 sticky top-0 bg-white z-10">
-              <TabsList className="flex flex-wrap gap-1 h-auto bg-gray-100 p-1">
+            <div className="px-6 pt-4 border-b border-border sticky top-0 bg-card z-10">
+              <TabsList className="flex flex-wrap justify-start gap-1 h-auto bg-muted p-1">
                 <TabsTrigger value="identity" className="text-xs">Identity</TabsTrigger>
                 <TabsTrigger value="hero" className="text-xs">Hero Banner</TabsTrigger>
                 <TabsTrigger value="colors" className="text-xs">Colors & Fonts</TabsTrigger>
@@ -567,22 +901,29 @@ export default function AdminSchoolBranding() {
                 <TabsTrigger value="announcement" className="text-xs">Announcement</TabsTrigger>
                 <TabsTrigger value="social" className="text-xs">Social & Links</TabsTrigger>
                 <TabsTrigger value="css" className="text-xs">Custom CSS</TabsTrigger>
+                <TabsTrigger value="domain" className="text-xs">Custom Domain</TabsTrigger>
               </TabsList>
             </div>
 
-            <div className="p-6 space-y-6">
+            <div className="p-4 sm:p-6 space-y-6">
+              {loadError && (
+                <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                  Your school's current branding couldn't be loaded, so saving is turned off to avoid overwriting it. Reload the page to try again.
+                </div>
+              )}
 
               {/* ── TAB 1: Identity ── */}
               <TabsContent value="identity" className="space-y-6 mt-0">
                 <div>
-                  <Label className="text-sm font-medium text-gray-700 mb-2 block">School Logo</Label>
+                  <Label className="text-sm font-medium text-foreground/80 mb-2 block">School Logo</Label>
                   <div className="flex items-center gap-4">
-                    <div className="w-24 h-24 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden shrink-0">
-                      {branding.logo_url ? (
-                        <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" />
-                      ) : (
-                        <School className="w-10 h-10 text-gray-300" />
-                      )}
+                    <div className="w-24 h-24 border-2 border-dashed border-border rounded-lg flex items-center justify-center bg-muted/50 overflow-hidden shrink-0">
+                      <SafeImage
+                        src={branding.logo_url || undefined}
+                        alt="Logo"
+                        className="w-full h-full object-contain"
+                        fallback={<School className="w-10 h-10 text-muted-foreground/60" />}
+                      />
                     </div>
                     <div className="flex-1 space-y-2">
                       <LogoUploadButton
@@ -593,27 +934,27 @@ export default function AdminSchoolBranding() {
                         <button
                           type="button"
                           onClick={() => update("logo_url", "")}
-                          className="text-xs text-red-500 hover:text-red-700"
+                          className="py-2 sm:py-0 text-xs text-destructive hover:text-destructive"
                         >
                           Remove logo
                         </button>
                       )}
-                      <p className="text-xs text-gray-400">PNG, JPG or SVG. Max 2 MB.</p>
+                      <p className="text-xs text-muted-foreground">PNG, JPG, WebP or GIF. Max 2 MB.</p>
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <Label className="text-sm font-medium text-gray-700 mb-1 block">School Name</Label>
-                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-gray-700 text-sm">
+                  <Label className="text-sm font-medium text-foreground/80 mb-1 block">School Name</Label>
+                  <div className="px-3 py-2 bg-muted/50 border border-border rounded-md text-foreground/80 text-sm">
                     {branding.school_name || "—"}
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">School name is managed by your account settings.</p>
+                  <p className="text-xs text-muted-foreground mt-1">School name is managed by your account settings.</p>
                 </div>
 
                 <div>
-                  <Label className="text-sm font-medium text-gray-700 mb-1 block">Tagline</Label>
-                  <Input
+                  <Label htmlFor="adminschoolbranding-tagline" className="text-sm font-medium text-foreground/80 mb-1 block">Tagline</Label>
+                  <Input id="adminschoolbranding-tagline"
                     placeholder="Empowering minds, shaping futures"
                     value={branding.tagline}
                     onChange={(e) => update("tagline", e.target.value)}
@@ -631,7 +972,7 @@ export default function AdminSchoolBranding() {
               <TabsContent value="hero" className="space-y-6 mt-0">
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <Label className="text-sm font-semibold text-gray-700">Slides ({branding.banner_slides.length}/6)</Label>
+                    <Label className="text-sm font-semibold text-foreground/80">Slides ({branding.banner_slides.length}/6)</Label>
                     {branding.banner_slides.length < 6 && (
                       <Button size="sm" variant="outline" onClick={() => setAddingSlide((v) => !v)}>
                         <Plus className="w-4 h-4 mr-1" /> Add Slide
@@ -641,26 +982,28 @@ export default function AdminSchoolBranding() {
 
                   <div className="space-y-2">
                     {branding.banner_slides.map((slide, idx) => (
-                      <div key={slide.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
-                        <div className="w-10 h-10 rounded overflow-hidden bg-gray-200 shrink-0">
-                          {slide.image_url ? (
-                            <img src={slide.image_url} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">IMG</div>
-                          )}
+                      <div key={slide.id} className="flex items-center gap-3 p-3 border border-border rounded-lg bg-muted/50">
+                        <div className="w-10 h-10 rounded overflow-hidden bg-muted shrink-0">
+                          <SafeImage
+                            src={slide.image_url || undefined}
+                            alt=""
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                            fallback={<div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">IMG</div>}
+                          />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-800 truncate">{slide.title || "Untitled Slide"}</p>
-                          <p className="text-xs text-gray-500 truncate">{slide.subtitle}</p>
+                          <p className="text-sm font-medium text-foreground truncate">{slide.title || "Untitled Slide"}</p>
+                          <p className="text-xs text-muted-foreground truncate">{slide.subtitle}</p>
                         </div>
                         <div className="flex items-center gap-1">
-                          <button onClick={() => moveSlide(idx, -1)} disabled={idx === 0} className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30">
+                          <button aria-label="Move up" onClick={() => moveSlide(idx, -1)} disabled={idx === 0} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30">
                             <ChevronUp className="w-4 h-4" />
                           </button>
-                          <button onClick={() => moveSlide(idx, 1)} disabled={idx === branding.banner_slides.length - 1} className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30">
+                          <button aria-label="Move down" onClick={() => moveSlide(idx, 1)} disabled={idx === branding.banner_slides.length - 1} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30">
                             <ChevronDown className="w-4 h-4" />
                           </button>
-                          <button onClick={() => deleteSlide(idx)} className="p-1 text-red-400 hover:text-red-600">
+                          <button aria-label="Delete" onClick={() => deleteSlide(idx)} className="p-1 text-destructive hover:text-destructive">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -669,47 +1012,47 @@ export default function AdminSchoolBranding() {
                   </div>
 
                   {addingSlide && (
-                    <div className="mt-4 p-4 border border-indigo-200 rounded-lg bg-indigo-50 space-y-3">
-                      <h3 className="text-sm font-semibold text-indigo-900">New Slide</h3>
+                    <div className="mt-4 p-4 border border-primary/30 rounded-lg bg-primary/10 space-y-3">
+                      <h3 className="text-sm font-semibold text-primary">New Slide</h3>
                       <div>
-                        <Label className="text-xs text-gray-600 mb-1 block">Image URL</Label>
-                        <Input
+                        <Label htmlFor="adminschoolbranding-image-url" className="text-xs text-muted-foreground mb-1 block">Image URL</Label>
+                        <Input id="adminschoolbranding-image-url"
                           placeholder="https://example.com/hero.jpg"
                           value={newSlide.image_url}
                           onChange={(e) => setNewSlide((p) => ({ ...p, image_url: e.target.value }))}
                         />
                         {newSlide.image_url && (
-                          <img src={newSlide.image_url} alt="" className="mt-2 h-20 rounded object-cover w-full" />
+                          <SafeImage src={newSlide.image_url} alt="" className="mt-2 h-20 rounded object-cover w-full" />
                         )}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <Label className="text-xs text-gray-600 mb-1 block">Title</Label>
-                          <Input
+                          <Label htmlFor="adminschoolbranding-title" className="text-xs text-muted-foreground mb-1 block">Title</Label>
+                          <Input id="adminschoolbranding-title"
                             placeholder="Welcome to Springfield Academy"
                             value={newSlide.title}
                             onChange={(e) => setNewSlide((p) => ({ ...p, title: e.target.value }))}
                           />
                         </div>
                         <div>
-                          <Label className="text-xs text-gray-600 mb-1 block">Subtitle</Label>
-                          <Input
+                          <Label htmlFor="adminschoolbranding-subtitle" className="text-xs text-muted-foreground mb-1 block">Subtitle</Label>
+                          <Input id="adminschoolbranding-subtitle"
                             placeholder="Where Excellence Meets Innovation"
                             value={newSlide.subtitle}
                             onChange={(e) => setNewSlide((p) => ({ ...p, subtitle: e.target.value }))}
                           />
                         </div>
                         <div>
-                          <Label className="text-xs text-gray-600 mb-1 block">CTA Button Text</Label>
-                          <Input
+                          <Label htmlFor="adminschoolbranding-cta-button-text" className="text-xs text-muted-foreground mb-1 block">CTA Button Text</Label>
+                          <Input id="adminschoolbranding-cta-button-text"
                             placeholder="Apply Now"
                             value={newSlide.cta_text}
                             onChange={(e) => setNewSlide((p) => ({ ...p, cta_text: e.target.value }))}
                           />
                         </div>
                         <div>
-                          <Label className="text-xs text-gray-600 mb-1 block">CTA URL</Label>
-                          <Input
+                          <Label htmlFor="adminschoolbranding-cta-url" className="text-xs text-muted-foreground mb-1 block">CTA URL</Label>
+                          <Input id="adminschoolbranding-cta-url"
                             placeholder="/schools/springfield/apply"
                             value={newSlide.cta_url}
                             onChange={(e) => setNewSlide((p) => ({ ...p, cta_url: e.target.value }))}
@@ -718,17 +1061,17 @@ export default function AdminSchoolBranding() {
                       </div>
                       <div className="flex items-center gap-4">
                         <div>
-                          <Label className="text-xs text-gray-600 mb-1 block">Overlay Color</Label>
-                          <input
+                          <Label htmlFor="adminschoolbranding-overlay-color" className="text-xs text-muted-foreground mb-1 block">Overlay Color</Label>
+                          <input id="adminschoolbranding-overlay-color"
                             type="color"
                             value={newSlide.overlay_color}
                             onChange={(e) => setNewSlide((p) => ({ ...p, overlay_color: e.target.value }))}
-                            className="w-10 h-10 rounded border border-gray-200 cursor-pointer"
+                            className="w-10 h-10 rounded border border-border cursor-pointer"
                           />
                         </div>
                         <div className="flex-1">
-                          <Label className="text-xs text-gray-600 mb-1 block">Overlay Opacity: {newSlide.overlay_opacity}%</Label>
-                          <input
+                          <Label htmlFor="adminschoolbranding-overlay-opacity" className="text-xs text-muted-foreground mb-1 block">Overlay Opacity: {newSlide.overlay_opacity}%</Label>
+                          <input id="adminschoolbranding-overlay-opacity"
                             type="range"
                             min={0}
                             max={80}
@@ -740,19 +1083,19 @@ export default function AdminSchoolBranding() {
                       </div>
                       <div className="flex gap-2 justify-end">
                         <Button size="sm" variant="outline" onClick={() => setAddingSlide(false)}>Cancel</Button>
-                        <Button size="sm" onClick={addSlide} className="bg-indigo-600 hover:bg-indigo-700 text-white">Add Slide</Button>
+                        <Button size="sm" onClick={addSlide} className="bg-primary hover:bg-primary/90 text-primary-foreground">Add Slide</Button>
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="border-t border-gray-100 pt-4 space-y-4">
+                <div className="border-t border-border pt-4 space-y-4">
                   <div>
-                    <Label className="text-sm font-medium text-gray-700 mb-1 block">Hero Animation</Label>
-                    <select
+                    <Label htmlFor="adminschoolbranding-hero-animation" className="text-sm font-medium text-foreground/80 mb-1 block">Hero Animation</Label>
+                    <select id="adminschoolbranding-hero-animation"
                       value={branding.hero_settings.animation}
                       onChange={(e) => update("hero_settings", { ...branding.hero_settings, animation: e.target.value as "fade" | "slide" | "zoom" | "none" })}
-                      className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                     >
                       <option value="fade">Fade (crossfade between slides)</option>
                       <option value="slide">Slide (slides left/right)</option>
@@ -767,15 +1110,15 @@ export default function AdminSchoolBranding() {
                         checked={branding.hero_settings.auto_advance}
                         onCheckedChange={(v) => update("hero_settings", { ...branding.hero_settings, auto_advance: v })}
                       />
-                      <Label className="text-sm text-gray-700">Auto-advance slides</Label>
+                      <Label className="text-sm text-foreground/80">Auto-advance slides</Label>
                     </div>
                     {branding.hero_settings.auto_advance && (
                       <div className="flex items-center gap-2">
-                        <Label className="text-sm text-gray-600 whitespace-nowrap">Interval:</Label>
-                        <select
+                        <Label htmlFor="adminschoolbranding-interval" className="text-sm text-muted-foreground whitespace-nowrap">Interval:</Label>
+                        <select id="adminschoolbranding-interval"
                           value={branding.hero_settings.interval_seconds}
                           onChange={(e) => update("hero_settings", { ...branding.hero_settings, interval_seconds: Number(e.target.value) })}
-                          className="border border-gray-200 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                          className="border border-border rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                         >
                           {INTERVAL_OPTIONS.map((s) => (
                             <option key={s} value={s}>{s}s</option>
@@ -790,47 +1133,56 @@ export default function AdminSchoolBranding() {
               {/* ── TAB 3: Colors & Fonts ── */}
               <TabsContent value="colors" className="space-y-6 mt-0">
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Brand Colors</h3>
+                  <h3 className="text-sm font-semibold text-foreground/80 mb-3">Brand Colors</h3>
                   <ColorPickerRow label="Primary Color" value={branding.primary_color} onChange={(v) => update("primary_color", v)} />
                   <ColorPickerRow label="Secondary Color" value={branding.secondary_color} onChange={(v) => update("secondary_color", v)} />
                   <ColorPickerRow label="Accent Color" value={branding.accent_color} onChange={(v) => update("accent_color", v)} />
                   <ColorPickerRow label="Heading Text Color" value={branding.heading_text_color} onChange={(v) => update("heading_text_color", v)} />
                 </div>
 
-                <div className="border-t border-gray-100 pt-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Typography</h3>
+                <InAppPreview
+                  primary={branding.primary_color}
+                  accent={branding.accent_color}
+                  radius={branding.border_radius}
+                  logoUrl={branding.logo_url}
+                  name={branding.school_name}
+                />
+
+                <div className="border-t border-border pt-4">
+                  <h3 className="text-sm font-semibold text-foreground/80 mb-3">Typography</h3>
+                  <p className="text-xs text-muted-foreground mb-3">Fonts apply to your public school page. Inside the app, everyone keeps the standard font.</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-sm text-gray-600 mb-1 block">Heading Font</Label>
-                      <select
+                      <Label htmlFor="adminschoolbranding-heading-font" className="text-sm text-muted-foreground mb-1 block">Heading Font</Label>
+                      <select id="adminschoolbranding-heading-font"
                         value={branding.heading_font}
                         onChange={(e) => update("heading_font", e.target.value)}
-                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                       >
                         {HEADING_FONTS.map((f) => (
                           <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
                         ))}
                       </select>
-                      <p className="text-xs text-gray-400 mt-1" style={{ fontFamily: branding.heading_font }}>Preview: {branding.heading_font}</p>
+                      <p className="text-xs text-muted-foreground mt-1" style={{ fontFamily: branding.heading_font }}>Preview: {branding.heading_font}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-600 mb-1 block">Body Font</Label>
-                      <select
+                      <Label htmlFor="adminschoolbranding-body-font" className="text-sm text-muted-foreground mb-1 block">Body Font</Label>
+                      <select id="adminschoolbranding-body-font"
                         value={branding.body_font}
                         onChange={(e) => update("body_font", e.target.value)}
-                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                       >
                         {BODY_FONTS.map((f) => (
                           <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
                         ))}
                       </select>
-                      <p className="text-xs text-gray-400 mt-1" style={{ fontFamily: branding.body_font }}>Preview: {branding.body_font}</p>
+                      <p className="text-xs text-muted-foreground mt-1" style={{ fontFamily: branding.body_font }}>Preview: {branding.body_font}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="border-t border-gray-100 pt-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Border Radius Style</h3>
+                <div className="border-t border-border pt-4">
+                  <h3 className="text-sm font-semibold text-foreground/80 mb-3">Border Radius Style</h3>
                   <div className="flex gap-3">
                     {BORDER_RADIUS_OPTIONS.map((opt) => (
                       <button
@@ -838,19 +1190,19 @@ export default function AdminSchoolBranding() {
                         onClick={() => update("border_radius", opt.value)}
                         className={`flex-1 flex flex-col items-center gap-2 p-3 border-2 rounded-lg transition-all ${
                           branding.border_radius === opt.value
-                            ? "border-indigo-500 bg-indigo-50"
-                            : "border-gray-200 bg-white hover:border-gray-300"
+                            ? "border-primary bg-primary/10"
+                            : "border-border bg-card hover:border-input"
                         }`}
                       >
                         <div
-                          className="w-12 h-8 bg-indigo-500 flex items-center justify-center text-white text-xs font-medium"
+                          className="w-12 h-8 bg-primary flex items-center justify-center text-primary-foreground text-xs font-medium"
                           style={{ borderRadius: opt.px }}
                         >
                           Btn
                         </div>
                         <div className="text-center">
-                          <p className="text-xs font-semibold text-gray-700">{opt.label}</p>
-                          <p className="text-xs text-gray-400">{opt.desc}</p>
+                          <p className="text-xs font-semibold text-foreground/80">{opt.label}</p>
+                          <p className="text-xs text-muted-foreground">{opt.desc}</p>
                         </div>
                       </button>
                     ))}
@@ -868,7 +1220,7 @@ export default function AdminSchoolBranding() {
                         checked={branding.stats_visible}
                         onCheckedChange={(v) => update("stats_visible", v)}
                       />
-                      <Label className="text-sm font-semibold text-gray-700">Stats Section</Label>
+                      <Label className="text-sm font-semibold text-foreground/80">Stats Section</Label>
                     </div>
                     {branding.stats.length < 6 && (
                       <Button size="sm" variant="outline" onClick={addStat}>
@@ -878,11 +1230,11 @@ export default function AdminSchoolBranding() {
                   </div>
                   <div className="space-y-2">
                     {branding.stats.map((stat, idx) => (
-                      <div key={stat.id} className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg">
+                      <div key={stat.id} className="flex items-center gap-2 p-2 border border-border rounded-lg">
                         <select
                           value={stat.icon}
                           onChange={(e) => updateStat(idx, "icon", e.target.value)}
-                          className="border border-gray-200 rounded px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                          className="border border-border rounded px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-primary/30"
                         >
                           {STAT_ICONS.map((i) => <option key={i} value={i}>{i}</option>)}
                         </select>
@@ -898,7 +1250,7 @@ export default function AdminSchoolBranding() {
                           onChange={(e) => updateStat(idx, "value", e.target.value)}
                           className="text-xs w-24"
                         />
-                        <button onClick={() => deleteStat(idx)} className="text-red-400 hover:text-red-600">
+                        <button onClick={() => deleteStat(idx)} className="text-destructive hover:text-destructive">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -907,9 +1259,9 @@ export default function AdminSchoolBranding() {
                 </div>
 
                 {/* Features */}
-                <div className="border-t border-gray-100 pt-4">
+                <div className="border-t border-border pt-4">
                   <div className="flex items-center justify-between mb-3">
-                    <Label className="text-sm font-semibold text-gray-700">Features Section</Label>
+                    <Label className="text-sm font-semibold text-foreground/80">Features Section</Label>
                     {branding.features.length < 6 && (
                       <Button size="sm" variant="outline" onClick={addFeature}>
                         <Plus className="w-4 h-4 mr-1" /> Add Feature
@@ -918,12 +1270,12 @@ export default function AdminSchoolBranding() {
                   </div>
                   <div className="space-y-3">
                     {branding.features.map((feat, idx) => (
-                      <div key={feat.id} className="p-3 border border-gray-200 rounded-lg space-y-2">
+                      <div key={feat.id} className="p-3 border border-border rounded-lg space-y-2">
                         <div className="flex items-center gap-2">
                           <select
                             value={feat.icon}
                             onChange={(e) => updateFeature(idx, "icon", e.target.value)}
-                            className="border border-gray-200 rounded px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            className="border border-border rounded px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-primary/30"
                           >
                             {FEATURE_ICONS.map((i) => <option key={i} value={i}>{i}</option>)}
                           </select>
@@ -933,7 +1285,7 @@ export default function AdminSchoolBranding() {
                             onChange={(e) => updateFeature(idx, "title", e.target.value)}
                             className="text-xs"
                           />
-                          <button onClick={() => deleteFeature(idx)} className="text-red-400 hover:text-red-600 shrink-0">
+                          <button onClick={() => deleteFeature(idx)} className="text-destructive hover:text-destructive shrink-0">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -950,9 +1302,9 @@ export default function AdminSchoolBranding() {
                 </div>
 
                 {/* Testimonials */}
-                <div className="border-t border-gray-100 pt-4">
+                <div className="border-t border-border pt-4">
                   <div className="flex items-center justify-between mb-3">
-                    <Label className="text-sm font-semibold text-gray-700">Testimonials Section</Label>
+                    <Label className="text-sm font-semibold text-foreground/80">Testimonials Section</Label>
                     {branding.testimonials.length < 4 && (
                       <Button size="sm" variant="outline" onClick={addTestimonial}>
                         <Plus className="w-4 h-4 mr-1" /> Add Testimonial
@@ -961,7 +1313,7 @@ export default function AdminSchoolBranding() {
                   </div>
                   <div className="space-y-3">
                     {branding.testimonials.map((t, idx) => (
-                      <div key={t.id} className="p-3 border border-gray-200 rounded-lg space-y-2">
+                      <div key={t.id} className="p-3 border border-border rounded-lg space-y-2">
                         <div className="flex items-center gap-2">
                           <Input
                             placeholder="Name"
@@ -975,7 +1327,7 @@ export default function AdminSchoolBranding() {
                             onChange={(e) => updateTestimonial(idx, "role", e.target.value)}
                             className="text-xs"
                           />
-                          <button onClick={() => deleteTestimonial(idx)} className="text-red-400 hover:text-red-600 shrink-0">
+                          <button onClick={() => deleteTestimonial(idx)} className="text-destructive hover:text-destructive shrink-0">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -1005,13 +1357,13 @@ export default function AdminSchoolBranding() {
                     checked={branding.show_announcement}
                     onCheckedChange={(v) => update("show_announcement", v)}
                   />
-                  <Label className="text-sm font-medium text-gray-700">Show Announcement Banner</Label>
+                  <Label className="text-sm font-medium text-foreground/80">Show Announcement Banner</Label>
                 </div>
 
                 {branding.show_announcement && (
-                  <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                  <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/50">
                     <div>
-                      <Label className="text-sm text-gray-600 mb-1 block">
+                      <Label className="text-sm text-muted-foreground mb-1 block">
                         Banner Text ({branding.announcement_text.length}/200)
                       </Label>
                       <Textarea
@@ -1027,7 +1379,7 @@ export default function AdminSchoolBranding() {
                       onChange={(v) => update("announcement_bg_color", v)}
                     />
                     <div>
-                      <Label className="text-sm text-gray-600 mb-2 block">Preview</Label>
+                      <Label className="text-sm text-muted-foreground mb-2 block">Preview</Label>
                       <div
                         className="px-4 py-2 text-white text-sm rounded-md text-center"
                         style={{ backgroundColor: branding.announcement_bg_color }}
@@ -1050,9 +1402,9 @@ export default function AdminSchoolBranding() {
                   { key: "social_youtube", label: "YouTube URL", icon: <Youtube className="w-4 h-4" />, placeholder: "https://youtube.com/@yourschool" },
                 ].map(({ key, label, icon, placeholder }) => (
                   <div key={key} className="flex items-center gap-3">
-                    <div className="w-8 h-8 flex items-center justify-center text-gray-400 shrink-0">{icon}</div>
+                    <div className="w-8 h-8 flex items-center justify-center text-muted-foreground shrink-0">{icon}</div>
                     <div className="flex-1">
-                      <Label className="text-xs text-gray-500 mb-1 block">{label}</Label>
+                      <Label className="text-xs text-muted-foreground mb-1 block">{label}</Label>
                       <Input
                         placeholder={placeholder}
                         value={branding[key as keyof Branding] as string}
@@ -1066,16 +1418,16 @@ export default function AdminSchoolBranding() {
               {/* ── TAB 7: Custom CSS ── */}
               <TabsContent value="css" className="space-y-4 mt-0">
                 <div>
-                  <Label className="text-sm font-medium text-gray-700 mb-1 block">Custom CSS</Label>
-                  <div className="flex items-start gap-2 mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                    <span className="text-amber-500 text-base leading-none mt-0.5">⚠️</span>
-                    <p className="text-xs text-amber-800 font-medium">
+                  <Label className="text-sm font-medium text-foreground/80 mb-1 block">Custom CSS</Label>
+                  <div className="flex items-start gap-2 mb-3 p-3 bg-warning/10 border border-warning/30 rounded-lg">
+                    <span className="text-warning text-base leading-none mt-0.5">⚠️</span>
+                    <p className="text-xs text-warning font-medium">
                       <strong>For developers only.</strong> If you are not a developer, do not add anything here — incorrect CSS can break your school's public page appearance.
                     </p>
                   </div>
-                  <p className="text-xs text-gray-500 mb-2">
+                  <p className="text-xs text-muted-foreground mb-2">
                     This CSS is injected into your school's public page.
-                    Hint: Use <code className="bg-gray-100 px-1 rounded text-xs font-mono">:root {"{ --custom-bg: #fff; }"}</code> to override CSS variables.
+                    Hint: Use <code className="bg-muted px-1 rounded text-xs font-mono">:root {"{ --custom-bg: #fff; }"}</code> to override CSS variables.
                   </p>
                   <Textarea
                     value={branding.custom_css}
@@ -1088,13 +1440,17 @@ export default function AdminSchoolBranding() {
                 </div>
               </TabsContent>
 
+              <TabsContent value="domain" className="space-y-4 mt-0">
+                <DomainTab schoolId={schoolId} />
+              </TabsContent>
+
             </div>
           </Tabs>
         </div>
       </div>
 
       {/* ── RIGHT PANEL (40%): Live Preview ── */}
-      <div className="w-[40%] flex flex-col h-full bg-gray-100 overflow-hidden">
+      <div className="w-full md:w-[40%] flex flex-col h-[80vh] md:h-full bg-gray-100 overflow-hidden">
         <div className="px-4 py-3 bg-white border-b border-gray-200 flex items-center gap-2">
           <div className="flex gap-1.5">
             <div className="w-3 h-3 rounded-full bg-red-400" />
@@ -1125,11 +1481,12 @@ export default function AdminSchoolBranding() {
           {/* Mini nav */}
           <div className="px-4 py-3 flex items-center justify-between" style={{ backgroundColor: branding.primary_color }}>
             <div className="flex items-center gap-2">
-              {branding.logo_url ? (
-                <img src={branding.logo_url} alt="Logo" className="w-7 h-7 object-contain rounded" />
-              ) : (
-                <School className="w-6 h-6 text-white" />
-              )}
+              <SafeImage
+                src={branding.logo_url || undefined}
+                alt="Logo"
+                className="w-7 h-7 object-contain rounded"
+                fallback={<School className="w-6 h-6 text-white" />}
+              />
               <span className="text-white text-sm font-bold" style={{ fontFamily: branding.heading_font }}>
                 {branding.school_name || "School Name"}
               </span>
@@ -1145,7 +1502,7 @@ export default function AdminSchoolBranding() {
           <div
             className="relative h-48 flex items-center justify-center text-white overflow-hidden"
             style={{
-              backgroundImage: firstSlide?.image_url ? `url(${firstSlide.image_url})` : undefined,
+              backgroundImage: firstSlide?.image_url ? `url(${sizedImageUrl(firstSlide.image_url, 480)})` : undefined,
               backgroundColor: firstSlide?.image_url ? undefined : branding.primary_color,
               backgroundSize: "cover",
               backgroundPosition: "center",
@@ -1258,11 +1615,12 @@ export default function AdminSchoolBranding() {
                         className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
                         style={{ backgroundColor: branding.primary_color }}
                       >
-                        {t.avatar_url ? (
-                          <img src={t.avatar_url} alt="" className="w-full h-full object-cover rounded-full" />
-                        ) : (
-                          (t.name?.[0] || "?")
-                        )}
+                        <SafeImage
+                          src={t.avatar_url || undefined}
+                          alt=""
+                          className="w-full h-full object-cover rounded-full"
+                          fallback={t.name?.[0] || "?"}
+                        />
                       </div>
                       <div>
                         <p className="text-xs font-semibold text-gray-800">{t.name || "Name"}</p>

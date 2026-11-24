@@ -72,14 +72,14 @@ export function TourOverlay({ role, onClose }: TourOverlayProps) {
       }}
     >
       <div
-        className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
+        className="w-full max-w-lg bg-card rounded-2xl shadow-2xl overflow-hidden"
         style={{
           transform: visible ? "scale(1)" : "scale(0.92)",
           transition: "transform 0.35s cubic-bezier(.22,.68,0,1.2)",
         }}
       >
         {/* Header gradient bar */}
-        <div className="h-1.5 bg-gradient-to-r from-primary via-blue-500 to-purple-500" />
+        <div className="h-1.5 bg-gradient-to-r from-primary via-primary to-gold" />
 
         {/* Top row: step counter + skip */}
         <div className="flex items-center justify-between px-6 pt-5 pb-1">
@@ -90,12 +90,12 @@ export function TourOverlay({ role, onClose }: TourOverlayProps) {
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-muted-foreground">
               {currentStep + 1} / {steps.length}
             </span>
             <button
               onClick={handleClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-muted-foreground hover:text-foreground transition-colors"
               aria-label="Close tour"
             >
               <X className="h-4 w-4" />
@@ -104,7 +104,7 @@ export function TourOverlay({ role, onClose }: TourOverlayProps) {
         </div>
 
         {/* Illustration */}
-        <div className="mx-6 mt-3 h-44 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl overflow-hidden border border-gray-100">
+        <div className="mx-6 mt-3 h-44 bg-muted rounded-xl overflow-hidden border border-border">
           <div
             className={`h-full p-4 transition-all duration-280 ease-out ${slideClass}`}
           >
@@ -114,8 +114,8 @@ export function TourOverlay({ role, onClose }: TourOverlayProps) {
 
         {/* Text */}
         <div className={`px-6 pt-5 pb-2 transition-all duration-280 ease-out ${slideClass}`}>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">{step.title}</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">{step.description}</p>
+          <h2 className="text-xl font-bold text-foreground mb-2">{step.title}</h2>
+          <p className="text-sm text-muted-foreground leading-relaxed">{step.description}</p>
           {step.tip && (
             <div className="mt-3 flex items-start gap-2 bg-primary/5 border border-primary/10 rounded-lg px-3 py-2">
               <span className="text-primary text-sm mt-0.5 shrink-0">💡</span>
@@ -133,7 +133,7 @@ export function TourOverlay({ role, onClose }: TourOverlayProps) {
               className={`rounded-full transition-all duration-200 ${
                 i === currentStep
                   ? "w-5 h-2 bg-primary"
-                  : "w-2 h-2 bg-gray-200 hover:bg-gray-300"
+                  : "w-2 h-2 bg-muted hover:bg-muted-foreground/30"
               }`}
               aria-label={`Go to step ${i + 1}`}
             />
@@ -146,7 +146,7 @@ export function TourOverlay({ role, onClose }: TourOverlayProps) {
             variant="ghost"
             size="sm"
             onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 text-xs"
+            className="text-muted-foreground hover:text-foreground text-xs"
           >
             Skip Tour
           </Button>

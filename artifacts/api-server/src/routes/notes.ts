@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { requireSchoolFeature } from "../lib/featureFlags";
 
 const router: IRouter = Router();
 
@@ -27,7 +28,7 @@ async function getAccess(
 
 router.get(
   "/notes",
-  requireAuth,
+  requireAuth, requireSchoolFeature("notes"),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { userId, schoolId } = req;
@@ -90,7 +91,7 @@ router.get(
 
 router.post(
   "/notes",
-  requireAuth,
+  requireAuth, requireSchoolFeature("notes"),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { userId, schoolId } = req;
@@ -129,7 +130,7 @@ router.post(
 
 router.patch(
   "/notes/:id",
-  requireAuth,
+  requireAuth, requireSchoolFeature("notes"),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { userId } = req;
@@ -184,7 +185,7 @@ router.patch(
 
 router.delete(
   "/notes/:id",
-  requireAuth,
+  requireAuth, requireSchoolFeature("notes"),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { userId } = req;
@@ -217,7 +218,7 @@ router.delete(
 
 router.get(
   "/notes/:id/shares",
-  requireAuth,
+  requireAuth, requireSchoolFeature("notes"),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { userId } = req;
@@ -263,7 +264,7 @@ router.get(
 
 router.post(
   "/notes/:id/share",
-  requireAuth,
+  requireAuth, requireSchoolFeature("notes"),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { userId } = req;
@@ -292,6 +293,19 @@ router.post(
         return;
       }
 
+      // Defense-in-depth: only let a note be shared with someone in the same
+      // school, even though nothing today lets a caller discover another
+      // school's user ids to exploit this.
+      const { data: targetProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("school_id")
+        .eq("id", shareWithUserId)
+        .maybeSingle();
+      if (!targetProfile || targetProfile.school_id !== note.school_id) {
+        res.status(400).json({ error: "Can only share notes with users in your own school" });
+        return;
+      }
+
       const { data, error } = await supabaseAdmin
         .from("note_shares")
         .upsert(
@@ -317,7 +331,7 @@ router.post(
 
 router.delete(
   "/notes/:id/share/:userId",
-  requireAuth,
+  requireAuth, requireSchoolFeature("notes"),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { userId } = req;

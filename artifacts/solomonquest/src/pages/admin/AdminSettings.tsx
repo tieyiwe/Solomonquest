@@ -69,15 +69,18 @@ const ROLES = [
 ] as const;
 
 const FEATURES = [
-  { key: "chat", label: "Chat" },
-  { key: "forum", label: "Forum" },
-  { key: "quizzes", label: "Quizzes" },
-  { key: "resources", label: "Resources" },
-  { key: "video", label: "Video Lessons" },
-  { key: "assignments", label: "Assignments" },
-  { key: "announcements", label: "Announcements" },
-  { key: "grades", label: "Grades" },
-  { key: "applications", label: "Applications" },
+  { key: "chat", label: "Chat", roles: ["teacher", "student", "staff"] },
+  { key: "forum", label: "Forum", roles: ["teacher", "student", "staff"] },
+  { key: "quizzes", label: "Quizzes", roles: ["teacher", "student", "staff"] },
+  { key: "resources", label: "Resources", roles: ["teacher", "student", "staff"] },
+  { key: "video", label: "Video Lessons", roles: ["teacher", "student", "staff"] },
+  { key: "assignments", label: "Assignments", roles: ["teacher", "student", "staff"] },
+  { key: "announcements", label: "Announcements", roles: ["teacher", "student", "staff"] },
+  { key: "grades", label: "Grades", roles: ["teacher", "student", "staff"] },
+  { key: "applications", label: "Applications", roles: ["teacher", "student", "staff"] },
+  { key: "student_contact_info", label: "View Student Contact Info (email, phone)", roles: ["teacher"] },
+  { key: "student_program_info", label: "View Student Program & Courses", roles: ["teacher"] },
+  { key: "student_attendance", label: "View Student Attendance", roles: ["teacher"] },
 ] as const;
 
 type RoleKey = (typeof ROLES)[number]["key"];
@@ -85,9 +88,9 @@ type FeatureKey = (typeof FEATURES)[number]["key"];
 type PermissionMatrix = Record<RoleKey, Record<FeatureKey, boolean>>;
 
 const DEFAULT_PERMS: PermissionMatrix = {
-  teacher: { chat: true, forum: true, quizzes: true, resources: true, video: true, assignments: true, announcements: true, grades: true, applications: true },
-  student: { chat: true, forum: true, quizzes: true, resources: true, video: true, assignments: true, announcements: false, grades: true, applications: false },
-  staff: { chat: false, forum: true, quizzes: false, resources: true, video: false, assignments: false, announcements: true, grades: false, applications: true },
+  teacher: { chat: true, forum: true, quizzes: true, resources: true, video: true, assignments: true, announcements: true, grades: true, applications: true, student_contact_info: false, student_program_info: false, student_attendance: false },
+  student: { chat: true, forum: true, quizzes: true, resources: true, video: true, assignments: true, announcements: false, grades: true, applications: false, student_contact_info: false, student_program_info: false, student_attendance: false },
+  staff: { chat: false, forum: true, quizzes: false, resources: true, video: false, assignments: false, announcements: true, grades: false, applications: true, student_contact_info: false, student_program_info: false, student_attendance: false },
 };
 
 function PermissionsTab({ schoolId }: { schoolId: string | undefined }) {
@@ -131,7 +134,7 @@ function PermissionsTab({ schoolId }: { schoolId: string | undefined }) {
 
   return (
     <div className="max-w-3xl space-y-4">
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 text-sm">
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/30 text-primary text-sm">
         <Info className="h-4 w-4 shrink-0" />
         Changes take effect immediately.
       </div>
@@ -144,7 +147,7 @@ function PermissionsTab({ schoolId }: { schoolId: string | undefined }) {
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
               activeRole === role.key
                 ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-gray-700"
+                : "border-transparent text-muted-foreground hover:text-foreground/80"
             }`}
           >
             {role.label}
@@ -164,7 +167,7 @@ function PermissionsTab({ schoolId }: { schoolId: string | undefined }) {
             <CardContent>
               {loading ? (
                 <div className="space-y-4">
-                  {FEATURES.map((f) => (
+                  {FEATURES.filter((f) => (f.roles as readonly string[]).includes(role.key)).map((f) => (
                     <div key={f.key} className="flex items-center justify-between">
                       <Skeleton className="h-4 w-32" />
                       <Skeleton className="h-6 w-10 rounded-full" />
@@ -173,12 +176,12 @@ function PermissionsTab({ schoolId }: { schoolId: string | undefined }) {
                 </div>
               ) : (
                 <div className="divide-y">
-                  {FEATURES.map((feature) => {
+                  {FEATURES.filter((feature) => (feature.roles as readonly string[]).includes(role.key)).map((feature) => {
                     const key = `${role.key}:${feature.key}`;
                     const isToggling = toggling === key;
                     return (
                       <div key={feature.key} className="flex items-center justify-between py-3.5">
-                        <p className="text-sm font-medium text-gray-800">{feature.label}</p>
+                        <p className="text-sm font-medium text-foreground">{feature.label}</p>
                         <div className="flex items-center gap-2">
                           {isToggling && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                           <Switch
@@ -232,20 +235,43 @@ function ApplicationFormTab({ schoolId }: { schoolId: string | undefined }) {
   const [fields, setFields] = useState<FormField[]>(DEFAULT_FIELDS);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Ids of fields that already exist in application_form_fields. Anything
+  // else in `fields` (DEFAULT_FIELDS, or ones added in this session) is new
+  // and gets POSTed on save; server ids missing from `fields` get DELETEd.
+  const [serverIds, setServerIds] = useState<string[]>([]);
 
-  useEffect(() => {
+  // There is no /api/form-builder/schema route — the backend exposes the
+  // form as per-field CRUD under /schools/:schoolId/application-form (the
+  // same table SchoolApply reads), so load and save against that.
+  const loadFields = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
-    apiFetch(`/api/form-builder/schema?school_id=${schoolId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data?.fields) && data.fields.length > 0) {
-          setFields(data.fields);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    try {
+      const r = await apiFetch(`/api/schools/${schoolId}/application-form`);
+      if (!r.ok) return;
+      const data = await r.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setFields(
+          data.map((f: { id: string; label: string; fieldType: FieldType; isRequired: boolean; options?: string[] | null }) => ({
+            id: f.id,
+            label: f.label,
+            type: f.fieldType,
+            required: !!f.isRequired,
+            options: Array.isArray(f.options) ? f.options : undefined,
+          }))
+        );
+        setServerIds(data.map((f: { id: string }) => f.id));
+      }
+    } catch {
+      /* keep defaults */
+    } finally {
+      setLoading(false);
+    }
   }, [schoolId]);
+
+  useEffect(() => {
+    loadFields();
+  }, [loadFields]);
 
   const addField = (type: FieldType = "text") => {
     setFields((f) => [
@@ -276,13 +302,36 @@ function ApplicationFormTab({ schoolId }: { schoolId: string | undefined }) {
   };
 
   const handleSave = async () => {
+    if (!schoolId) return;
     setSaving(true);
     try {
-      const res = await apiFetch("/api/form-builder/schema", {
-        method: "PUT",
-        body: JSON.stringify({ school_id: schoolId, fields }),
-      });
-      if (!res.ok) throw new Error("Failed to save");
+      const base = `/api/schools/${schoolId}/application-form/fields`;
+      const keep = new Set(fields.map((f) => f.id));
+      for (const id of serverIds) {
+        if (keep.has(id)) continue;
+        const res = await apiFetch(`${base}/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Failed to remove a field");
+      }
+      for (let i = 0; i < fields.length; i++) {
+        const f = fields[i];
+        const body = JSON.stringify({
+          label: f.label,
+          fieldType: f.type,
+          isRequired: f.required,
+          options: f.type === "dropdown" || f.type === "checkbox" ? f.options ?? [] : null,
+          sortOrder: i + 1,
+        });
+        const isExisting = serverIds.includes(f.id);
+        const res = await apiFetch(isExisting ? `${base}/${f.id}` : base, {
+          method: isExisting ? "PATCH" : "POST",
+          body,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to save");
+        }
+      }
+      await loadFields();
       toast.success("Application form saved");
     } catch (err: any) {
       toast.error(err.message || "Failed to save form");
@@ -312,7 +361,7 @@ function ApplicationFormTab({ schoolId }: { schoolId: string | undefined }) {
             </div>
             <div className="flex items-center gap-2">
               <select
-                className="h-9 rounded-md border border-input bg-white px-3 text-sm"
+                className="h-9 rounded-md border border-input bg-card px-3 text-sm"
                 defaultValue="text"
                 id="add-field-type"
               >
@@ -343,22 +392,22 @@ function ApplicationFormTab({ schoolId }: { schoolId: string | undefined }) {
               {fields.map((field, index) => (
                 <div
                   key={field.id}
-                  className="flex items-start gap-3 p-4 rounded-xl border bg-gray-50/50"
+                  className="flex items-start gap-3 p-4 rounded-xl border bg-muted/30"
                 >
                   <div className="flex flex-col gap-0.5 mt-1 shrink-0">
-                    <Button
+                    <Button aria-label="Move up"
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 text-muted-foreground hover:text-gray-700"
+                      className="h-6 w-6 text-muted-foreground hover:text-foreground/80"
                       onClick={() => moveField(index, "up")}
                       disabled={index === 0}
                     >
                       <ChevronUp className="h-3.5 w-3.5" />
                     </Button>
-                    <Button
+                    <Button aria-label="Move down"
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 text-muted-foreground hover:text-gray-700"
+                      className="h-6 w-6 text-muted-foreground hover:text-foreground/80"
                       onClick={() => moveField(index, "down")}
                       disabled={index === fields.length - 1}
                     >
@@ -369,19 +418,19 @@ function ApplicationFormTab({ schoolId }: { schoolId: string | undefined }) {
                   <div className="flex-1 space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <Label className="text-xs">Field Label</Label>
-                        <Input
+                        <Label htmlFor="adminsettings-field-label" className="text-xs">Field Label</Label>
+                        <Input id="adminsettings-field-label"
                           value={field.label}
                           onChange={(e) => updateField(field.id, "label", e.target.value)}
                           className="h-8 text-sm"
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Field Type</Label>
-                        <select
+                        <Label htmlFor="adminsettings-field-type" className="text-xs">Field Type</Label>
+                        <select id="adminsettings-field-type"
                           value={field.type}
                           onChange={(e) => updateField(field.id, "type", e.target.value as FieldType)}
-                          className="w-full h-8 rounded-md border border-input bg-white px-2 text-sm"
+                          className="w-full h-8 rounded-md border border-input bg-card px-2 text-sm"
                         >
                           {(Object.entries(FIELD_TYPE_LABELS) as [FieldType, string][]).map(([val, label]) => (
                             <option key={val} value={val}>{label}</option>
@@ -392,8 +441,8 @@ function ApplicationFormTab({ schoolId }: { schoolId: string | undefined }) {
 
                     {(field.type === "dropdown" || field.type === "checkbox") && (
                       <div className="space-y-1">
-                        <Label className="text-xs">Options (one per line)</Label>
-                        <Textarea
+                        <Label htmlFor="adminsettings-options-one-per-line" className="text-xs">Options (one per line)</Label>
+                        <Textarea id="adminsettings-options-one-per-line"
                           value={(field.options || []).join("\n")}
                           onChange={(e) => updateOptions(field.id, e.target.value)}
                           placeholder={"Option A\nOption B\nOption C"}
@@ -413,17 +462,17 @@ function ApplicationFormTab({ schoolId }: { schoolId: string | undefined }) {
                         Required field
                       </Label>
                       {field.required && (
-                        <Badge className="text-xs bg-red-50 text-red-600 border-red-200 border">
+                        <Badge className="text-xs bg-destructive/10 text-destructive border-destructive/30 border">
                           Required
                         </Badge>
                       )}
                     </div>
                   </div>
 
-                  <Button
+                  <Button aria-label="Delete"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 shrink-0 text-red-400 hover:text-red-600 hover:bg-red-50 mt-0.5"
+                    className="h-8 w-8 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/20 mt-0.5"
                     onClick={() => removeField(field.id)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -510,8 +559,8 @@ function AgentTab() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-1.5">
-          <Label>Agent Name</Label>
-          <Input
+          <Label htmlFor="adminsettings-agent-name">Agent Name</Label>
+          <Input id="adminsettings-agent-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={40}
@@ -632,16 +681,16 @@ function SchoolSettingsTab() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
-            <Label>School Name *</Label>
-            <Input
+            <Label htmlFor="adminsettings-school-name">School Name *</Label>
+            <Input id="adminsettings-school-name"
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
               placeholder="Westfield Academy"
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Logo URL</Label>
-            <Input
+            <Label htmlFor="adminsettings-logo-url">Logo URL</Label>
+            <Input id="adminsettings-logo-url"
               value={form.logoUrl}
               onChange={(e) => set("logoUrl", e.target.value)}
               placeholder="https://example.com/logo.png"
@@ -651,7 +700,7 @@ function SchoolSettingsTab() {
                 <img
                   src={form.logoUrl}
                   alt="School logo"
-                  className="h-12 w-12 rounded-lg object-contain border bg-gray-50"
+                  className="h-12 w-12 rounded-lg object-contain border bg-muted/50"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                 />
                 <p className="text-xs text-muted-foreground">Logo preview</p>
@@ -659,8 +708,8 @@ function SchoolSettingsTab() {
             )}
           </div>
           <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea
+            <Label htmlFor="adminsettings-description">Description</Label>
+            <Textarea id="adminsettings-description"
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
               placeholder="A brief description of your school..."
@@ -693,9 +742,9 @@ function SchoolSettingsTab() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
-            <Label>First Reviewer</Label>
+            <Label htmlFor="adminsettings-first-reviewer">First Reviewer</Label>
             <Select value={assignmentRouting} onValueChange={(v) => setAssignmentRouting(v as any)}>
-              <SelectTrigger>
+              <SelectTrigger id="adminsettings-first-reviewer">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -744,7 +793,7 @@ function SchoolSettingsTab() {
           )}
 
           {assignmentRouting !== "teacher" && (
-            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+            <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-sm text-warning">
               Submissions will be held for review before being visible to the teacher.
               The reviewer will mark submissions as checked to forward them.
             </div>
@@ -838,16 +887,16 @@ function RemindersTab({ schoolId }: { schoolId: string | undefined }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Teacher (user ID or email)</Label>
-            <Input
+            <Label htmlFor="adminsettings-teacher-user-id-or-email">Teacher (user ID or email)</Label>
+            <Input id="adminsettings-teacher-user-id-or-email"
               value={form.target_user_id}
               onChange={(e) => setF("target_user_id", e.target.value)}
               placeholder="teacher@example.com"
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Message</Label>
-            <Textarea
+            <Label htmlFor="adminsettings-message">Message</Label>
+            <Textarea id="adminsettings-message"
               value={form.message}
               onChange={(e) => setF("message", e.target.value)}
               placeholder="Your class is coming up soon..."
@@ -856,16 +905,16 @@ function RemindersTab({ schoolId }: { schoolId: string | undefined }) {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Class Date &amp; Time</Label>
-              <Input
+              <Label htmlFor="adminsettings-class-date-amp-time">Class Date &amp; Time</Label>
+              <Input id="adminsettings-class-date-amp-time"
                 type="datetime-local"
                 value={form.class_date}
                 onChange={(e) => setF("class_date", e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Send Before (hours)</Label>
-              <Input
+              <Label htmlFor="adminsettings-send-before-hours">Send Before (hours)</Label>
+              <Input id="adminsettings-send-before-hours"
                 type="number"
                 min="1"
                 value={form.send_before_hours}
@@ -886,7 +935,7 @@ function RemindersTab({ schoolId }: { schoolId: string | undefined }) {
       </Card>
 
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-gray-700">Scheduled Reminders</h3>
+        <h3 className="text-sm font-semibold text-foreground/80">Scheduled Reminders</h3>
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -902,10 +951,10 @@ function RemindersTab({ schoolId }: { schoolId: string | undefined }) {
             {reminders.map((r) => (
               <div
                 key={r.id}
-                className="flex items-start justify-between p-4 rounded-xl border bg-gray-50/50"
+                className="flex items-start justify-between p-4 rounded-xl border bg-muted/30"
               >
                 <div className="space-y-0.5">
-                  <p className="text-sm font-medium text-gray-800">{r.message}</p>
+                  <p className="text-sm font-medium text-foreground">{r.message}</p>
                   <p className="text-xs text-muted-foreground">To: {r.target_user_id}</p>
                   <p className="text-xs text-muted-foreground">
                     Send at:{" "}
@@ -941,7 +990,7 @@ export default function AdminSettings() {
     <AdminLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/admin">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
@@ -949,7 +998,7 @@ export default function AdminSettings() {
       </div>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Settings</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings</h1>
           <p className="text-muted-foreground mt-0.5">
             Configure your school's settings, permissions, application form, and reminders.
           </p>

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { useParams, Link, useLocation } from "wouter";
 import { useGetSchoolBySlug, useListCourses } from "@workspace/api-client-react";
 import { PublicLayout } from "@/components/layout/PublicLayout";
@@ -33,6 +34,16 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import {
+  api,
+  fetchPublicAdmissions,
+  formatMoney,
+  installmentHint,
+  priceLabel,
+  type FeeInfo,
+  type PublicProgram,
+} from "@/lib/admissions";
+import { CreditCard, Layers } from "lucide-react";
 
 interface ApplicationFormField {
   id: string;
@@ -91,6 +102,184 @@ function StepIndicator({ current }: { current: number }) {
         </div>
       ))}
     </div>
+  );
+}
+
+interface TuitionPlanInfo {
+  id: string;
+  courseId: string | null;
+  amountCents: number;
+  allowFullPayment: boolean;
+  allowInstallments: boolean;
+  installmentCount: number;
+}
+
+interface TuitionPaymentResult {
+  status: "pending" | "partial" | "paid" | "failed";
+  installments: { installmentNumber: number; status: string }[];
+}
+
+/**
+ * Shows tuition for the courses the applicant selected and lets them try the
+ * (currently simulated) payment flow. Purely informational for now -- not a
+ * condition for submitting the application. That gate gets turned on later
+ * once real payment processing is wired up.
+ */
+function TuitionSummary({ courseIds, accessToken }: { courseIds: string[]; accessToken: string }) {
+  const [plans, setPlans] = useState<TuitionPlanInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [methodByPlan, setMethodByPlan] = useState<Record<string, "full" | "installments">>({});
+  const [paymentByPlan, setPaymentByPlan] = useState<Record<string, { id: string; result: TuitionPaymentResult }>>({});
+  const [payingPlanId, setPayingPlanId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      courseIds.map((courseId) =>
+        fetch(`/api/tuition-plans?courseId=${courseId}`, { headers: { Authorization: `Bearer ${accessToken}` } })
+          .then((r) => (r.ok ? r.json() : []))
+          .catch(() => [])
+      )
+    ).then((results) => {
+      if (cancelled) return;
+      const found = results.flat().filter((p: TuitionPlanInfo) => p.amountCents > 0);
+      setPlans(found);
+      setMethodByPlan(
+        Object.fromEntries(found.map((p: TuitionPlanInfo) => [p.id, p.allowFullPayment ? "full" : "installments"]))
+      );
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [courseIds.join(","), accessToken]);
+
+  const handlePay = async (plan: TuitionPlanInfo) => {
+    setPayingPlanId(plan.id);
+    try {
+      const existing = paymentByPlan[plan.id];
+      let paymentId = existing?.id;
+
+      if (!paymentId) {
+        const res = await fetch("/api/tuition-payments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ tuitionPlanId: plan.id, paymentMethod: methodByPlan[plan.id] ?? "full" }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to start payment");
+        const data = await res.json();
+        paymentId = data.id;
+
+        // The server now returns the student's existing payment for this
+        // plan (e.g. after a reload following a Stripe redirect) instead of
+        // creating a second one. If that payment is already settled there's
+        // nothing to check out — show it instead of erroring.
+        if (data.status === "paid") {
+          setPaymentByPlan((prev) => ({ ...prev, [plan.id]: { id: paymentId as string, result: data } }));
+          toast.success("This tuition is already paid in full");
+          return;
+        }
+      }
+
+      // Try real Stripe checkout first — once STRIPE_SECRET_KEY is set on
+      // the server this just starts working with no frontend change; until
+      // then it 503s and we fall back to the test-mode simulate-pay path.
+      const checkoutRes = await fetch(`/api/tuition-payments/${paymentId}/checkout-session`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (checkoutRes.ok) {
+        const { url } = await checkoutRes.json();
+        if (url) {
+          window.location.href = url;
+          return;
+        }
+      }
+
+      const payRes = await fetch(`/api/tuition-payments/${paymentId}/simulate-pay`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!payRes.ok) throw new Error((await payRes.json().catch(() => ({}))).error || "Payment failed");
+      const payData = await payRes.json();
+
+      setPaymentByPlan((prev) => ({ ...prev, [plan.id]: { id: paymentId as string, result: payData } }));
+      toast.success(payData.status === "paid" ? "Payment complete (test mode)" : "Installment paid (test mode)");
+    } catch (err: any) {
+      toast.error(err.message || "Payment failed");
+    } finally {
+      setPayingPlanId(null);
+    }
+  };
+
+  if (loading || plans.length === 0) return null;
+
+  const totalCents = plans.reduce((sum, p) => sum + p.amountCents, 0);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Tuition & Payment</CardTitle>
+        <CardDescription>
+          This isn't required to submit your application yet — you can also pay later.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-4">
+        <div className="flex justify-between text-sm font-medium">
+          <span>Total tuition</span>
+          <span>${(totalCents / 100).toFixed(2)}</span>
+        </div>
+        {plans.map((plan) => {
+          const payment = paymentByPlan[plan.id];
+          const isPaidInFull = payment?.result.status === "paid";
+          return (
+            <div key={plan.id} className="rounded-lg border p-3 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">${(plan.amountCents / 100).toFixed(2)}</span>
+                {payment && (
+                  <Badge variant={isPaidInFull ? "default" : "outline"} className="text-xs">
+                    {isPaidInFull
+                      ? "Paid"
+                      : `Installment ${payment.result.installments.filter((i) => i.status === "paid").length}/${payment.result.installments.length} paid`}
+                  </Badge>
+                )}
+              </div>
+              {!isPaidInFull && (
+                <>
+                  {plan.allowFullPayment && plan.allowInstallments && (
+                    <div className="flex gap-3 text-xs">
+                      <label className="flex items-center gap-1.5">
+                        <input
+                          type="radio"
+                          checked={(methodByPlan[plan.id] ?? "full") === "full"}
+                          onChange={() => setMethodByPlan((m) => ({ ...m, [plan.id]: "full" }))}
+                        />
+                        Pay in full
+                      </label>
+                      <label className="flex items-center gap-1.5">
+                        <input
+                          type="radio"
+                          checked={methodByPlan[plan.id] === "installments"}
+                          onChange={() => setMethodByPlan((m) => ({ ...m, [plan.id]: "installments" }))}
+                        />
+                        {plan.installmentCount} installments
+                      </label>
+                    </div>
+                  )}
+                  <Button size="sm" variant="outline" disabled={payingPlanId === plan.id} onClick={() => handlePay(plan)}>
+                    {payingPlanId === plan.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                    ) : null}
+                    {payment ? "Pay Next Installment (test)" : "Simulate Payment (test)"}
+                  </Button>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -189,6 +378,7 @@ export default function SchoolApply() {
   const [formResponses, setFormResponses] = useState<Record<string, string | boolean>>({});
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
 
   const { data: school, isLoading: isSchoolLoading } = useGetSchoolBySlug(slug, {
     query: { enabled: !!slug },
@@ -208,12 +398,56 @@ export default function SchoolApply() {
       });
       if (res.status === 404) return null;
       if (!res.ok) return null;
-      return res.json();
+      // The backend returns a bare array of { id, label, fieldType,
+      // isRequired, options }. Map it to the { fields: [...] } shape this
+      // page renders, otherwise formConfig.fields is always undefined and
+      // the school's custom questions never show.
+      const rows: Array<{ id: string; label: string; fieldType: ApplicationFormField["type"]; isRequired?: boolean; options?: string[] | null }> = await res.json();
+      if (!Array.isArray(rows)) return null;
+      return {
+        fields: rows.map((f) => ({
+          id: f.id,
+          label: f.label,
+          type: f.fieldType,
+          required: !!f.isRequired,
+          options: Array.isArray(f.options) ? f.options : undefined,
+        })),
+      };
     },
     enabled: !!school?.id,
   });
 
   const schoolCourses = (courses ?? []).filter((c) => c.schoolId === school?.id);
+
+  // Programs with their prices + the application fee (public endpoint, so
+  // it works before the applicant belongs to the school).
+  const { data: admissions } = useQuery({
+    queryKey: ["public-admissions", school?.id],
+    queryFn: () => fetchPublicAdmissions(school!.id),
+    enabled: !!school?.id,
+  });
+  const programs: PublicProgram[] = admissions?.programs ?? [];
+  const selectedProgram = programs.find((p) => p.id === selectedProgramId) ?? null;
+  // Courses that all belong to one program count as applying to it (the
+  // server does the same), so its price and fee show here too.
+  const impliedProgram = (() => {
+    if (selectedProgram) return selectedProgram;
+    const ids = new Set(
+      schoolCourses.filter((c) => selectedCourseIds.includes(c.id)).map((c) => c.programId ?? null)
+    );
+    const only = ids.size === 1 ? Array.from(ids)[0] : null;
+    return only ? programs.find((p) => p.id === only) ?? null : null;
+  })();
+  const fee: FeeInfo | null = impliedProgram ? impliedProgram.applicationFee : admissions?.applicationFee ?? null;
+  const feeDue = !!fee?.required;
+
+  const chooseProgram = (programId: string | null) => {
+    setSelectedProgramId(programId);
+    if (programId) {
+      // Picking a program selects its courses (still adjustable below).
+      setSelectedCourseIds(schoolCourses.filter((c) => c.programId === programId).map((c) => c.id));
+    }
+  };
 
   const toggleCourse = (courseId: string) => {
     setSelectedCourseIds((prev) =>
@@ -225,7 +459,7 @@ export default function SchoolApply() {
     setFormResponses((prev) => ({ ...prev, [fieldId]: value }));
   };
 
-  const canProceedStep1 = selectedCourseIds.length > 0;
+  const canProceedStep1 = selectedCourseIds.length > 0 || !!selectedProgramId;
 
   const canProceedStep2 = () => {
     if (!formConfig?.fields) return true;
@@ -248,8 +482,13 @@ export default function SchoolApply() {
     try {
       const payload = {
         schoolId: school.id,
+        programId: selectedProgramId ?? undefined,
         courseIds: selectedCourseIds,
-        formResponses,
+        // POST /applications reads formResponses as [{ fieldId, value }]
+        // and silently drops anything that isn't an array.
+        formResponses: Object.entries(formResponses)
+          .filter(([, value]) => value !== "" && value !== undefined)
+          .map(([fieldId, value]) => ({ fieldId, value: String(value) })),
         message: message.trim() || undefined,
       };
 
@@ -264,7 +503,24 @@ export default function SchoolApply() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to submit application");
+        throw new Error(err.error || err.message || "Failed to submit application");
+      }
+
+      const created = (await res.json().catch(() => ({}))) as { id?: string; requiresPayment?: boolean };
+      if (created.requiresPayment && created.id) {
+        // Saved as "awaiting payment"; pay on the school's Stripe account.
+        // If checkout can't start, the status page has a Pay now button.
+        try {
+          const { url } = await api<{ url: string | null }>(`/applications/${created.id}/fee-checkout`, { method: "POST" });
+          if (url) {
+            window.location.href = url;
+            return;
+          }
+        } catch (err: any) {
+          toast.error(err?.message || "Couldn't open payment. You can pay from your application page.");
+        }
+        setLocation(`/applications/${created.id}`);
+        return;
       }
 
       toast.success(`Application submitted to ${school.name}!`);
@@ -305,8 +561,8 @@ export default function SchoolApply() {
     return (
       <PublicLayout>
         <div className="container mx-auto px-4 py-32 text-center max-w-lg">
-          <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto mb-6">
-            <AlertCircle className="h-8 w-8 text-amber-500" />
+          <div className="w-16 h-16 rounded-full bg-warning/10 border border-warning/30 flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="h-8 w-8 text-warning" />
           </div>
           <h1 className="text-2xl font-bold mb-3">Applications Are Currently Closed</h1>
           <p className="text-muted-foreground mb-8">
@@ -337,11 +593,14 @@ export default function SchoolApply() {
 
         <div className="text-center mb-8">
           {school.logoUrl ? (
-            <div className="mx-auto h-16 w-16 rounded-full overflow-hidden border-2 border-muted mb-3">
-              <img
+            <div className="mx-auto h-16 w-16 rounded-full overflow-hidden border-2 border-muted mb-3 bg-primary/10 flex items-center justify-center">
+              <SafeImage
                 src={school.logoUrl}
                 alt={school.name}
+                width={64}
+                height={64}
                 className="h-full w-full object-cover"
+                fallback={<span className="text-2xl font-bold text-primary">{school.name.charAt(0)}</span>}
               />
             </div>
           ) : (
@@ -359,6 +618,64 @@ export default function SchoolApply() {
 
         {step === 1 && (
           <div className="space-y-6">
+            {programs.length > 0 && (
+              <div className="space-y-3" data-testid="program-picker">
+                <div>
+                  <h2 className="text-xl font-bold text-foreground mb-1">Choose a Program</h2>
+                  <p className="text-muted-foreground text-sm">
+                    Pick the program you're applying to. Its courses are selected for you.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {programs.map((p) => {
+                    const active = selectedProgramId === p.id;
+                    const hint = installmentHint(p.price);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => chooseProgram(active ? null : p.id)}
+                        aria-pressed={active}
+                        className={cn(
+                          "text-left rounded-xl border-2 p-4 transition-all",
+                          active ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-foreground flex items-start gap-1.5">
+                              <Layers className="h-4 w-4 text-primary shrink-0" />
+                              <span className="break-words">{p.name}</span>
+                            </p>
+                            {p.level && <p className="text-xs text-muted-foreground mt-0.5">{p.level}</p>}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className={cn("font-bold", p.price && p.price.amountCents > 0 ? "text-foreground" : "text-success")}>
+                              {priceLabel(p.price)}
+                            </p>
+                            {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+                          </div>
+                        </div>
+                        {p.price?.pricingNote && p.price.amountCents > 0 && (
+                          <p className="text-xs text-muted-foreground mt-2">{p.price.pricingNote}</p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {feeDue && fee && (
+              <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4" data-testid="fee-notice">
+                <CreditCard className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                <p className="text-sm text-foreground">
+                  This school charges an application fee of <strong>{formatMoney(fee.amountCents, fee.currency)}</strong>,
+                  paid online when you submit.
+                </p>
+              </div>
+            )}
+
             <div>
               <h2 className="text-xl font-bold text-foreground mb-1">Select Courses</h2>
               <p className="text-muted-foreground text-sm">
@@ -606,6 +923,57 @@ export default function SchoolApply() {
               </CardContent>
             </Card>
 
+            {impliedProgram && (
+              <Card data-testid="review-program">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-primary" />
+                    Program
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-foreground">{impliedProgram.name}</p>
+                    {impliedProgram.price?.pricingNote && impliedProgram.price.amountCents > 0 && (
+                      <p className="text-xs text-muted-foreground mt-0.5">{impliedProgram.price.pricingNote}</p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold">Tuition: {priceLabel(impliedProgram.price)}</p>
+                    {installmentHint(impliedProgram.price) && (
+                      <p className="text-xs text-muted-foreground">{installmentHint(impliedProgram.price)}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-0.5">Payable after you're accepted</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {feeDue && fee && (
+              <Card className="border-warning/40" data-testid="review-fee">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <CreditCard className="h-4 w-4 text-warning" />
+                    Application fee
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 space-y-1">
+                  <div className="flex justify-between text-sm font-semibold">
+                    <span>Due now</span>
+                    <span>{formatMoney(fee.amountCents, fee.currency)}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    After you submit, you'll pay securely with Stripe on {school.name}'s account. Your application is
+                    saved first, so you can also pay later from your application page.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {session && selectedCourseIds.length > 0 && !impliedProgram && (
+              <TuitionSummary courseIds={selectedCourseIds} accessToken={session.access_token} />
+            )}
+
             {formConfig?.fields && formConfig.fields.length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
@@ -681,6 +1049,11 @@ export default function SchoolApply() {
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Submitting...
+                  </>
+                ) : feeDue && fee ? (
+                  <>
+                    Submit &amp; pay {formatMoney(fee.amountCents, fee.currency)}
+                    <CreditCard className="ml-2 h-4 w-4" />
                   </>
                 ) : (
                   <>

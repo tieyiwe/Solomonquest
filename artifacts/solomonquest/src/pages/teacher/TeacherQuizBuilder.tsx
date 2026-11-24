@@ -37,6 +37,8 @@ import {
   BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
+import { QuizBankTools } from "@/components/quiz/QuizBankTools";
+import { HelpLink } from "@/help/components/HelpLink";
 
 async function apiFetch(url: string, options: RequestInit = {}) {
   const { data } = await supabase.auth.getSession();
@@ -53,15 +55,15 @@ async function apiFetch(url: string, options: RequestInit = {}) {
 
 // ---- types ----
 
-type QuestionType = "multiple_choice" | "true_false" | "short_answer" | "essay" | "fill_blank";
+export type QuestionType = "multiple_choice" | "true_false" | "short_answer" | "essay" | "fill_blank";
 
-interface QuizOption {
+export interface QuizOption {
   id: string;
   text: string;
   isCorrect: boolean;
 }
 
-interface Question {
+export interface Question {
   id: string;
   type: QuestionType;
   text: string;
@@ -92,7 +94,7 @@ interface Analytics {
   attempt_count: number;
 }
 
-const questionTypeLabels: Record<QuestionType, string> = {
+export const questionTypeLabels: Record<QuestionType, string> = {
   multiple_choice: "Multiple Choice",
   true_false: "True / False",
   short_answer: "Short Answer",
@@ -104,7 +106,38 @@ function makeId() {
   return Math.random().toString(36).slice(2, 9);
 }
 
-function makeQuestion(type: QuestionType): Question {
+// Map a stored quiz_questions row ({ question, type, options:
+// [{ id, text, is_correct }], correct_answer }) into the editor's model.
+// The builder used to drop rows straight into state, so reopening a quiz
+// showed every question blank with no correct answer marked — and saving
+// one then PUT an empty question text over the real one.
+export function fromApiQuestion(raw: Record<string, any>): Question {
+  const type: QuestionType = (raw.type ?? raw.question_type ?? "short_answer") as QuestionType;
+  const correct = raw.correct_answer != null ? String(raw.correct_answer) : undefined;
+  const options: QuizOption[] = Array.isArray(raw.options)
+    ? raw.options.map((o: any, i: number) => {
+        const opt = o && typeof o === "object" ? o : { id: String(o), text: String(o) };
+        const id = String(opt.id ?? i);
+        const text = String(opt.text ?? "");
+        const isCorrect =
+          opt.is_correct === true ||
+          opt.isCorrect === true ||
+          (type === "multiple_choice" && correct === id) ||
+          (type === "true_false" && correct === text);
+        return { id, text, isCorrect };
+      })
+    : [];
+  return {
+    id: String(raw.id),
+    type,
+    text: raw.question ?? raw.question_text ?? "",
+    points: Number(raw.points ?? 1),
+    options,
+    correctAnswer: type === "multiple_choice" || type === "true_false" ? undefined : correct,
+  };
+}
+
+export function makeQuestion(type: QuestionType): Question {
   const base: Question = { id: makeId(), type, text: "", points: 1, options: [] };
   if (type === "multiple_choice") {
     base.options = [
@@ -123,9 +156,30 @@ function makeQuestion(type: QuestionType): Question {
   return base;
 }
 
+// Editor model -> stored quiz_questions shape. See the comment on
+// toApiPayload in QuizDetail; also used by the question-bank editor.
+export function questionToApiPayload(q: Question) {
+  const options = q.options.map((o) => ({ id: o.id, text: o.text, is_correct: o.isCorrect }));
+  let correctAnswer: string | null = null;
+  if (q.type === "multiple_choice") {
+    correctAnswer = q.options.find((o) => o.isCorrect)?.id ?? null;
+  } else if (q.type === "true_false") {
+    correctAnswer = q.options.find((o) => o.isCorrect)?.text ?? null;
+  } else {
+    correctAnswer = q.correctAnswer ?? null;
+  }
+  return {
+    type: q.type,
+    question: q.text,
+    options: q.options.length > 0 ? options : null,
+    correct_answer: correctAnswer,
+    points: q.points,
+  };
+}
+
 // ---- QuestionCard ----
 
-function QuestionCard({
+export function QuestionCard({
   question,
   index,
   total,
@@ -171,7 +225,7 @@ function QuestionCard({
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0 ml-auto">
-            <Button
+            <Button aria-label="Move up"
               variant="ghost"
               size="icon"
               className="h-7 w-7"
@@ -180,7 +234,7 @@ function QuestionCard({
             >
               <ArrowUp className="h-3.5 w-3.5" />
             </Button>
-            <Button
+            <Button aria-label="Move down"
               variant="ghost"
               size="icon"
               className="h-7 w-7"
@@ -197,7 +251,7 @@ function QuestionCard({
             >
               {expanded ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
             </Button>
-            <Button
+            <Button aria-label="Delete"
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
@@ -213,8 +267,8 @@ function QuestionCard({
         <CardContent className="space-y-4 pt-0">
           <div className="flex gap-4">
             <div className="flex-1 space-y-1.5">
-              <Label className="text-xs">Question Text</Label>
-              <Textarea
+              <Label htmlFor="teacherquizbuilder-question-text" className="text-xs">Question Text</Label>
+              <Textarea id="teacherquizbuilder-question-text"
                 value={question.text}
                 onChange={(e) => onUpdate({ ...question, text: e.target.value })}
                 placeholder="Enter your question here..."
@@ -223,8 +277,8 @@ function QuestionCard({
               />
             </div>
             <div className="w-24 space-y-1.5 shrink-0">
-              <Label className="text-xs">Points</Label>
-              <Input
+              <Label htmlFor="teacherquizbuilder-points" className="text-xs">Points</Label>
+              <Input id="teacherquizbuilder-points"
                 type="number"
                 min={0}
                 value={question.points}
@@ -243,7 +297,7 @@ function QuestionCard({
                 <div key={option.id} className="flex items-center gap-2">
                   <button type="button" onClick={() => setCorrectOption(option.id)} className="shrink-0">
                     {option.isCorrect ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <CheckCircle2 className="h-5 w-5 text-success" />
                     ) : (
                       <Circle className="h-5 w-5 text-muted-foreground hover:text-foreground transition-colors" />
                     )}
@@ -257,7 +311,7 @@ function QuestionCard({
                 </div>
               ))}
               {question.options.filter((o) => o.isCorrect).length === 0 && (
-                <p className="text-xs text-amber-600">Please mark a correct answer.</p>
+                <p className="text-xs text-warning">Please mark a correct answer.</p>
               )}
             </div>
           )}
@@ -273,7 +327,7 @@ function QuestionCard({
                     onClick={() => setCorrectOption(option.id)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all ${
                       option.isCorrect
-                        ? "border-green-600 bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                        ? "border-success bg-success/10 text-success  "
                         : "border-border text-muted-foreground hover:border-foreground/50"
                     }`}
                   >
@@ -315,8 +369,8 @@ function QuestionCard({
 
           {question.type === "fill_blank" && (
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Correct Answer(s)</Label>
-              <Input
+              <Label htmlFor="teacherquizbuilder-correct-answer-s" className="text-xs text-muted-foreground">Correct Answer(s)</Label>
+              <Input id="teacherquizbuilder-correct-answer-s"
                 value={question.correctAnswer || ""}
                 onChange={(e) => onUpdate({ ...question, correctAnswer: e.target.value })}
                 placeholder="Correct answer (separate multiple with commas)"
@@ -413,9 +467,9 @@ function CreateQuizForm({ courses, onCreated, onCancel }: CreateQuizFormProps) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Course</Label>
+            <Label htmlFor="teacherquizbuilder-course">Course</Label>
             <Select value={courseId} onValueChange={setCourseId}>
-              <SelectTrigger>
+              <SelectTrigger id="teacherquizbuilder-course">
                 <SelectValue placeholder="Select a course..." />
               </SelectTrigger>
               <SelectContent>
@@ -552,9 +606,9 @@ function QuizDetail({ quiz, onPublished }: QuizDetailProps) {
 
   useEffect(() => {
     setLoadingQuestions(true);
-    apiFetch(`/api/quizzes/${quiz.id}/questions`)
+    apiFetch(`/api/quizzes/${quiz.id}`)
       .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setQuestions(Array.isArray(data) ? data : data?.questions ?? []))
+      .then((data) => setQuestions((Array.isArray(data) ? data : data?.questions ?? []).map(fromApiQuestion)))
       .catch(() => setQuestions([]))
       .finally(() => setLoadingQuestions(false));
   }, [quiz.id]);
@@ -576,18 +630,36 @@ function QuizDetail({ quiz, onPublished }: QuizDetailProps) {
     }
   };
 
+  // The backend's quiz_questions table (and everything that reads it — quiz
+  // taking, auto-grading) speaks a different shape than this component's
+  // local Question state: `question` not `text`, `correct_answer` not
+  // `correctAnswer`, options carry `is_correct` not `isCorrect`, and for
+  // multiple_choice the graded "submitted answer" is the chosen option's id
+  // while for true_false it's the literal string "True"/"False" (see
+  // StudentQuizTake.tsx's MultipleChoiceInput/TrueFalseInput). Translate here
+  // rather than changing the local shape everywhere it's used for editing.
+  const toApiPayload = questionToApiPayload;
+
   const addQuestion = async (type: QuestionType) => {
     const q = makeQuestion(type);
     setSavingQuestion(true);
     try {
       const res = await apiFetch(`/api/quizzes/${quiz.id}/questions`, {
         method: "POST",
-        body: JSON.stringify(q),
+        body: JSON.stringify(toApiPayload(q)),
       });
-      const saved = res.ok ? await res.json() : q;
-      setQuestions((prev) => [...prev, { ...q, ...saved }]);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        toast.error(body.error ?? "Failed to add question");
+        return;
+      }
+      const saved = await res.json();
+      // Keep the local (camelCase, isCorrect-based) shape for editing, but
+      // adopt the server-assigned id so later PUT/DELETE calls target the
+      // real row instead of the client-generated placeholder id.
+      setQuestions((prev) => [...prev, { ...q, id: saved.id ?? q.id }]);
     } catch {
-      setQuestions((prev) => [...prev, q]);
+      toast.error("Failed to add question");
     } finally {
       setSavingQuestion(false);
       setAddingType(null);
@@ -597,12 +669,16 @@ function QuizDetail({ quiz, onPublished }: QuizDetailProps) {
   const updateQuestion = async (index: number, updated: Question) => {
     setQuestions((prev) => prev.map((q, i) => (i === index ? updated : q)));
     try {
-      await apiFetch(`/api/quizzes/${quiz.id}/questions/${updated.id}`, {
+      const res = await apiFetch(`/api/quizzes/${quiz.id}/questions/${updated.id}`, {
         method: "PUT",
-        body: JSON.stringify(updated),
+        body: JSON.stringify(toApiPayload(updated)),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        toast.error(body.error ?? "Failed to save question");
+      }
     } catch {
-      // ignore
+      toast.error("Failed to save question");
     }
   };
 
@@ -715,6 +791,13 @@ function QuizDetail({ quiz, onPublished }: QuizDetailProps) {
             </CardContent>
           </Card>
 
+          {/* Question banks: copy picked questions in, or draw at random per attempt */}
+          <QuizBankTools
+            quizId={quiz.id}
+            courseId={quiz.course_id}
+            onQuestionsAdded={(rows) => setQuestions((prev) => [...prev, ...rows.map(fromApiQuestion)])}
+          />
+
           {loadingQuestions ? (
             <div className="space-y-3">
               {[1, 2].map((i) => (
@@ -817,7 +900,10 @@ export default function TeacherQuizBuilder() {
               Dashboard
             </Link>
           </Button>
-          <h1 className="text-2xl font-bold tracking-tight">Quiz Builder</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">Quiz Builder</h1>
+            <HelpLink slug="teacher-quiz-builder" label="How to build a quiz" />
+          </div>
           <p className="text-muted-foreground mt-1">
             Create and manage quizzes for your courses.
           </p>

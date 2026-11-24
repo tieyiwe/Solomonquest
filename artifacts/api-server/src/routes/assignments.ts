@@ -1,8 +1,173 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { gradeSubmission } from "../lib/gradingEngine";
+import {
+  parseLatePolicyInput,
+  latePolicyFields,
+  getStudentExtensions,
+  effectiveDueDate,
+  submissionLateFields,
+} from "../lib/lateWork";
 
 const router: IRouter = Router();
+
+function isTeacherOrAdmin(role?: string): boolean {
+  return role === "teacher" || role === "admin" || role === "super_admin";
+}
+
+function isAdmin(role?: string): boolean {
+  return role === "admin" || role === "super_admin";
+}
+
+export interface RubricCriterion {
+  id: string;
+  name: string;
+  maxPoints: number;
+}
+
+/** Validates a rubric shape from request input; returns null (valid, possibly empty) or an error string. */
+function validateRubric(input: unknown): { rubric: RubricCriterion[] | null; error: string | null } {
+  if (input === undefined || input === null) return { rubric: null, error: null };
+  if (!Array.isArray(input)) return { rubric: null, error: "rubric must be an array of criteria" };
+  if (input.length === 0) return { rubric: null, error: null };
+
+  const seenIds = new Set<string>();
+  const rubric: RubricCriterion[] = [];
+  for (const raw of input) {
+    const c = raw as Record<string, unknown>;
+    const id = typeof c.id === "string" && c.id ? c.id : null;
+    const name = typeof c.name === "string" ? c.name.trim() : "";
+    const maxPoints = typeof c.maxPoints === "number" ? c.maxPoints : Number(c.maxPoints);
+    if (!id || seenIds.has(id)) return { rubric: null, error: "Each rubric criterion needs a unique id" };
+    if (!name) return { rubric: null, error: "Each rubric criterion needs a name" };
+    if (!Number.isFinite(maxPoints) || maxPoints <= 0) {
+      return { rubric: null, error: `Criterion "${name}" needs a positive maxPoints value` };
+    }
+    seenIds.add(id);
+    rubric.push({ id, name, maxPoints });
+  }
+  return { rubric, error: null };
+}
+
+/**
+ * Confirms the caller may manage this assignment's course: a teacher must
+ * own the course, an admin must be in the same school as it, super_admin
+ * always passes. Every admin-bypass check below previously only asked "is
+ * this caller an admin?" with no comparison to the course's own school —
+ * any school's admin could edit/delete/publish another school's
+ * assignments, or plant a new one, just by knowing/guessing the id.
+ */
+async function assertCanManageAssignmentCourse(
+  courseId: string,
+  userId: string | undefined,
+  role: string | undefined
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const { data: course } = await supabaseAdmin
+    .from("courses")
+    .select("teacher_id, school_id")
+    .eq("id", courseId)
+    .single();
+
+  if (!course) return { ok: false, status: 404, error: "Course not found" };
+  if (role === "super_admin") return { ok: true };
+  if (role === "admin") {
+    const { data: caller } = await supabaseAdmin
+      .from("profiles")
+      .select("school_id")
+      .eq("id", userId ?? "")
+      .single();
+    return caller?.school_id === course.school_id
+      ? { ok: true }
+      : { ok: false, status: 403, error: "Forbidden" };
+  }
+  return course.teacher_id === userId
+    ? { ok: true }
+    : { ok: false, status: 403, error: "You do not have permission to manage this assignment" };
+}
+
+/** Writes an assignment row; if the late-policy columns don't exist yet
+ *  (late-work-and-alerts.sql not applied) retries without them, so creating
+ *  and editing assignments keeps working before the migration is run. */
+const LATE_POLICY_COLUMNS = ["allow_late_submissions", "late_penalty_per_day", "late_penalty_max", "late_cutoff_at"];
+async function writeAssignment(
+  op: (row: Record<string, unknown>) => PromiseLike<{ data: any; error: { message: string } | null }>,
+  row: Record<string, unknown>
+): Promise<{ data: any; error: { message: string } | null }> {
+  let result = await op(row);
+  // video-duration.sql not applied yet: save without the duration.
+  if (result.error && /video_duration_seconds/.test(result.error.message) && "video_duration_seconds" in row) {
+    row = Object.fromEntries(Object.entries(row).filter(([k]) => k !== "video_duration_seconds"));
+    result = await op(row);
+  }
+  if (result.error && /late_|allow_late/.test(result.error.message)) {
+    return op(Object.fromEntries(Object.entries(row).filter(([k]) => !LATE_POLICY_COLUMNS.includes(k))));
+  }
+  return result;
+}
+
+/** Longest video a "Video Watch" assignment may declare: 12 hours. */
+const MAX_VIDEO_DURATION_SECONDS = 12 * 60 * 60;
+
+/**
+ * Reads the teacher-supplied video length (`videoDurationSeconds`, or
+ * `video_duration_seconds`) from a create/update body.
+ *   undefined → field not sent (leave as is)
+ *   null      → clear it ("" and null both mean "unknown")
+ *   number    → seconds, must be > 0 and <= 12h (stored to the millisecond)
+ */
+function parseVideoDurationInput(body: Record<string, unknown>): { value?: number | null; error?: string } {
+  const raw = body.videoDurationSeconds !== undefined ? body.videoDurationSeconds : body.video_duration_seconds;
+  if (raw === undefined) return {};
+  if (raw === null || raw === "") return { value: null };
+  const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n <= 0 || n > MAX_VIDEO_DURATION_SECONDS) {
+    return { error: "videoDurationSeconds must be a positive number of seconds, at most 12 hours" };
+  }
+  return { value: Math.round(n * 1000) / 1000 };
+}
+
+/**
+ * Student view of assignment rows: `dueDate` becomes the student's
+ * effective due date (their extension, if any — so every list, the "Due
+ * This Week" count and sorting use it), with the original and extended
+ * dates alongside, plus the student's own submission state (status, grade,
+ * lateness and any late penalty).
+ */
+async function withStudentView<T extends { id: unknown; dueDate: unknown }>(
+  items: T[],
+  studentId: string
+): Promise<(T & Record<string, unknown>)[]> {
+  const ids = items.map((a) => a.id as string);
+  if (ids.length === 0) return items as (T & Record<string, unknown>)[];
+  const [extensions, subsRes] = await Promise.all([
+    getStudentExtensions(studentId, ids),
+    supabaseAdmin.from("submissions").select("*").eq("student_id", studentId).in("assignment_id", ids),
+  ]);
+  const subByAssignment = new Map((subsRes.data ?? []).map((s) => [s.assignment_id as string, s as Record<string, unknown>]));
+  return items.map((a) => {
+    const ext = extensions.get(a.id as string) ?? null;
+    const sub = subByAssignment.get(a.id as string);
+    const handedIn = !!sub && (sub.status === "submitted" || sub.status === "graded");
+    return {
+      ...a,
+      dueDate: effectiveDueDate(a.dueDate as string | null, ext),
+      originalDueDate: a.dueDate ?? null,
+      extendedDueDate: ext?.extendedDueAt ?? null,
+      penaltyWaived: ext?.waivePenalty ?? false,
+      hasSubmitted: handedIn,
+      submissionStatus: handedIn ? sub!.status : null,
+      grade: sub?.grade ?? null,
+      ...(sub
+        ? submissionLateFields(sub)
+        : { submittedLate: false, minutesLate: 0, daysLate: 0, rawGrade: null, latePenaltyPercent: 0 }),
+    };
+  });
+}
+
+function isStudentViewer(role?: string): boolean {
+  return role === "student" || role === "staff";
+}
 
 // Pending assignments for current student
 router.get("/assignments/pending", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
@@ -47,7 +212,14 @@ router.get("/assignments/pending", requireAuth, async (req: AuthenticatedRequest
     (a: Record<string, unknown>) => !submittedIds.has(a.id as string)
   );
 
-  res.json(await Promise.all(pending.map(enrichAssignment)));
+  const view = await withStudentView(await enrichAssignments(pending), userId ?? "");
+  // Re-sort by the effective (possibly extended) due date.
+  view.sort((a, b) => {
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    return new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime();
+  });
+  res.json(view);
 });
 
 // GET /assignments?course_id=X — list assignments for a course with submission info
@@ -61,11 +233,38 @@ router.get("/assignments", requireAuth, async (req: AuthenticatedRequest, res): 
     return;
   }
 
-  const { data: assignments, error } = await supabaseAdmin
+  // Security: this previously had no tenant check at all — any
+  // authenticated user could pass any other school's course_id and read
+  // its (published) assignment list, since only role determined whether
+  // drafts were included, never whether the course belonged to the
+  // caller's school.
+  const { data: courseForAccess } = await supabaseAdmin
+    .from("courses")
+    .select("school_id, title")
+    .eq("id", courseId)
+    .maybeSingle();
+
+  if (!courseForAccess) {
+    res.status(404).json({ error: "Course not found" });
+    return;
+  }
+
+  if (req.userRole !== "super_admin" && courseForAccess.school_id !== req.schoolId) {
+    res.status(404).json({ error: "Course not found" });
+    return;
+  }
+
+  let query = supabaseAdmin
     .from("assignments")
     .select("*")
-    .eq("course_id", courseId)
-    .order("due_date", { ascending: true });
+    .eq("course_id", courseId);
+
+  // Students only see published assignments; teachers/admins see drafts too.
+  if (!isTeacherOrAdmin(req.userRole)) {
+    query = query.eq("is_published", true);
+  }
+
+  const { data: assignments, error } = await query.order("due_date", { ascending: true });
 
   if (error) {
     res.status(500).json({ error: error.message });
@@ -73,50 +272,52 @@ router.get("/assignments", requireAuth, async (req: AuthenticatedRequest, res): 
   }
 
   const userId = req.userId;
+  const assignmentIds = (assignments ?? []).map((a) => a.id as string);
 
-  const enriched = await Promise.all(
-    (assignments ?? []).map(async (a: Record<string, unknown>) => {
-      // Count submissions
-      const { count: submissionCount } = await supabaseAdmin
-        .from("submissions")
-        .select("id", { count: "exact", head: true })
-        .eq("assignment_id", a.id as string);
-
-      // Check if current user has submitted
-      let hasSubmitted = false;
-      if (userId) {
-        const { data: mySub } = await supabaseAdmin
+  // These used to run per-assignment (submission count + "did I submit"
+  // check + a course-title lookup that's identical for every row here,
+  // since the whole list is already scoped to one course_id) — a course
+  // with 20 assignments meant 60+ extra round-trips to render one page.
+  // Batched into 3 queries total regardless of list size.
+  const [submissionCountRows, mySubmissionRows] = await Promise.all([
+    assignmentIds.length > 0
+      ? supabaseAdmin.from("submissions").select("assignment_id").in("assignment_id", assignmentIds)
+      : Promise.resolve({ data: [] as { assignment_id: string }[] }),
+    userId && assignmentIds.length > 0
+      ? supabaseAdmin
           .from("submissions")
-          .select("id, grade, status")
-          .eq("assignment_id", a.id as string)
+          .select("assignment_id")
+          .in("assignment_id", assignmentIds)
           .eq("student_id", userId)
-          .single();
-        if (mySub) {
-          hasSubmitted = true;
-        }
-      }
+      : Promise.resolve({ data: [] as { assignment_id: string }[] }),
+  ]);
 
-      const base = await enrichAssignment(a);
-      return {
-        ...base,
-        submissionCount: submissionCount ?? 0,
-        hasSubmitted,
-      };
-    })
-  );
+  const submissionCounts = new Map<string, number>();
+  for (const row of submissionCountRows.data ?? []) {
+    const id = row.assignment_id as string;
+    submissionCounts.set(id, (submissionCounts.get(id) ?? 0) + 1);
+  }
+  const submittedSet = new Set((mySubmissionRows.data ?? []).map((row) => row.assignment_id as string));
+  const courseTitle = courseForAccess.title ?? null;
 
-  res.json(enriched);
+  const enriched = (assignments ?? []).map((a: Record<string, unknown>) => ({
+    ...enrichAssignmentFields(a, courseTitle),
+    submissionCount: submissionCounts.get(a.id as string) ?? 0,
+    hasSubmitted: submittedSet.has(a.id as string),
+  }));
+
+  res.json(isStudentViewer(req.userRole) && userId ? await withStudentView(enriched, userId) : enriched);
 });
 
 // POST /assignments — create assignment (teacher/admin)
 router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const role = req.userRole;
-  if (role !== "teacher" && role !== "admin") {
+  if (!isTeacherOrAdmin(role)) {
     res.status(403).json({ error: "Only teachers and admins can create assignments" });
     return;
   }
 
-  const { course_id, title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch } = req.body;
+  const { course_id, title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch, isPublished, rubric: rubricInput } = req.body;
 
   if (!course_id) {
     res.status(400).json({ error: "course_id is required" });
@@ -131,9 +332,43 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
     return;
   }
 
-  const { data: assignment, error } = await supabaseAdmin
+  const { rubric, error: rubricError } = validateRubric(rubricInput);
+  if (rubricError) {
+    res.status(400).json({ error: rubricError });
+    return;
+  }
+  const { updates: latePolicy, error: lateError } = parseLatePolicyInput(req.body ?? {});
+  if (lateError) {
+    res.status(400).json({ error: lateError });
+    return;
+  }
+
+  // Security: this was the only write route in this file that never
+  // checked the course actually belonged to the caller (every other
+  // create/update/delete route calls assertCanManageAssignmentCourse) — a
+  // teacher or admin in any school could create (and immediately publish,
+  // triggering a student notification blast) an assignment against any
+  // other school's course_id.
+  const access = await assertCanManageAssignmentCourse(course_id, req.userId, role);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
+  const duration = parseVideoDurationInput(req.body ?? {});
+  if (duration.error) {
+    res.status(400).json({ error: duration.error });
+    return;
+  }
+
+  const publishNow = isPublished === true;
+
+  const { data: assignment, error } = await writeAssignment((row) => supabaseAdmin
     .from("assignments")
-    .insert({
+    .insert(row)
+    .select()
+    .single(), {
+      ...latePolicy,
       course_id,
       title,
       description: description ?? null,
@@ -141,37 +376,21 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
       points_possible: points ?? null,
       file_url: file_url ?? null,
       instructions: instructions ?? null,
-      is_published: true,
+      is_published: publishNow,
       assignment_type: assignment_type ?? "standard",
       video_url: video_url ?? null,
       require_full_watch: require_full_watch ?? false,
-    })
-    .select()
-    .single();
+      ...(duration.value !== undefined ? { video_duration_seconds: duration.value } : {}),
+      rubric,
+    });
 
   if (error) {
     res.status(400).json({ error: error.message });
     return;
   }
 
-  // Notify all enrolled students
-  const { data: enrollments } = await supabaseAdmin
-    .from("course_enrollments")
-    .select("student_id")
-    .eq("course_id", course_id)
-    .eq("status", "active");
-
-  if (enrollments && enrollments.length > 0) {
-    const notifications = enrollments.map((e: Record<string, unknown>) => ({
-      user_id: e.student_id as string,
-      title: "New Assignment",
-      message: `A new assignment "${title}" has been posted.`,
-      type: "assignment",
-      reference_id: assignment.id,
-      is_read: false,
-    }));
-
-    await supabaseAdmin.from("notifications").insert(notifications);
+  if (publishNow) {
+    await notifyStudentsOfPublish(course_id, assignment.id as string, title, "assignment");
   }
 
   res.status(201).json(await enrichAssignment(assignment));
@@ -195,23 +414,31 @@ router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
     return;
   }
 
-  // Ownership check for teachers
-  if (role !== "admin") {
-    const teacherId = (existing.courses as Record<string, unknown> | null)?.teacher_id;
-    if (teacherId !== userId) {
-      res.status(403).json({ error: "You do not have permission to update this assignment" });
-      return;
-    }
+  const access = await assertCanManageAssignmentCourse(existing.course_id as string, userId, role);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
   }
 
-  const { title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch } = req.body;
+  const { title, description, due_date, points, file_url, instructions, assignment_type, video_url, require_full_watch, isPublished, rubric: rubricInput } = req.body;
 
   if (due_date !== undefined && due_date !== null && isNaN(Date.parse(due_date))) {
     res.status(400).json({ error: "due_date must be a valid date" });
     return;
   }
 
-  const updates: Record<string, unknown> = {};
+  const { rubric, error: rubricError } = validateRubric(rubricInput);
+  if (rubricError) {
+    res.status(400).json({ error: rubricError });
+    return;
+  }
+  const { updates: latePolicy, error: lateError } = parseLatePolicyInput(req.body ?? {});
+  if (lateError) {
+    res.status(400).json({ error: lateError });
+    return;
+  }
+
+  const updates: Record<string, unknown> = { ...latePolicy };
   if (title !== undefined) updates.title = title;
   if (description !== undefined) updates.description = description;
   if (due_date !== undefined) updates.due_date = due_date;
@@ -221,17 +448,31 @@ router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
   if (assignment_type !== undefined) updates.assignment_type = assignment_type;
   if (video_url !== undefined) updates.video_url = video_url;
   if (require_full_watch !== undefined) updates.require_full_watch = require_full_watch;
+  if (isPublished !== undefined) updates.is_published = isPublished;
+  if (rubricInput !== undefined) updates.rubric = rubric;
+  const duration = parseVideoDurationInput(req.body ?? {});
+  if (duration.error) {
+    res.status(400).json({ error: duration.error });
+    return;
+  }
+  applyVideoDuration(updates, existing, video_url, duration.value);
 
-  const { data, error } = await supabaseAdmin
+  const wasPublished = existing.is_published === true;
+
+  const { data, error } = await writeAssignment((row) => supabaseAdmin
     .from("assignments")
-    .update(updates)
+    .update(row)
     .eq("id", id)
     .select()
-    .single();
+    .single(), updates);
 
   if (error || !data) {
     res.status(400).json({ error: error?.message ?? "Failed to update assignment" });
     return;
+  }
+
+  if (isPublished === true && !wasPublished) {
+    await notifyStudentsOfPublish(data.course_id as string, data.id as string, data.title as string, "assignment");
   }
 
   res.json(await enrichAssignment(data));
@@ -255,12 +496,10 @@ router.delete("/assignments/:id", requireAuth, async (req: AuthenticatedRequest,
     return;
   }
 
-  if (role !== "admin") {
-    const teacherId = (existing.courses as Record<string, unknown> | null)?.teacher_id;
-    if (teacherId !== userId) {
-      res.status(403).json({ error: "You do not have permission to delete this assignment" });
-      return;
-    }
+  const access = await assertCanManageAssignmentCourse(existing.course_id as string, userId, role);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
   }
 
   const { error } = await supabaseAdmin.from("assignments").delete().eq("id", id);
@@ -274,61 +513,139 @@ router.delete("/assignments/:id", requireAuth, async (req: AuthenticatedRequest,
 });
 
 // List assignments for a course (legacy route by path param)
-router.get("/courses/:courseId/assignments", requireAuth, async (req, res): Promise<void> => {
+router.get("/courses/:courseId/assignments", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const courseId = Array.isArray(req.params.courseId) ? req.params.courseId[0] : req.params.courseId;
 
-  const { data, error } = await supabaseAdmin
+  // Security: this had no tenant scoping and no draft filtering at all —
+  // any authenticated user of any role could list any other school's
+  // course assignments, drafts included, just by guessing/enumerating a
+  // course id.
+  const { data: course } = await supabaseAdmin
+    .from("courses")
+    .select("school_id")
+    .eq("id", courseId)
+    .maybeSingle();
+
+  if (!course) {
+    res.status(404).json({ error: "Course not found" });
+    return;
+  }
+
+  if (req.userRole !== "super_admin" && course.school_id !== req.schoolId) {
+    res.status(404).json({ error: "Course not found" });
+    return;
+  }
+
+  let query = supabaseAdmin
     .from("assignments")
     .select("*")
-    .eq("course_id", courseId)
-    .order("due_date", { ascending: true });
+    .eq("course_id", courseId);
+
+  if (!isTeacherOrAdmin(req.userRole)) {
+    query = query.eq("is_published", true);
+  }
+
+  const { data, error } = await query.order("due_date", { ascending: true });
 
   if (error) {
     res.status(500).json({ error: error.message });
     return;
   }
 
-  res.json(await Promise.all((data ?? []).map(enrichAssignment)));
+  const enriched = await enrichAssignments(data ?? []);
+  res.json(isStudentViewer(req.userRole) && req.userId ? await withStudentView(enriched, req.userId) : enriched);
 });
 
-// Create assignment (legacy route by path param)
-router.post("/courses/:courseId/assignments", requireAuth, async (req, res): Promise<void> => {
-  const courseId = Array.isArray(req.params.courseId) ? req.params.courseId[0] : req.params.courseId;
-  const { title, description, dueDate, pointsPossible } = req.body;
+// Create assignment (legacy route by path param — TeacherAssignments.tsx sends
+// a mix of snake_case and camelCase for the same fields, so both are accepted)
+router.post(
+  "/courses/:courseId/assignments",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const courseId = Array.isArray(req.params.courseId) ? req.params.courseId[0] : req.params.courseId;
 
-  if (!title) {
-    res.status(400).json({ error: "title is required" });
-    return;
+    if (!isTeacherOrAdmin(req.userRole)) {
+      res.status(403).json({ error: "Only teachers and admins can create assignments" });
+      return;
+    }
+
+    const access = await assertCanManageAssignmentCourse(courseId, req.userId, req.userRole);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
+
+    const body = req.body ?? {};
+    const title = body.title;
+    const description = body.description;
+    const dueDate = body.due_date ?? body.dueDate;
+    const pointsPossible = body.points ?? body.pointsPossible;
+    const fileUrl = body.file_url ?? body.fileUrl;
+    const instructions = body.instructions;
+    const assignmentType = body.assignment_type ?? body.assignmentType ?? "standard";
+    const videoUrl = body.video_url ?? body.videoUrl;
+    const requireFullWatch = body.require_full_watch ?? body.requireFullWatch ?? false;
+    const isPublished = body.isPublished === true;
+
+    if (!title) {
+      res.status(400).json({ error: "title is required" });
+      return;
+    }
+    if (dueDate && isNaN(Date.parse(dueDate))) {
+      res.status(400).json({ error: "due_date must be a valid date" });
+      return;
+    }
+    const { updates: latePolicy, error: lateError } = parseLatePolicyInput(body);
+    if (lateError) {
+      res.status(400).json({ error: lateError });
+      return;
+    }
+    const duration = parseVideoDurationInput(body);
+    if (duration.error) {
+      res.status(400).json({ error: duration.error });
+      return;
+    }
+
+    const { data, error } = await writeAssignment((row) => supabaseAdmin
+      .from("assignments")
+      .insert(row)
+      .select()
+      .single(), {
+        ...latePolicy,
+        course_id: courseId,
+        title,
+        description: description ?? null,
+        due_date: dueDate ?? null,
+        points_possible: pointsPossible ?? null,
+        file_url: fileUrl ?? null,
+        instructions: instructions ?? null,
+        is_published: isPublished,
+        assignment_type: assignmentType,
+        video_url: videoUrl ?? null,
+        require_full_watch: requireFullWatch,
+        ...(duration.value !== undefined ? { video_duration_seconds: duration.value } : {}),
+      });
+
+    if (error) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+
+    if (isPublished) {
+      await notifyStudentsOfPublish(courseId, data.id as string, title, "assignment");
+    }
+
+    res.status(201).json(await enrichAssignment(data));
   }
-
-  const { data, error } = await supabaseAdmin
-    .from("assignments")
-    .insert({
-      course_id: courseId,
-      title,
-      description: description ?? null,
-      due_date: dueDate ?? null,
-      points_possible: pointsPossible ?? null,
-      is_published: false,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    res.status(400).json({ error: error.message });
-    return;
-  }
-
-  res.status(201).json(await enrichAssignment(data));
-});
+);
 
 // Get assignment
-router.get("/assignments/:id", requireAuth, async (req, res): Promise<void> => {
+router.get("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
   const { data, error } = await supabaseAdmin
     .from("assignments")
-    .select("*")
+    .select("*, courses(school_id)")
     .eq("id", id)
     .single();
 
@@ -337,51 +654,371 @@ router.get("/assignments/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(await enrichAssignment(data));
+  const courseSchoolId = (data.courses as Record<string, unknown> | null)?.school_id;
+  if (req.userRole !== "super_admin" && courseSchoolId !== req.schoolId) {
+    res.status(404).json({ error: "Assignment not found" });
+    return;
+  }
+
+  const one = await enrichAssignment(data);
+  res.json(isStudentViewer(req.userRole) && req.userId ? (await withStudentView([one], req.userId))[0] : one);
 });
 
-// Update assignment (PATCH - legacy)
-router.patch("/assignments/:id", requireAuth, async (req, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { title, description, dueDate, pointsPossible, isPublished, videoUrl, requireFullWatch, assignmentType } = req.body;
+interface WatchAssignmentRow {
+  id: string;
+  course_id: string;
+  assignment_type: string | null;
+  require_full_watch: boolean | null;
+  points_possible: number | null;
+  video_duration_seconds?: number | string | null;
+}
 
-  const updates: Record<string, unknown> = {};
+/** The assignment fields watch-progress needs. Retries without
+ *  video_duration_seconds if video-duration.sql hasn't been applied yet. */
+async function loadWatchAssignment(id: string): Promise<WatchAssignmentRow | null> {
+  const base = "id, course_id, assignment_type, require_full_watch, points_possible";
+  const first = await supabaseAdmin.from("assignments").select(`${base}, video_duration_seconds`).eq("id", id).maybeSingle();
+  if (first.error && /video_duration_seconds/.test(first.error.message)) {
+    const retry = await supabaseAdmin.from("assignments").select(base).eq("id", id).maybeSingle();
+    return (retry.data as WatchAssignmentRow | null) ?? null;
+  }
+  return (first.data as WatchAssignmentRow | null) ?? null;
+}
+
+/** The teacher-saved video length, or null when none is stored. */
+function assignmentVideoDuration(a: WatchAssignmentRow): number | null {
+  const n = Number(a.video_duration_seconds ?? NaN);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// Threshold at which server-verified watch progress counts as "fully
+// watched." Not 100 — a student who watches to 99.x% (browser rounding,
+// player stopping a frame short of the end event, etc.) shouldn't be
+// blocked from credit, and the client's own forward-seek block already
+// makes it impossible to reach a high percentage without having played
+// through nearly the whole video. 90 leaves a small, deliberate margin
+// while still requiring the student to have watched the bulk of it.
+const VIDEO_COMPLETION_THRESHOLD_PERCENT = 90;
+
+// GET /assignments/:id/watch-progress — the student's own server-side watch
+// record, so the page can show "watched in full" after a reload.
+router.get("/assignments/:id/watch-progress", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const assignmentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  if (req.userRole !== "student" || !req.userId) {
+    res.status(403).json({ error: "Only students have watch progress" });
+    return;
+  }
+  const [{ data }, assignment] = await Promise.all([
+    supabaseAdmin
+      .from("video_watch_progress")
+      .select("max_watched_seconds, duration_seconds, watched_percent, completed")
+      .eq("assignment_id", assignmentId)
+      .eq("student_id", req.userId)
+      .maybeSingle(),
+    loadWatchAssignment(assignmentId),
+  ]);
+  const trueDuration = assignment ? assignmentVideoDuration(assignment) : null;
+  res.json({
+    maxWatchedSeconds: Number(data?.max_watched_seconds ?? 0),
+    durationSeconds: trueDuration ?? (data?.duration_seconds != null ? Number(data.duration_seconds) : null),
+    watchedPercent: Number(data?.watched_percent ?? 0),
+    completed: data?.completed === true,
+  });
+});
+
+// POST /assignments/:id/watch-progress — the video player pings this
+// periodically (not on every timeupdate tick) with how far the student has
+// gotten. This is the server-side backstop for video-watch verification:
+// the client's own maxWatchedRef/seek-blocking gives immediate UX feedback,
+// but nothing previously stopped a student from bypassing it (devtools, a
+// direct API call) and submitting anyway. The server now tracks its own
+// high-water mark independently and only it is trusted for auto-grading.
+router.post("/assignments/:id/watch-progress", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const assignmentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const studentId = req.userId;
+
+  if (req.userRole !== "student" || !studentId) {
+    res.status(403).json({ error: "Only students record watch progress" });
+    return;
+  }
+
+  const watchedSecondsRaw = (req.body ?? {}).watchedSeconds;
+  const durationSecondsRaw = (req.body ?? {}).durationSeconds;
+  const watchedSeconds = typeof watchedSecondsRaw === "number" ? watchedSecondsRaw : Number(watchedSecondsRaw);
+  const durationSeconds = typeof durationSecondsRaw === "number" ? durationSecondsRaw : Number(durationSecondsRaw);
+
+  if (!Number.isFinite(watchedSeconds) || watchedSeconds < 0) {
+    res.status(400).json({ error: "watchedSeconds must be a non-negative number" });
+    return;
+  }
+
+  const assignment = await loadWatchAssignment(assignmentId);
+  if (!assignment) {
+    res.status(404).json({ error: "Assignment not found" });
+    return;
+  }
+
+  // The teacher-saved length (video-duration.sql) is the truth whenever it
+  // is set; the student's durationSeconds is then ignored entirely. Only
+  // assignments without one still need (and lock) the client's value.
+  const assignmentDuration = assignmentVideoDuration(assignment);
+  if (assignmentDuration === null && (!Number.isFinite(durationSeconds) || durationSeconds <= 0)) {
+    res.status(400).json({ error: "durationSeconds must be a positive number" });
+    return;
+  }
+
+  if (assignment.assignment_type !== "video") {
+    res.status(400).json({ error: "This assignment is not a video assignment" });
+    return;
+  }
+
+  // Same enrollment check submissions.ts uses for POST /submissions — only
+  // an actively enrolled student may record progress against this
+  // assignment's course.
+  const { data: enrollment } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("course_id")
+    .eq("course_id", assignment.course_id as string)
+    .eq("student_id", studentId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (!enrollment) {
+    res.status(403).json({ error: "You are not enrolled in this course" });
+    return;
+  }
+
+  const { data: existingProgress } = await supabaseAdmin
+    .from("video_watch_progress")
+    .select("completed, max_watched_seconds, duration_seconds, updated_at")
+    .eq("assignment_id", assignmentId)
+    .eq("student_id", studentId)
+    .maybeSingle();
+
+  const wasCompleted = existingProgress?.completed === true;
+
+  // The client reports its own position, so without limits a student could
+  // POST { watchedSeconds: duration } once and be marked complete. Two
+  // server-side limits make the record reflect real playback time:
+  //  1. Duration comes from the assignment when the teacher saved one.
+  //     Otherwise it is fixed by the first report; later reports can't
+  //     shrink the video to make a small position count as "complete".
+  //  2. The recorded position can only advance about as fast as real time
+  //     passes between reports (the player reports every ~12s while
+  //     playing). Each report may add at most the wall-clock time since the
+  //     previous one x 1.25, plus a few seconds of slack, capped at 60s of
+  //     elapsed time so a long pause can't be cashed in as one big jump.
+  // Values beyond the limit are clamped, not rejected: the player re-sends
+  // its true position on the next report and catches up legitimately.
+  const prevMax = Number(existingProgress?.max_watched_seconds ?? 0) || 0;
+  const lockedDuration = Number(existingProgress?.duration_seconds ?? 0);
+  const effectiveDuration = assignmentDuration ?? (lockedDuration > 0 ? lockedDuration : durationSeconds);
+  const lastReportAt = existingProgress?.updated_at ? Date.parse(existingProgress.updated_at as string) : NaN;
+  const elapsedSinceLast = Number.isFinite(lastReportAt)
+    ? Math.min(Math.max(0, (Date.now() - lastReportAt) / 1000), 60)
+    : 0;
+  const maxAllowed = existingProgress
+    ? prevMax + elapsedSinceLast * 1.25 + 5
+    : 15; // first report: playback has only just started
+  const acceptedWatchedSeconds = Math.min(watchedSeconds, maxAllowed, effectiveDuration);
+
+  // High-water mark only: a client re-reporting a lower value (e.g. after
+  // seeking back) must never reduce what the server has already recorded.
+  // This is the actual anti-cheat property — the server doesn't trust
+  // "current position," only the furthest point ever reached. The GREATEST
+  // computation happens atomically inside upsert_video_watch_progress
+  // (see video-watch-progress-atomic-upsert.sql) so concurrent requests for
+  // the same student/assignment (e.g. two tabs) can't race each other and
+  // silently lower the recorded max.
+  const { data: savedRaw, error: upsertError } = await supabaseAdmin
+    .rpc("upsert_video_watch_progress", {
+      p_assignment_id: assignmentId,
+      p_student_id: studentId,
+      p_watched_seconds: acceptedWatchedSeconds,
+      p_duration_seconds: effectiveDuration,
+      p_completion_threshold_percent: VIDEO_COMPLETION_THRESHOLD_PERCENT,
+    })
+    .single();
+
+  if (upsertError || !savedRaw) {
+    res.status(500).json({ error: upsertError?.message ?? "Failed to save watch progress" });
+    return;
+  }
+
+  const saved = savedRaw as {
+    max_watched_seconds: number;
+    duration_seconds: number;
+    watched_percent: number;
+    completed: boolean;
+    updated_at: string;
+  };
+  const completed = saved.completed === true;
+
+  // Auto-grade on the transition into "completed," only for assignments
+  // that require a full watch, and only when there's already an ungraded
+  // submission to grade — submission creation itself is a separate,
+  // unchanged flow.
+  if (completed && !wasCompleted && assignment.require_full_watch === true) {
+    const { data: submission } = await supabaseAdmin
+      .from("submissions")
+      .select("id, status")
+      .eq("assignment_id", assignmentId)
+      .eq("student_id", studentId)
+      .maybeSingle();
+
+    if (submission && submission.status !== "graded") {
+      // Full credit for completing a required-watch video. Assignments
+      // created without an explicit points value still default to 100 so
+      // completion always grades instead of silently never grading.
+      const fullCreditPoints =
+        typeof assignment.points_possible === "number" ? assignment.points_possible : 100;
+      await gradeSubmission({
+        submissionId: submission.id as string,
+        grade: fullCreditPoints,
+        gradedBy: undefined,
+      });
+    }
+  }
+
+  res.json({
+    assignmentId,
+    studentId,
+    maxWatchedSeconds: saved.max_watched_seconds,
+    durationSeconds: saved.duration_seconds,
+    watchedPercent: saved.watched_percent,
+    completed: saved.completed,
+    updatedAt: saved.updated_at,
+  });
+});
+
+// Update assignment (PATCH - legacy — accepts the same mixed-casing body as
+// the create route above, and enforces the same ownership rule PUT does)
+router.patch("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const { data: existing, error: fetchError } = await supabaseAdmin
+    .from("assignments")
+    .select("*, courses(teacher_id)")
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !existing) {
+    res.status(404).json({ error: "Assignment not found" });
+    return;
+  }
+
+  const access = await assertCanManageAssignmentCourse(existing.course_id as string, req.userId, req.userRole);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
+  const body = req.body ?? {};
+  const title = body.title;
+  const description = body.description;
+  const dueDate = body.due_date ?? body.dueDate;
+  const pointsPossible = body.points ?? body.pointsPossible;
+  const fileUrl = body.file_url ?? body.fileUrl;
+  const instructions = body.instructions;
+  const assignmentType = body.assignment_type ?? body.assignmentType;
+  const videoUrl = body.video_url ?? body.videoUrl;
+  const requireFullWatch = body.require_full_watch ?? body.requireFullWatch;
+  const isPublished = body.isPublished;
+
+  if (dueDate !== undefined && dueDate !== null && isNaN(Date.parse(dueDate))) {
+    res.status(400).json({ error: "due_date must be a valid date" });
+    return;
+  }
+  const { updates: latePolicy, error: lateError } = parseLatePolicyInput(body);
+  if (lateError) {
+    res.status(400).json({ error: lateError });
+    return;
+  }
+
+  const updates: Record<string, unknown> = { ...latePolicy };
   if (title !== undefined) updates.title = title;
   if (description !== undefined) updates.description = description;
   if (dueDate !== undefined) updates.due_date = dueDate;
   if (pointsPossible !== undefined) updates.points_possible = pointsPossible;
+  if (fileUrl !== undefined) updates.file_url = fileUrl;
+  if (instructions !== undefined) updates.instructions = instructions;
   if (isPublished !== undefined) updates.is_published = isPublished;
   if (assignmentType !== undefined) updates.assignment_type = assignmentType;
   if (videoUrl !== undefined) updates.video_url = videoUrl;
   if (requireFullWatch !== undefined) updates.require_full_watch = requireFullWatch;
+  const duration = parseVideoDurationInput(body);
+  if (duration.error) {
+    res.status(400).json({ error: duration.error });
+    return;
+  }
+  applyVideoDuration(updates, existing, videoUrl, duration.value);
 
-  const { data, error } = await supabaseAdmin
+  const wasPublished = existing.is_published === true;
+
+  const { data, error } = await writeAssignment((row) => supabaseAdmin
     .from("assignments")
-    .update(updates)
+    .update(row)
     .eq("id", id)
     .select()
-    .single();
+    .single(), updates);
 
   if (error || !data) {
     res.status(404).json({ error: "Assignment not found" });
     return;
   }
 
+  if (isPublished === true && !wasPublished) {
+    await notifyStudentsOfPublish(data.course_id as string, data.id as string, data.title as string, "assignment");
+  }
+
   res.json(await enrichAssignment(data));
 });
 
-async function enrichAssignment(a: Record<string, unknown>) {
-  let courseTitle: string | null = null;
-
-  if (a.course_id) {
-    const { data: course } = await supabaseAdmin
-      .from("courses")
-      .select("title")
-      .eq("id", a.course_id as string)
-      .single();
-    if (course) courseTitle = course.title;
+/**
+ * Puts the video length into an update. A new length is saved as sent; when
+ * the video URL changes without one, the old length no longer describes the
+ * video, so it is cleared (watch-progress then falls back to locking the
+ * first length the student's player reports, as before).
+ */
+function applyVideoDuration(
+  updates: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  newVideoUrl: unknown,
+  duration: number | null | undefined
+) {
+  if (duration !== undefined) {
+    updates.video_duration_seconds = duration;
+    return;
   }
+  const urlChanged = newVideoUrl !== undefined && (newVideoUrl ?? null) !== (existing.video_url ?? null);
+  if (urlChanged && existing.video_duration_seconds != null) updates.video_duration_seconds = null;
+}
 
+async function notifyStudentsOfPublish(courseId: string, referenceId: string, title: string, type: string) {
+  const { data: enrollments } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("student_id")
+    .eq("course_id", courseId)
+    .eq("status", "active");
+
+  if (!enrollments || enrollments.length === 0) return;
+
+  // Matches the real notifications schema (title/body/link/is_read) — not
+  // message/type/reference_id, which don't exist and would silently fail
+  // to insert every "new assignment" notification.
+  const notifications = enrollments.map((e: Record<string, unknown>) => ({
+    user_id: e.student_id as string,
+    title: "New Assignment",
+    body: `A new assignment "${title}" has been posted.`,
+    link: `/dashboard/student/courses/${courseId}`,
+    is_read: false,
+  }));
+
+  const { error } = await supabaseAdmin.from("notifications").insert(notifications);
+  if (error) console.warn("[assignments] publish notification failed:", error.message, { referenceId, type });
+}
+
+function enrichAssignmentFields(a: Record<string, unknown>, courseTitle: string | null) {
   return {
     id: a.id,
     courseId: a.course_id,
@@ -396,7 +1033,43 @@ async function enrichAssignment(a: Record<string, unknown>) {
     assignmentType: (a.assignment_type as string) ?? "standard",
     videoUrl: (a.video_url as string | null) ?? null,
     requireFullWatch: (a.require_full_watch as boolean) ?? false,
+    videoDurationSeconds: a.video_duration_seconds != null ? Number(a.video_duration_seconds) : null,
+    rubric: (a.rubric as RubricCriterion[] | null) ?? null,
+    ...latePolicyFields(a),
   };
+}
+
+async function enrichAssignment(a: Record<string, unknown>) {
+  let courseTitle: string | null = null;
+
+  if (a.course_id) {
+    const { data: course } = await supabaseAdmin
+      .from("courses")
+      .select("title")
+      .eq("id", a.course_id as string)
+      .single();
+    if (course) courseTitle = course.title;
+  }
+
+  return enrichAssignmentFields(a, courseTitle);
+}
+
+async function enrichAssignments(rows: Record<string, unknown>[]) {
+  if (rows.length === 0) return [];
+
+  const courseIds = Array.from(
+    new Set(rows.filter((a) => a.course_id).map((a) => a.course_id as string))
+  );
+
+  const { data: courses } = courseIds.length
+    ? await supabaseAdmin.from("courses").select("id, title").in("id", courseIds)
+    : { data: [] as { id: string; title: string | null }[] };
+
+  const titleById = new Map((courses ?? []).map((c) => [c.id, c.title]));
+
+  return rows.map((a) =>
+    enrichAssignmentFields(a, a.course_id ? titleById.get(a.course_id as string) ?? null : null)
+  );
 }
 
 export default router;

@@ -4,8 +4,48 @@ import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-router.get("/courses/:courseId/attendance", requireAuth, async (req, res): Promise<void> => {
+/**
+ * Verifies the caller may access attendance for this course: must be an
+ * admin/super_admin of the course's school, or the teacher who teaches it.
+ * Students are never allowed (they have their own self-check-in endpoint).
+ */
+async function assertCourseTeacherOrAdmin(
+  req: AuthenticatedRequest,
+  courseId: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  const { data: course, error } = await supabaseAdmin
+    .from("courses")
+    .select("id, school_id, teacher_id")
+    .eq("id", courseId)
+    .single();
+
+  if (error || !course) {
+    return { ok: false, status: 404, error: "Course not found" };
+  }
+
+  if (req.userRole === "teacher" && course.teacher_id !== req.userId) {
+    return { ok: false, status: 403, error: "You do not teach this course" };
+  }
+
+  if (req.userRole !== "super_admin" && course.school_id !== req.schoolId) {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  return { ok: true };
+}
+
+router.get("/courses/:courseId/attendance", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const courseId = Array.isArray(req.params.courseId) ? req.params.courseId[0] : req.params.courseId;
+
+  const access = await assertCourseTeacherOrAdmin(req, courseId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
 
   const { data, error } = await supabaseAdmin
     .from("attendance")
@@ -18,12 +58,19 @@ router.get("/courses/:courseId/attendance", requireAuth, async (req, res): Promi
     return;
   }
 
-  const records = await Promise.all((data ?? []).map(enrichAttendance));
+  const records = await enrichAttendanceRows(data ?? []);
   res.json(records);
 });
 
-router.post("/courses/:courseId/attendance", requireAuth, async (req, res): Promise<void> => {
+router.post("/courses/:courseId/attendance", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const courseId = Array.isArray(req.params.courseId) ? req.params.courseId[0] : req.params.courseId;
+
+  const access = await assertCourseTeacherOrAdmin(req, courseId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
   const { studentId, sessionDate, status } = req.body;
 
   if (!studentId || !sessionDate || !status) {
@@ -34,6 +81,21 @@ router.post("/courses/:courseId/attendance", requireAuth, async (req, res): Prom
   const validStatuses = ["present", "absent", "late"];
   if (!validStatuses.includes(status)) {
     res.status(400).json({ error: "Invalid status" });
+    return;
+  }
+
+  // studentId was raw client input — attendance could be recorded for any
+  // profile id on the platform (another school's user, a teacher, anyone)
+  // against this course. That row then feeds computeCourseGrade's
+  // attendance weighting for that user.
+  const { data: enrollment } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("student_id")
+    .eq("course_id", courseId)
+    .eq("student_id", studentId)
+    .maybeSingle();
+  if (!enrollment) {
+    res.status(400).json({ error: "That student is not enrolled in this course" });
     return;
   }
 
@@ -91,8 +153,8 @@ router.post("/attendance/checkin", requireAuth, async (req: AuthenticatedRequest
 
   // Check if student is enrolled
   const { data: enrollment } = await supabaseAdmin
-    .from("enrollments")
-    .select("id")
+    .from("course_enrollments")
+    .select("student_id")
     .eq("course_id", course_id)
     .eq("student_id", studentId)
     .single();
@@ -133,13 +195,19 @@ router.post("/attendance/checkin", requireAuth, async (req: AuthenticatedRequest
 });
 
 // GET /attendance/live-class?course_id=X - teacher/admin gets today's check-in list
-router.get("/attendance/live-class", requireAuth, async (req, res): Promise<void> => {
-  const course_id = Array.isArray(req.query.course_id)
-    ? req.query.course_id[0]
-    : req.query.course_id;
+router.get("/attendance/live-class", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const course_id = (
+    Array.isArray(req.query.course_id) ? req.query.course_id[0] : req.query.course_id
+  ) as string | undefined;
 
   if (!course_id) {
     res.status(400).json({ error: "course_id is required" });
+    return;
+  }
+
+  const access = await assertCourseTeacherOrAdmin(req, course_id);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
     return;
   }
 
@@ -147,7 +215,7 @@ router.get("/attendance/live-class", requireAuth, async (req, res): Promise<void
 
   // Get all enrollments for the course
   const { data: enrollments, error: enrollError } = await supabaseAdmin
-    .from("enrollments")
+    .from("course_enrollments")
     .select("student_id, profiles:student_id(first_name, last_name, unique_student_id)")
     .eq("course_id", course_id);
 
@@ -215,6 +283,31 @@ async function enrichAttendance(a: Record<string, unknown>) {
     status: a.status,
     studentName,
   };
+}
+
+async function enrichAttendanceRows(rows: Record<string, unknown>[]) {
+  if (rows.length === 0) return [];
+
+  const studentIds = Array.from(
+    new Set(rows.filter((a) => a.student_id).map((a) => a.student_id as string))
+  );
+
+  const { data: profiles } = studentIds.length
+    ? await supabaseAdmin.from("profiles").select("id, first_name, last_name").in("id", studentIds)
+    : { data: [] as { id: string; first_name: string | null; last_name: string | null }[] };
+
+  const nameById = new Map(
+    (profiles ?? []).map((p) => [p.id, [p.first_name, p.last_name].filter(Boolean).join(" ") || null])
+  );
+
+  return rows.map((a) => ({
+    id: a.id,
+    courseId: a.course_id,
+    studentId: a.student_id,
+    sessionDate: a.session_date,
+    status: a.status,
+    studentName: a.student_id ? nameById.get(a.student_id as string) ?? null : null,
+  }));
 }
 
 export default router;

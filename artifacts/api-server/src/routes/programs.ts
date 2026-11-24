@@ -1,6 +1,9 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { enrollStudentInCourse } from "../lib/enrollment";
+import { notifyUsers } from "../lib/notifications";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -20,6 +23,11 @@ router.get("/programs", requireAuth, async (req: AuthenticatedRequest, res): Pro
 });
 
 router.post("/programs", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const { name, code, description, level } = req.body;
 
   if (!name) {
@@ -48,14 +56,15 @@ router.post("/programs", requireAuth, async (req: AuthenticatedRequest, res): Pr
   res.status(201).json(mapProgram(data));
 });
 
-router.get("/programs/:id", requireAuth, async (req, res): Promise<void> => {
+router.get("/programs/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
-  const { data, error } = await supabaseAdmin
-    .from("programs")
-    .select("*")
-    .eq("id", id)
-    .single();
+  let query = supabaseAdmin.from("programs").select("*").eq("id", id);
+  if (req.userRole !== "super_admin") {
+    query = query.eq("school_id", req.schoolId ?? "");
+  }
+
+  const { data, error } = await query.single();
 
   if (error || !data) {
     res.status(404).json({ error: "Program not found" });
@@ -65,7 +74,77 @@ router.get("/programs/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(mapProgram(data));
 });
 
-router.patch("/programs/:id", requireAuth, async (req, res): Promise<void> => {
+// ─── GET /programs/:id/students — every student enrolled in any of the
+// program's courses, deduplicated, with a per-course breakdown ──────────────
+router.get("/programs/:id/students", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  let programQuery = supabaseAdmin.from("programs").select("id").eq("id", id);
+  if (req.userRole !== "super_admin") {
+    programQuery = programQuery.eq("school_id", req.schoolId ?? "");
+  }
+  const { data: program } = await programQuery.maybeSingle();
+  if (!program) {
+    res.status(404).json({ error: "Program not found" });
+    return;
+  }
+
+  const { data: courses } = await supabaseAdmin
+    .from("courses")
+    .select("id, title, code")
+    .eq("program_id", id);
+
+  const courseIds = (courses ?? []).map((c) => c.id as string);
+  if (courseIds.length === 0) {
+    res.json([]);
+    return;
+  }
+
+  const { data: enrollments, error } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("student_id, course_id")
+    .in("course_id", courseIds)
+    .eq("status", "active");
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  const courseById = new Map((courses ?? []).map((c) => [c.id, c]));
+  const studentMap = new Map<string, { studentId: string; courses: { id: string; title: string; code: string | null }[] }>();
+  for (const e of enrollments ?? []) {
+    const entry = studentMap.get(e.student_id as string) ?? { studentId: e.student_id as string, courses: [] };
+    const c = courseById.get(e.course_id as string);
+    if (c) entry.courses.push({ id: c.id as string, title: c.title as string, code: (c.code as string) ?? null });
+    studentMap.set(e.student_id as string, entry);
+  }
+
+  const studentIds = Array.from(studentMap.keys());
+  if (studentIds.length === 0) {
+    res.json([]);
+    return;
+  }
+
+  const { data: profiles } = await supabaseAdmin.from("profiles").select("*").in("id", studentIds);
+
+  res.json(
+    (profiles ?? []).map((p) => ({
+      id: p.id,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      avatarUrl: p.avatar_url,
+      courses: studentMap.get(p.id as string)?.courses ?? [],
+    }))
+  );
+});
+
+router.patch("/programs/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const { name, code, description, level, isActive } = req.body;
 
@@ -76,12 +155,12 @@ router.patch("/programs/:id", requireAuth, async (req, res): Promise<void> => {
   if (level !== undefined) updates.level = level;
   if (isActive !== undefined) updates.is_active = isActive;
 
-  const { data, error } = await supabaseAdmin
-    .from("programs")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
+  let query = supabaseAdmin.from("programs").update(updates).eq("id", id);
+  if (req.userRole !== "super_admin") {
+    query = query.eq("school_id", req.schoolId ?? "");
+  }
+
+  const { data, error } = await query.select().single();
 
   if (error || !data) {
     res.status(404).json({ error: "Program not found" });
@@ -91,13 +170,20 @@ router.patch("/programs/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(mapProgram(data));
 });
 
-router.delete("/programs/:id", requireAuth, async (req, res): Promise<void> => {
+router.delete("/programs/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
-  const { error } = await supabaseAdmin
-    .from("programs")
-    .delete()
-    .eq("id", id);
+  let query = supabaseAdmin.from("programs").delete().eq("id", id);
+  if (req.userRole !== "super_admin") {
+    query = query.eq("school_id", req.schoolId ?? "");
+  }
+
+  const { error } = await query;
 
   if (error) {
     res.status(404).json({ error: "Program not found" });
@@ -106,6 +192,75 @@ router.delete("/programs/:id", requireAuth, async (req, res): Promise<void> => {
 
   res.sendStatus(204);
 });
+
+// ─── POST /programs/:id/enroll-student ────────────────────────────────────────
+// Retroactively places a student into a program -- e.g. a transferring
+// student invited without a program picked at invite time. Enrolls them in
+// every course currently in the program via the normal cascade helper.
+router.post(
+  "/programs/:id/enroll-student",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { studentId } = req.body as { studentId?: string };
+
+    if (!studentId) {
+      res.status(400).json({ error: "studentId is required" });
+      return;
+    }
+
+    const { data: program } = await supabaseAdmin
+      .from("programs")
+      .select("id, name")
+      .eq("id", id)
+      .eq("school_id", req.schoolId ?? "")
+      .maybeSingle();
+    if (!program) {
+      res.status(404).json({ error: "Program not found" });
+      return;
+    }
+
+    const { data: student } = await supabaseAdmin
+      .from("profiles")
+      .select("id, role, school_id")
+      .eq("id", studentId)
+      .maybeSingle();
+    if (!student || student.school_id !== req.schoolId || student.role !== "student") {
+      res.status(404).json({ error: "Student not found in your school" });
+      return;
+    }
+
+    const { data: courses, error: coursesError } = await supabaseAdmin
+      .from("courses")
+      .select("id")
+      .eq("program_id", id);
+
+    if (coursesError) {
+      res.status(500).json({ error: coursesError.message });
+      return;
+    }
+
+    for (const course of courses ?? []) {
+      await enrollStudentInCourse(course.id as string, studentId);
+    }
+
+    notifyUsers({
+      userIds: [studentId],
+      type: "program_enrolled",
+      category: "enrollment",
+      title: "You've been added to a program",
+      body: `You've been added to the ${program.name} program and enrolled in its courses.`,
+      link: "/dashboard/student",
+    }).catch((err) => logger.error({ err }, "Failed to notify student of program enrollment"));
+
+    res.json({ success: true, enrolledCourses: (courses ?? []).length });
+  }
+);
 
 function mapProgram(p: Record<string, unknown>) {
   return {

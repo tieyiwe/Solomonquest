@@ -8,27 +8,65 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="SolomonQuest">
     <title>SolomonQuest LMS</title>
-    <meta name="description" content="SolomonQuest — The modern LMS for schools. Manage courses, assignments, quizzes, and real-time chat." />
+    <meta name="description" content="SolomonQuest LMS — a learning management platform by Harvest School of Ministries and Missions (HSMM). Courses, assignments, quizzes, certificates and real-time chat." />
     <meta name="robots" content="index, follow" />
-    <meta name="theme-color" content="#4f46e5" />
+    <meta name="theme-color" content="#141d33" />
     <link rel="canonical" href="https://solomonquest.com/" />
     <meta property="og:site_name" content="SolomonQuest" />
     <meta property="og:title" content="SolomonQuest LMS" />
-    <meta property="og:description" content="SolomonQuest — The modern LMS for schools. Manage courses, assignments, quizzes, and real-time chat." />
+    <meta property="og:description" content="SolomonQuest LMS — a learning management platform by Harvest School of Ministries and Missions (HSMM). Courses, assignments, quizzes, certificates and real-time chat." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://solomonquest.com/" />
-    <meta property="og:image" content="https://solomonquest.com/opengraph.jpg" />
-    <meta property="og:image:width" content="1280" />
-    <meta property="og:image:height" content="720" />
+    <meta property="og:image" content="https://solomonquest.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="SolomonQuest LMS" />
-    <meta name="twitter:description" content="SolomonQuest — The modern LMS for schools. Manage courses, assignments, quizzes, and real-time chat." />
-    <meta name="twitter:image" content="https://solomonquest.com/opengraph.jpg" />
+    <meta name="twitter:description" content="SolomonQuest LMS — a learning management platform by Harvest School of Ministries and Missions (HSMM). Courses, assignments, quizzes, certificates and real-time chat." />
+    <meta name="twitter:image" content="https://solomonquest.com/og-image.png" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Apply the saved light/dark preference before first paint (see src/lib/theme.ts).
+      (function () {
+        try {
+          var p = localStorage.getItem("sq-theme");
+          var dark = p === "dark" || (p === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) {
+            document.documentElement.classList.add("dark");
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute("content", "#0e121b");
+          }
+        } catch (e) {}
+        // Re-apply the signed-in user's school colours before first paint
+        // (cached by src/hooks/useSchoolTheme.ts; same route list as
+        // THEMED_ROUTE_RE). Only when the stored session is that user's.
+        try {
+          var c = JSON.parse(localStorage.getItem("sq-school-theme") || "null");
+          if (c && c.css && /^\/(dashboard|chat|forum|messages|calendar|settings|notifications|profile|reports|help)(\/|$)/.test(location.pathname)) {
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              if (!/^sb-.*-auth-token$/.test(k)) continue;
+              var s = JSON.parse(localStorage.getItem(k) || "null");
+              if (s && s.user && s.user.id === c.userId) {
+                var st = document.createElement("style");
+                st.id = "sq-school-theme";
+                st.textContent = c.css;
+                document.head.appendChild(st);
+              }
+              break;
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

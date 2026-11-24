@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { clearImpersonationState } from "@/lib/impersonation";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -28,7 +29,19 @@ export default function Login() {
   const [showReset, setShowReset] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [_, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, signOut, suspendedSchoolMessage } = useAuth();
+  const [suspensionNotice, setSuspensionNotice] = useState<string | null>(null);
+
+  // The user is still technically signed in to Supabase (a stale, still-valid
+  // session) but their profile fetch keeps 403ing because their school was
+  // suspended — sign them out cleanly so they land on a normal login form
+  // instead of bouncing here forever, while still showing them why.
+  useEffect(() => {
+    if (suspendedSchoolMessage) {
+      setSuspensionNotice(suspendedSchoolMessage);
+      signOut();
+    }
+  }, [suspendedSchoolMessage, signOut]);
 
   useEffect(() => {
     if (!user) return;
@@ -38,6 +51,8 @@ export default function Login() {
       setLocation("/dashboard/teacher");
     } else if (user.role === "student" || user.role === "staff") {
       setLocation("/dashboard/student");
+    } else if (user.role === "parent") {
+      setLocation("/dashboard/parent");
     } else {
       setLocation("/onboarding/setup");
     }
@@ -60,6 +75,8 @@ export default function Login() {
       setLocation("/dashboard/teacher");
     } else if (role === "student" || role === "staff") {
       setLocation("/dashboard/student");
+    } else if (role === "parent") {
+      setLocation("/dashboard/parent");
     } else {
       setLocation("/onboarding/setup");
     }
@@ -75,9 +92,15 @@ export default function Login() {
 
       if (error) throw error;
 
+      // A fresh login always takes over as this account, regardless of
+      // whatever "View As" / Test Mode state a previous session on this
+      // browser left behind (e.g. the tab was closed mid-impersonation
+      // instead of clicking "Return to My Account").
+      clearImpersonationState();
+
       try {
         const token = authData.session?.access_token;
-        const res = await fetch("/api/me", {
+        const res = await fetch("/api/auth/me", {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
@@ -146,9 +169,9 @@ export default function Login() {
               </div>
 
               {resetSent ? (
-                <div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800 p-4 space-y-1">
-                  <p className="font-semibold text-green-800 dark:text-green-300">Check your email</p>
-                  <p className="text-sm text-green-700 dark:text-green-400">
+                <div className="rounded-lg border border-success/30 bg-success/10 p-4 space-y-1">
+                  <p className="font-semibold text-success ">Check your email</p>
+                  <p className="text-sm text-success ">
                     We've sent a password reset link to <strong>{resetForm.getValues("email")}</strong>.
                     Check your inbox and follow the link to set a new password.
                   </p>
@@ -200,6 +223,12 @@ export default function Login() {
               <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome back</h1>
               <p className="text-muted-foreground">Sign in to your account to continue</p>
             </div>
+
+            {suspensionNotice && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {suspensionNotice}
+              </div>
+            )}
 
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -268,10 +297,10 @@ export default function Login() {
         </div>
       </div>
 
-      <div className="hidden md:block bg-primary relative overflow-hidden">
+      <div className="hidden md:block bg-brand relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1497633762265-9d179a990aa6?q=80&w=2073&auto=format&fit=crop')] bg-cover bg-center opacity-20 mix-blend-overlay"></div>
-        <div className="absolute inset-0 flex flex-col justify-end p-12 text-primary-foreground z-10 bg-gradient-to-t from-primary/90 to-transparent">
-          <blockquote className="space-y-2 max-w-lg">
+        <div className="absolute inset-0 flex flex-col justify-end p-12 text-white z-10 bg-gradient-to-t from-black/35 to-transparent">
+          <blockquote className="space-y-2 max-w-lg border-l-4 border-gold pl-5">
             <p className="text-2xl font-medium leading-snug">
               "The platform has completely transformed how our faculty manages coursework and communicates with students."
             </p>

@@ -1,7 +1,14 @@
 import { Router, type IRouter } from "express";
+import { randomBytes } from "crypto";
+import { resolveTxt } from "dns/promises";
 import { supabaseAdmin } from "../lib/supabase";
+import { isReservedSlug } from "../lib/reservedSlugs";
 import { logger } from "../lib/logger";
+import { invalidateCachedProfile } from "../lib/profileCache";
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { requireSchoolFeature } from "../lib/featureFlags";
+import { notifyUsers } from "../lib/notifications";
+import { validateBranding } from "../lib/brandingValidation";
 
 const router: IRouter = Router();
 
@@ -12,6 +19,7 @@ router.get("/schools", async (_req, res): Promise<void> => {
       .from("schools")
       .select("*")
       .eq("is_active", true)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -48,6 +56,58 @@ router.get("/schools/my", requireAuth, async (req: AuthenticatedRequest, res): P
   res.json(mapSchool(data));
 });
 
+// Look up a school by its verified custom domain (public) — used by the
+// frontend on boot when the hostname isn't the platform's own domain, so it
+// knows which school's public page to render.
+router.get("/schools/by-domain/:domain", async (req, res): Promise<void> => {
+  const domain = (Array.isArray(req.params.domain) ? req.params.domain[0] : req.params.domain).toLowerCase();
+
+  const { data, error } = await supabaseAdmin
+    .from("schools")
+    .select("*")
+    .eq("custom_domain", domain)
+    .eq("custom_domain_status", "verified")
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error || !data) {
+    res.status(404).json({ error: "No school found for this domain" });
+    return;
+  }
+
+  res.json(mapSchool(data));
+});
+
+// Slug availability check for the branding page's live "URL is available /
+// taken" indicator. Must be registered before /schools/:slug — without this
+// route the request fell through to that handler, 404'd ("school not
+// found"), and the page read `available` as undefined, so every slug an
+// admin typed showed as "taken".
+router.get("/schools/slug-check", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const slug = String(req.query.slug ?? "").trim().toLowerCase();
+  const exclude = typeof req.query.exclude === "string" ? req.query.exclude : "";
+
+  if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+    res.json({ available: false, reason: "invalid" });
+    return;
+  }
+  if (isReservedSlug(slug)) {
+    res.json({ available: false, reason: "reserved" });
+    return;
+  }
+
+  let query = supabaseAdmin.from("schools").select("id").eq("slug", slug);
+  if (exclude) query = query.neq("id", exclude);
+  const { data, error } = await query.maybeSingle();
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  res.json({ available: !data });
+});
+
 // Get school by slug (public)
 router.get("/schools/:slug", optionalAuth, async (req, res): Promise<void> => {
   const { slug } = req.params;
@@ -56,6 +116,7 @@ router.get("/schools/:slug", optionalAuth, async (req, res): Promise<void> => {
     .from("schools")
     .select("*")
     .eq("slug", slug)
+    .is("deleted_at", null)
     .single();
 
   if (error || !data) {
@@ -78,6 +139,10 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
   // Validate slug format
   if (!/^[a-z0-9-]+$/.test(slug)) {
     res.status(400).json({ error: "Slug must contain only lowercase letters, numbers, and hyphens." });
+    return;
+  }
+  if (isReservedSlug(slug)) {
+    res.status(400).json({ error: "That URL is reserved by the platform. Please choose a different one." });
     return;
   }
 
@@ -111,8 +176,8 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
       name,
       slug,
       owner_id: req.userId,
-      primary_color: primaryColor ?? "#6E5238",
-      secondary_color: secondaryColor ?? "#B58F5E",
+      primary_color: primaryColor ?? "#141d33",
+      secondary_color: secondaryColor ?? "#c9a054",
       is_active: true,
     })
     .select()
@@ -137,6 +202,31 @@ router.post("/schools/create", requireAuth, async (req: AuthenticatedRequest, re
     .update({ school_id: data.id, role: "admin" })
     .eq("id", req.userId);
 
+  invalidateCachedProfile(req.userId!);
+
+  const { data: superAdmins } = await supabaseAdmin.from("profiles").select("id").eq("role", "super_admin");
+  const superAdminIds = (superAdmins ?? []).map((p) => p.id as string);
+  if (superAdminIds.length > 0) {
+    const { data: creator } = await supabaseAdmin
+      .from("profiles")
+      .select("first_name, last_name, email")
+      .eq("id", req.userId)
+      .maybeSingle();
+    const creatorName = creator ? [creator.first_name, creator.last_name].filter(Boolean).join(" ") : null;
+    const creatorDescriptor = creatorName && creator?.email
+      ? `${creatorName} (${creator.email})`
+      : creator?.email ?? "an unknown user";
+
+    notifyUsers({
+      userIds: superAdminIds,
+      type: "school_created",
+      category: "platform",
+      title: "New school created",
+      body: `${name} was just created by ${creatorDescriptor}.`,
+      link: "/super_admin",
+    }).catch((err) => logger.error({ err }, "Failed to notify super admins of new school"));
+  }
+
   // Auto-enroll the founding admin in the school's chat channels so chat
   // works as soon as a second user (student, teacher, staff) joins —
   // without this, only invited/joined users ever got enrolled, leaving the
@@ -159,6 +249,7 @@ router.get("/schools/slug/:slug", async (req, res): Promise<void> => {
     .from("schools")
     .select("*")
     .eq("slug", slug)
+    .is("deleted_at", null)
     .single();
 
   if (error || !data) {
@@ -181,13 +272,24 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
     }
   }
 
-  const body = req.body as Record<string, unknown>;
-  const { slug, logo_url, tagline, primary_color, secondary_color } = body;
+  const raw = (req.body ?? {}) as Record<string, unknown>;
+  const { slug } = raw;
+  const checked = validateBranding(raw);
+  if (!checked.ok) {
+    res.status(400).json({ error: checked.error });
+    return;
+  }
+  const body = checked.values;
+  const { logo_url, tagline, primary_color, secondary_color } = body;
 
   // Validate slug if provided
   if (slug !== undefined) {
     if (typeof slug !== "string" || !/^[a-z0-9-]+$/.test(slug)) {
       res.status(400).json({ error: "Slug must be lowercase alphanumeric with hyphens only" });
+      return;
+    }
+    if (isReservedSlug(slug)) {
+      res.status(400).json({ error: "That URL is reserved by the platform. Please choose a different one." });
       return;
     }
     const { data: slugConflict } = await supabaseAdmin
@@ -210,35 +312,53 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
   if (primary_color !== undefined) coreUpdates.primary_color = primary_color;
   if (secondary_color !== undefined) coreUpdates.secondary_color = secondary_color;
 
-  // Fetch existing branding JSONB and merge full body into it
+  // Fetch existing branding JSONB and merge the body into it — but only the
+  // fields this JSONB blob is actually meant to hold, not the raw body
+  // wholesale (that included things like `slug`/`logo_url` already handled
+  // as real columns above, and would silently persist any other key an
+  // admin's client happened to send).
+  const BRANDING_KEYS = [
+    "banner_slides", "hero_settings", "accent_color", "body_font",
+    "heading_font", "heading_text_color", "border_radius", "stats_visible", "stats",
+    "features", "testimonials", "show_announcement", "announcement_text",
+    "announcement_bg_color", "social_website", "social_facebook", "social_twitter",
+    "social_instagram", "social_linkedin", "social_youtube", "custom_css",
+  ];
   const { data: currentRow } = await supabaseAdmin
     .from("schools").select("branding").eq("id", id).single();
-  const existingBranding = (currentRow?.branding as Record<string, unknown>) ?? {};
-  const mergedBranding = { ...existingBranding, ...body };
+  const existingBranding = { ...((currentRow?.branding as Record<string, unknown>) ?? {}) };
+  // Older saves copied the whole request body into this JSON, including
+  // values that live in real columns (slug, logo, tagline, primary and
+  // secondary colour). Readers prefer the JSON, so those stale copies
+  // would shadow every later save. Drop them; the columns are the truth.
+  for (const k of ["slug", "logo_url", "tagline", "primary_color", "secondary_color", "school_name", "name"]) {
+    delete existingBranding[k];
+  }
+  const brandingPatch: Record<string, unknown> = {};
+  for (const key of BRANDING_KEYS) {
+    if (body[key] !== undefined) brandingPatch[key] = body[key];
+  }
+  const mergedBranding = { ...existingBranding, ...brandingPatch };
 
-  // Try saving with branding JSONB; fall back to core columns only if branding column missing
-  let { data, error } = await supabaseAdmin
+  // One update for the columns and the JSON. (This used to retry with the
+  // columns alone when it failed, and still answer 200 — so a database
+  // missing the `branding` column silently dropped slides, sections,
+  // fonts and the rest while the admin was told it all saved.)
+  const { data, error } = await supabaseAdmin
     .from("schools")
     .update({ ...coreUpdates, branding: mergedBranding })
     .eq("id", id)
     .select()
     .single();
 
-  if (error) {
-    logger.warn({ error }, "branding update failed, retrying with core columns only");
-    const fallback = await supabaseAdmin
-      .from("schools")
-      .update(coreUpdates)
-      .eq("id", id)
-      .select()
-      .single();
-    data = fallback.data;
-    error = fallback.error;
-  }
-
   if (error || !data) {
     logger.error({ error }, "Error updating school branding");
-    res.status(500).json({ error: error?.message ?? "Update failed" });
+    const missingColumn = error && /column .* does not exist|Could not find the .* column/i.test(error.message);
+    res.status(500).json({
+      error: missingColumn
+        ? "Branding could not be saved: the database is missing a branding column. Run school-branding.sql in Supabase."
+        : error?.message ?? "Update failed",
+    });
     return;
   }
 
@@ -248,6 +368,214 @@ router.put("/schools/:id/branding", requireAuth, async (req: AuthenticatedReques
     res.status(500).json({ error: err?.message ?? "Internal server error" });
   }
 });
+
+function platformHostname(): string {
+  const url = process.env.APP_URL ?? process.env.FRONTEND_URL;
+  if (!url) return "your-app-url.example.com";
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  }
+}
+
+function canManageDomain(req: AuthenticatedRequest, schoolId: string): boolean {
+  if (req.userRole === "super_admin") return true;
+  return req.userRole === "admin" && req.schoolId === schoolId;
+}
+
+function dnsRecordsFor(domain: string, token: string) {
+  return [
+    { type: "CNAME", host: domain, value: platformHostname(), note: "Points your domain at SolomonQuest" },
+    { type: "TXT", host: `_solomonquest-verify.${domain}`, value: token, note: "Proves you own this domain" },
+  ];
+}
+
+// School admin submits a domain for the platform team to review. This does
+// NOT connect anything yet — it just records the request and notifies every
+// super_admin so they can add it in the hosting provider's domain settings
+// (a manual step outside the app) before approving it.
+router.post(
+  "/schools/:id/custom-domain/request",
+  requireAuth,
+  requireSchoolFeature("custom_domain"),
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!canManageDomain(req, id)) {
+      res.status(403).json({ error: "Not authorized to manage this school's domain" });
+      return;
+    }
+
+    const { domain } = req.body as { domain?: string };
+    if (!domain || typeof domain !== "string" || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim())) {
+      res.status(400).json({ error: "Enter a valid domain, e.g. school.edu" });
+      return;
+    }
+
+    const normalizedDomain = domain.trim().toLowerCase();
+
+    const { data: conflict } = await supabaseAdmin
+      .from("schools")
+      .select("id")
+      .eq("custom_domain", normalizedDomain)
+      .neq("id", id)
+      .maybeSingle();
+    if (conflict) {
+      res.status(409).json({ error: "That domain is already connected to another school" });
+      return;
+    }
+
+    const { data: school, error } = await supabaseAdmin
+      .from("schools")
+      .update({
+        custom_domain: normalizedDomain,
+        custom_domain_status: "requested",
+        custom_domain_token: null,
+        custom_domain_requested_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select("name")
+      .single();
+
+    if (error || !school) {
+      res.status(500).json({ error: error?.message ?? "Failed to submit domain request" });
+      return;
+    }
+
+    const { data: superAdmins } = await supabaseAdmin.from("profiles").select("id").eq("role", "super_admin");
+    const superAdminIds = (superAdmins ?? []).map((p) => p.id as string);
+    if (superAdminIds.length > 0) {
+      await notifyUsers({
+        userIds: superAdminIds,
+        type: "domain_request",
+        category: "platform",
+        title: "New custom domain request",
+        body: `${school.name} requested to connect ${normalizedDomain}`,
+        link: "/super-admin/domain-requests",
+      });
+    }
+
+    res.json({ status: "requested", domain: normalizedDomain });
+  }
+);
+
+// Check the TXT record and mark the domain verified once it matches. Only
+// meaningful once a super-admin has approved the request and generated the
+// DNS records (status "approved" or a previously "failed" verify attempt).
+router.post(
+  "/schools/:id/custom-domain/verify",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!canManageDomain(req, id)) {
+      res.status(403).json({ error: "Not authorized to manage this school's domain" });
+      return;
+    }
+
+    const { data: school, error } = await supabaseAdmin
+      .from("schools")
+      .select("custom_domain, custom_domain_token, custom_domain_status")
+      .eq("id", id)
+      .single();
+
+    if (
+      error ||
+      !school?.custom_domain ||
+      !school.custom_domain_token ||
+      (school.custom_domain_status !== "approved" && school.custom_domain_status !== "failed")
+    ) {
+      res.status(400).json({ error: "This domain hasn't been approved yet" });
+      return;
+    }
+
+    try {
+      const records = await resolveTxt(`_solomonquest-verify.${school.custom_domain}`);
+      const found = records.some((chunks) => chunks.join("").trim() === school.custom_domain_token);
+
+      if (!found) {
+        await supabaseAdmin.from("schools").update({ custom_domain_status: "failed" }).eq("id", id);
+        res.status(422).json({
+          verified: false,
+          error: "TXT record not found yet. DNS changes can take up to a few hours to propagate — try again shortly.",
+        });
+        return;
+      }
+
+      await supabaseAdmin.from("schools").update({ custom_domain_status: "verified" }).eq("id", id);
+      res.json({ verified: true, status: "verified" });
+    } catch (err: any) {
+      await supabaseAdmin.from("schools").update({ custom_domain_status: "failed" }).eq("id", id);
+      res.status(422).json({
+        verified: false,
+        error: "Could not find that DNS record yet. Double-check it was added correctly, then try again.",
+      });
+    }
+  }
+);
+
+// Current domain status + (once approved) the DNS records to add.
+router.get(
+  "/schools/:id/custom-domain",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!canManageDomain(req, id)) {
+      res.status(403).json({ error: "Not authorized to view this school's domain" });
+      return;
+    }
+
+    const { data: school, error } = await supabaseAdmin
+      .from("schools")
+      .select("custom_domain, custom_domain_status, custom_domain_token")
+      .eq("id", id)
+      .single();
+
+    if (error || !school) {
+      res.status(404).json({ error: "School not found" });
+      return;
+    }
+
+    const dnsRecords =
+      school.custom_domain && school.custom_domain_token
+        ? dnsRecordsFor(school.custom_domain, school.custom_domain_token)
+        : [];
+
+    res.json({
+      domain: school.custom_domain,
+      status: school.custom_domain_status,
+      dnsRecords,
+    });
+  }
+);
+
+// Disconnect a custom domain.
+router.delete(
+  "/schools/:id/custom-domain",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!canManageDomain(req, id)) {
+      res.status(403).json({ error: "Not authorized to manage this school's domain" });
+      return;
+    }
+
+    const { error } = await supabaseAdmin
+      .from("schools")
+      .update({ custom_domain: null, custom_domain_status: "unset", custom_domain_token: null })
+      .eq("id", id);
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.sendStatus(204);
+  }
+);
 
 // Update school
 router.patch("/schools/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
@@ -261,6 +589,19 @@ router.patch("/schools/:id", requireAuth, async (req: AuthenticatedRequest, res)
     }
   }
   const { name, primaryColor, secondaryColor, logoUrl, isActive, applicationsOpen, assignment_routing } = req.body;
+  const hex = /^#[0-9a-fA-F]{6}$/;
+  if ((primaryColor !== undefined && !hex.test(primaryColor)) || (secondaryColor !== undefined && !hex.test(secondaryColor))) {
+    res.status(400).json({ error: "Colours must look like #1a2b3c" });
+    return;
+  }
+  if (logoUrl !== undefined && logoUrl !== null && logoUrl !== "" && !/^https?:\/\//i.test(String(logoUrl))) {
+    res.status(400).json({ error: "Logo must be a web address starting with https://" });
+    return;
+  }
+  if (name !== undefined && (typeof name !== "string" || !name.trim() || name.length > 120)) {
+    res.status(400).json({ error: "School name must be 1–120 characters" });
+    return;
+  }
 
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name;
@@ -285,6 +626,140 @@ router.patch("/schools/:id", requireAuth, async (req: AuthenticatedRequest, res)
 
   res.json(mapSchool(data));
 });
+
+// POST /schools/:id/transfer-ownership — hand school ownership to another
+// admin/staff/teacher in the same school. Only the current owner or a
+// super_admin may initiate; the target is promoted to admin if needed.
+router.post(
+  "/schools/:id/transfer-ownership",
+  requireAuth,
+  async (req: AuthenticatedRequest, res): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { newOwnerId, confirmSchoolName } = req.body as {
+      newOwnerId?: string;
+      confirmSchoolName?: string;
+    };
+
+    if (!newOwnerId) {
+      res.status(400).json({ error: "newOwnerId is required" });
+      return;
+    }
+
+    const { data: school, error: schoolError } = await supabaseAdmin
+      .from("schools")
+      .select("id, name, owner_id")
+      .eq("id", id)
+      .single();
+
+    if (schoolError || !school) {
+      res.status(404).json({ error: "School not found" });
+      return;
+    }
+
+    const isCurrentOwner = school.owner_id === req.userId;
+    const isSuperAdmin = req.userRole === "super_admin";
+    if (!isCurrentOwner && !isSuperAdmin) {
+      res.status(403).json({ error: "Only the current owner or a super admin can transfer ownership" });
+      return;
+    }
+
+    // Require the caller to re-type the school's exact name as a final
+    // confirmation step — mirrors the same pattern used for school deletion.
+    if (
+      !confirmSchoolName ||
+      confirmSchoolName.trim().toLowerCase() !== (school.name ?? "").trim().toLowerCase()
+    ) {
+      res.status(400).json({ error: "School name confirmation does not match" });
+      return;
+    }
+
+    if (newOwnerId === school.owner_id) {
+      res.status(400).json({ error: "This user already owns the school" });
+      return;
+    }
+
+    const { data: targetProfile, error: targetError } = await supabaseAdmin
+      .from("profiles")
+      .select("id, school_id, role, first_name, last_name")
+      .eq("id", newOwnerId)
+      .single();
+
+    if (targetError || !targetProfile) {
+      res.status(404).json({ error: "Target user not found" });
+      return;
+    }
+
+    if (targetProfile.school_id !== id) {
+      res.status(400).json({ error: "The new owner must already be a member of this school" });
+      return;
+    }
+
+    if (targetProfile.role === "student") {
+      res.status(400).json({ error: "A student cannot become the school owner — promote them to staff or teacher first" });
+      return;
+    }
+
+    // The owner must hold admin rights; promote if the target is currently
+    // teacher/staff.
+    if (targetProfile.role !== "admin" && targetProfile.role !== "super_admin") {
+      const { error: promoteError } = await supabaseAdmin
+        .from("profiles")
+        .update({ role: "admin" })
+        .eq("id", newOwnerId);
+
+      if (promoteError) {
+        res.status(500).json({ error: promoteError.message });
+        return;
+      }
+
+      invalidateCachedProfile(newOwnerId);
+    }
+
+    const { data: updatedSchool, error: updateError } = await supabaseAdmin
+      .from("schools")
+      .update({ owner_id: newOwnerId })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (updateError || !updatedSchool) {
+      res.status(500).json({ error: updateError?.message ?? "Failed to transfer ownership" });
+      return;
+    }
+
+    const newOwnerName =
+      [targetProfile.first_name, targetProfile.last_name].filter(Boolean).join(" ") || "A new owner";
+
+    // notifications.message is GENERATED ALWAYS AS (coalesce(body, title)),
+    // so writing it made Postgres reject this whole insert, unchecked —
+    // neither owner was ever notified. Write title/body instead.
+    const { error: ownerNotifyError } = await supabaseAdmin.from("notifications").insert([
+      {
+        user_id: newOwnerId,
+        type: "info",
+        title: "School ownership transferred",
+        body: `You are now the owner of ${school.name}.`,
+        is_read: false,
+      },
+      ...(school.owner_id
+        ? [
+            {
+              user_id: school.owner_id,
+              type: "info",
+              title: "School ownership transferred",
+              body: `You transferred ownership of ${school.name} to ${newOwnerName}.`,
+              is_read: false,
+            },
+          ]
+        : []),
+    ]);
+    if (ownerNotifyError) {
+      logger.error({ error: ownerNotifyError }, "Failed to notify owners of school ownership transfer");
+    }
+
+    res.json(mapSchool(updatedSchool));
+  }
+);
 
 // POST /schools/:id/request-deletion — school admin initiates deletion request
 router.post("/schools/:id/request-deletion", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
@@ -398,9 +873,15 @@ router.post("/schools/:id/request-deletion", requireAuth, async (req: Authentica
       title: "School Deletion Request",
       message: `School "${school.name}" has submitted a deletion request.`,
       metadata: { school_id: id, request_id: deletionRequest.id },
-      read: false,
+      // The column is is_read — `read` doesn't exist on notifications, so
+      // this insert failed (unchecked) and no super admin was ever told a
+      // school had asked to be deleted.
+      is_read: false,
     }));
-    await supabaseAdmin.from("notifications").insert(notifications);
+    const { error: notifyError } = await supabaseAdmin.from("notifications").insert(notifications);
+    if (notifyError) {
+      logger.error({ error: notifyError }, "Failed to notify super admins of school deletion request");
+    }
   }
 
   res.status(201).json({
@@ -412,6 +893,13 @@ router.post("/schools/:id/request-deletion", requireAuth, async (req: Authentica
 // GET /schools/:id/deletion-status — check if a deletion request exists
 router.get("/schools/:id/deletion-status", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  if (req.userRole !== "super_admin") {
+    if (req.userRole !== "admin" || req.schoolId !== id) {
+      res.status(403).json({ error: "Not authorized to view this school's deletion status" });
+      return;
+    }
+  }
 
   const { data: request } = await supabaseAdmin
     .from("school_deletion_requests")
@@ -454,6 +942,8 @@ function mapSchool(s: Record<string, unknown>) {
     custom_css: s.custom_css,
     isActive: s.is_active,
     createdAt: s.created_at,
+    customDomain: s.custom_domain ?? null,
+    customDomainStatus: s.custom_domain_status ?? "unset",
     applicationsOpen: s.applications_open ?? false,
     assignment_routing: s.assignment_routing ?? null,
     // Also expose camelCase aliases for backward compat

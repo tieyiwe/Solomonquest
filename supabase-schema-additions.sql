@@ -287,6 +287,154 @@ ALTER TABLE public.invitations ADD CONSTRAINT invitations_status_check
 UPDATE public.invitations SET status = 'accepted' WHERE accepted_at IS NOT NULL AND status = 'pending';
 UPDATE public.invitations SET status = 'expired' WHERE accepted_at IS NULL AND expires_at < now() AND status = 'pending';
 
+-- ─── Course resources publish workflow ─────────────────────────────────────────
+-- Resources previously showed to students the instant a teacher added them.
+-- Add a draft/publish gate matching assignments and quizzes.
+ALTER TABLE public.course_resources ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT false;
+-- Existing resources were already visible to students; keep that behavior on upgrade.
+UPDATE public.course_resources SET is_published = true WHERE is_published IS NOT true;
+
+-- ─── Structured course semester/term dates ─────────────────────────────────────
+-- courses.term stays a free-text label (e.g. "Spring 2026" or a custom name),
+-- but admins can now also pin down real start/end dates for that term so the
+-- transcript can show accurate semester dates regardless of which label was
+-- picked (standard or custom).
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS term_start_date date;
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS term_end_date date;
+
+-- Defensive: the "transcripts" table is referenced by the grading routes but
+-- had no tracked migration in this repo. Create it if it doesn't already
+-- exist so fresh environments don't 500 on every grade/transcript call.
+CREATE TABLE IF NOT EXISTS public.transcripts (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id     uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  school_id      uuid REFERENCES public.schools(id) ON DELETE CASCADE,
+  course_id      uuid REFERENCES public.courses(id) ON DELETE SET NULL,
+  assignment_id  uuid REFERENCES public.assignments(id) ON DELETE SET NULL,
+  submission_id  uuid UNIQUE,
+  grade          text,
+  feedback       text,
+  graded_at      timestamptz,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.transcripts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on transcripts" ON public.transcripts;
+CREATE POLICY "Allow all on transcripts" ON public.transcripts FOR ALL USING (true) WITH CHECK (true);
+
+-- ─── Backfill chat_channels columns ────────────────────────────────────────────
+-- On some environments chat_channels was created before this table's full
+-- definition existed, so CREATE TABLE IF NOT EXISTS in schema-extended.sql
+-- silently skipped it and it's missing columns the app requires (seen as
+-- "Could not find the 'type' column of 'chat_channels' in the schema cache").
+--
+-- Some of those environments also used a legacy column name, channel_type,
+-- that is NOT NULL with no default — simply adding a separate `type` column
+-- (as an earlier version of this migration did) left channel_type's NOT NULL
+-- requirement in place, so every insert (which only sets `type`) then failed
+-- with "null value in column channel_type violates not-null constraint".
+-- Migrate off channel_type onto `type` wholesale if it's present.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'chat_channels' AND column_name = 'channel_type'
+  ) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'chat_channels' AND column_name = 'type'
+    ) THEN
+      ALTER TABLE public.chat_channels ADD COLUMN type text;
+    END IF;
+    -- The legacy channel_type column used 'dm' where the new `type` column
+    -- (and the rest of the app) uses 'direct' — translate it, don't copy it
+    -- verbatim, or these rows will fail the type check constraint below.
+    UPDATE public.chat_channels SET type = (CASE WHEN channel_type = 'dm' THEN 'direct' ELSE channel_type END) WHERE type IS NULL;
+    ALTER TABLE public.chat_channels ALTER COLUMN channel_type DROP NOT NULL;
+  END IF;
+END $$;
+
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS course_id uuid REFERENCES public.courses(id) ON DELETE SET NULL;
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS type text;
+-- Catch any other stray/legacy value (including a still-unmigrated 'dm')
+-- that isn't one of the types the rest of this script allows.
+UPDATE public.chat_channels SET type = 'direct' WHERE type = 'dm';
+UPDATE public.chat_channels SET type = 'private' WHERE type IS NULL;
+ALTER TABLE public.chat_channels ALTER COLUMN type SET NOT NULL;
+-- (type check constraint is (re)created further down, once, with the full
+-- allowed list — recreating it here with a narrower list first would fail
+-- on any database that already has rows using a type only the later,
+-- wider constraint permits, e.g. 'program'.)
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id);
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS is_private boolean NOT NULL DEFAULT false;
+
+-- ─── chat_calls table ───────────────────────────────────────────────────────────
+-- Referenced by the chat video-call routes but had no tracked migration.
+CREATE TABLE IF NOT EXISTS public.chat_calls (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id  uuid NOT NULL REFERENCES public.chat_channels(id) ON DELETE CASCADE,
+  jitsi_room  text NOT NULL,
+  status      text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'ended')),
+  started_at  timestamptz NOT NULL DEFAULT now(),
+  ended_at    timestamptz
+);
+ALTER TABLE public.chat_calls ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on chat_calls" ON public.chat_calls;
+CREATE POLICY "Allow all on chat_calls" ON public.chat_calls FOR ALL USING (true) WITH CHECK (true);
+
+-- ─── Backfill chat_messages columns ────────────────────────────────────────────
+-- Same story as chat_channels: this environment's chat_messages table predates
+-- its full column set, so it was missing thread_parent_id (seen as "Could not
+-- find the 'thread_parent_id' column of 'chat_messages' in the schema cache").
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS thread_parent_id uuid REFERENCES public.chat_messages(id) ON DELETE SET NULL;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS is_edited boolean NOT NULL DEFAULT false;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS edited_at timestamptz;
+
+-- ─── Channel archiving ──────────────────────────────────────────────────────────
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false;
+
+-- ─── In-app ringing calls ───────────────────────────────────────────────────────
+-- Who started a call, so other members' clients know to ring (and the
+-- initiator's own client knows not to ring itself), plus realtime delivery
+-- of new calls / call-ended so the incoming-call UI and the caller's view
+-- both update live.
+ALTER TABLE public.chat_calls ADD COLUMN IF NOT EXISTS started_by uuid REFERENCES public.profiles(id);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'chat_calls'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_calls;
+  END IF;
+END $$;
+
+-- ─── Chat attachments ───────────────────────────────────────────────────────────
+-- Files pass through the API server (multer) so they can be scanned before
+-- ever being stored or shown to anyone — see POST /chat/channels/:id/attachments.
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_url text;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_name text;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_type text;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_size bigint;
+
+-- ─── Program-wide chat channel ──────────────────────────────────────────────────
+-- Enrolling in any course of a program auto-enrolls the student in every other
+-- course in that program, and all students enrolled anywhere in the program
+-- share one 'program'-typed chat channel. Widen the type check constraint
+-- (previously school/course/direct/private) to allow it.
+ALTER TABLE public.chat_channels ADD COLUMN IF NOT EXISTS program_id uuid REFERENCES public.programs(id) ON DELETE CASCADE;
+-- Defensive catch-all: coerce any row whose type isn't one of the values
+-- this constraint is about to allow (e.g. a legacy value this script
+-- doesn't otherwise know to translate) so the ADD CONSTRAINT below never
+-- fails on unexpected pre-existing data.
+UPDATE public.chat_channels SET type = 'private' WHERE type NOT IN ('school','course','direct','private','program','public');
+ALTER TABLE public.chat_channels DROP CONSTRAINT IF EXISTS chat_channels_type_check;
+ALTER TABLE public.chat_channels ADD CONSTRAINT chat_channels_type_check CHECK (type IN ('school','course','direct','private','program','public'));
+
+-- A program should only ever have one auto-managed chat channel.
+CREATE UNIQUE INDEX IF NOT EXISTS chat_channels_one_per_program
+  ON public.chat_channels (program_id) WHERE type = 'program';
+
 -- ─── Invitations archived flag ─────────────────────────────────────────────────
 ALTER TABLE public.invitations ADD COLUMN IF NOT EXISTS archived boolean NOT NULL DEFAULT false;
 
@@ -351,3 +499,222 @@ ALTER TABLE public.note_shares ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "note_shares_all" ON public.note_shares;
 CREATE POLICY "note_shares_all" ON public.note_shares FOR ALL USING (true);
 CREATE INDEX IF NOT EXISTS note_shares_user_idx ON public.note_shares (user_id);
+
+-- ─── Notification delivery (email fallback for offline users) ──────────────────
+-- notifications.type/metadata are already written by several routes
+-- (messages.ts, chat notifications below) but had no tracked migration.
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS type text;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS metadata jsonb DEFAULT '{}'::jsonb;
+
+-- profiles.email is read by several routes (applications.ts, messages.ts) to
+-- send email notifications, but had no tracked migration either.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email text;
+
+-- ─── Custom domains ──────────────────────────────────────────────────────────
+-- A school can point their own domain (e.g. school.edu) at their public page
+-- instead of using the shared solomonquest.com/schools/:slug URL.
+-- Verification is done via a DNS TXT record proving domain ownership before
+-- the domain is trusted, same approach used by Vercel/Netlify/etc.
+-- Flow: unset -> requested (school admin submitted, waiting on platform
+-- super-admin) -> approved (super-admin added it in the hosting provider's
+-- domain settings and generated DNS records) -> verified (TXT record found)
+-- or failed (verification attempt didn't find the TXT record yet).
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain text;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_status text NOT NULL DEFAULT 'unset';
+ALTER TABLE public.schools DROP CONSTRAINT IF EXISTS schools_custom_domain_status_check;
+ALTER TABLE public.schools ADD CONSTRAINT schools_custom_domain_status_check
+  CHECK (custom_domain_status IN ('unset', 'requested', 'approved', 'verified', 'failed'));
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_token text;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS custom_domain_requested_at timestamptz;
+
+-- ─── Subscriptions / plans (super-admin managed) ─────────────────────────────
+-- No payment processor wired up yet — this is manually managed by the
+-- platform super-admin (Super Admin -> Subscriptions) as the sales/billing
+-- source of truth until a real payment provider is integrated.
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'free';
+ALTER TABLE public.schools DROP CONSTRAINT IF EXISTS schools_plan_check;
+ALTER TABLE public.schools ADD CONSTRAINT schools_plan_check CHECK (plan IN ('free', 'basic', 'pro', 'enterprise'));
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS subscription_status text NOT NULL DEFAULT 'active';
+ALTER TABLE public.schools DROP CONSTRAINT IF EXISTS schools_subscription_status_check;
+ALTER TABLE public.schools ADD CONSTRAINT schools_subscription_status_check
+  CHECK (subscription_status IN ('trialing', 'active', 'past_due', 'canceled'));
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS billing_amount_cents integer NOT NULL DEFAULT 0;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz;
+
+-- ─── Per-school feature flags ────────────────────────────────────────────────
+-- Lets the platform super-admin turn specific modules off for a school (e.g.
+-- while a plan doesn't include them, or during a support issue) without
+-- touching code. Enforced today by the AI agent route; other modules read
+-- this the same way as they're extended to respect it.
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS enabled_features jsonb NOT NULL DEFAULT
+  '{"chat": true, "video_calls": true, "forum": true, "ai_agent": true, "custom_domain": true, "notes": true}'::jsonb;
+CREATE UNIQUE INDEX IF NOT EXISTS schools_custom_domain_unique ON public.schools (LOWER(custom_domain))
+  WHERE custom_domain IS NOT NULL;
+
+-- ─── Tuition & student payments ──────────────────────────────────────────────
+-- Schools set a tuition amount per course or per program, choosing whether
+-- students can pay in full, in installments, or both. No payment processor
+-- is wired up yet (details/provider choice pending) -- payments are recorded
+-- and can be marked paid manually / via the "simulate payment" test endpoint
+-- so the whole flow can be built and tested end-to-end first. Deliberately
+-- NOT enforced anywhere yet (e.g. doesn't block enrollment or applications) --
+-- that gate gets turned on later once real payment processing is wired up.
+CREATE TABLE IF NOT EXISTS public.tuition_plans (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id           uuid NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  course_id           uuid REFERENCES public.courses(id) ON DELETE CASCADE,
+  program_id          uuid REFERENCES public.programs(id) ON DELETE CASCADE,
+  amount_cents        integer NOT NULL CHECK (amount_cents >= 0),
+  currency            text NOT NULL DEFAULT 'usd',
+  allow_full_payment  boolean NOT NULL DEFAULT true,
+  allow_installments  boolean NOT NULL DEFAULT false,
+  installment_count   integer NOT NULL DEFAULT 1 CHECK (installment_count >= 1),
+  created_by          uuid REFERENCES public.profiles(id),
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    (course_id IS NOT NULL AND program_id IS NULL) OR
+    (course_id IS NULL AND program_id IS NOT NULL)
+  )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS tuition_plans_one_per_course ON public.tuition_plans (course_id) WHERE course_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS tuition_plans_one_per_program ON public.tuition_plans (program_id) WHERE program_id IS NOT NULL;
+ALTER TABLE public.tuition_plans ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tuition_plans_all" ON public.tuition_plans;
+CREATE POLICY "tuition_plans_all" ON public.tuition_plans FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS public.tuition_payments (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id          uuid NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  student_id         uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  tuition_plan_id    uuid NOT NULL REFERENCES public.tuition_plans(id) ON DELETE CASCADE,
+  course_id          uuid REFERENCES public.courses(id) ON DELETE SET NULL,
+  program_id         uuid REFERENCES public.programs(id) ON DELETE SET NULL,
+  amount_cents       integer NOT NULL,
+  currency           text NOT NULL DEFAULT 'usd',
+  payment_method     text NOT NULL CHECK (payment_method IN ('full', 'installments')),
+  installment_count  integer NOT NULL DEFAULT 1,
+  status             text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'partial', 'paid', 'failed')),
+  provider           text NOT NULL DEFAULT 'manual',
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.tuition_payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tuition_payments_all" ON public.tuition_payments;
+CREATE POLICY "tuition_payments_all" ON public.tuition_payments FOR ALL USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS tuition_payments_student_idx ON public.tuition_payments (student_id);
+CREATE INDEX IF NOT EXISTS tuition_payments_school_idx ON public.tuition_payments (school_id);
+
+CREATE TABLE IF NOT EXISTS public.tuition_installments (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  payment_id          uuid NOT NULL REFERENCES public.tuition_payments(id) ON DELETE CASCADE,
+  installment_number  integer NOT NULL,
+  amount_cents        integer NOT NULL,
+  due_date            date NOT NULL,
+  status              text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'failed')),
+  paid_at             timestamptz,
+  UNIQUE (payment_id, installment_number)
+);
+ALTER TABLE public.tuition_installments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tuition_installments_all" ON public.tuition_installments;
+CREATE POLICY "tuition_installments_all" ON public.tuition_installments FOR ALL USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS tuition_installments_payment_idx ON public.tuition_installments (payment_id);
+
+-- ─── Invite a transferring student straight into a program ─────────────────────
+-- When inviting an existing (non-applicant) student, an admin can pick a
+-- program up front so accepting the invite auto-enrolls them in every
+-- course in that program, same as the normal program cascade-enroll.
+ALTER TABLE public.invitations ADD COLUMN IF NOT EXISTS program_id uuid REFERENCES public.programs(id) ON DELETE SET NULL;
+
+-- ─── Student detail view (admin/teacher) ─────────────────────────────────────
+-- profiles had no created_at, needed to show "enrolled since" on the new
+-- expandable student detail card. Existing rows backfill to now() since the
+-- real join date wasn't tracked before -- not perfectly accurate historically,
+-- but every row going forward is correct.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
+-- course_enrollments had no timestamp at all, so "enrolled since" on the
+-- student detail card was falling back to the account's created_at (when
+-- they signed up) rather than when they actually enrolled in a course --
+-- wrong for e.g. a student invited to a program well after their account
+-- existed, or enrolled in a second course much later. Existing rows
+-- backfill to now() since the real enrollment date wasn't tracked before;
+-- every enrollment going forward is accurate.
+ALTER TABLE public.course_enrollments ADD COLUMN IF NOT EXISTS enrolled_at timestamptz NOT NULL DEFAULT now();
+
+-- ─── Chat read receipts ───────────────────────────────────────────────────────
+-- Per-member "I've read up to here" marker so a DM can show a double-check
+-- (seen) indicator once the other person has read a message, and so the
+-- unread badge introduced earlier can eventually persist across reloads.
+ALTER TABLE public.chat_channel_members ADD COLUMN IF NOT EXISTS last_read_at timestamptz;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'chat_channel_members'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_channel_members;
+  END IF;
+END $$;
+
+-- ─── Chat message reactions ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.chat_message_reactions (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id  uuid NOT NULL REFERENCES public.chat_messages(id) ON DELETE CASCADE,
+  user_id     uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  emoji       text NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (message_id, user_id, emoji)
+);
+ALTER TABLE public.chat_message_reactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "chat_message_reactions_all" ON public.chat_message_reactions;
+CREATE POLICY "chat_message_reactions_all" ON public.chat_message_reactions FOR ALL USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS chat_message_reactions_message_idx ON public.chat_message_reactions (message_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'chat_message_reactions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_message_reactions;
+  END IF;
+END $$;
+
+-- ─── Activity log columns (teacher activity ranking + login history) ──────────
+-- POST /activity-log (lib/activityLogger.ts, called on every login/logout from
+-- the client, and by the teacher-activity ranking below) has always written
+-- `performed_by` and `metadata`, but platform_audit_log was only ever defined
+-- with `actor_id` and `details` — every one of those inserts, including every
+-- login/logout event, has been silently failing with a schema-cache error the
+-- client's fire-and-forget logActivity() swallows. Add the columns the code
+-- actually uses instead of rewriting every call site.
+ALTER TABLE public.platform_audit_log ADD COLUMN IF NOT EXISTS performed_by uuid REFERENCES public.profiles(id);
+ALTER TABLE public.platform_audit_log ADD COLUMN IF NOT EXISTS metadata jsonb;
+CREATE INDEX IF NOT EXISTS platform_audit_log_performed_by_idx ON public.platform_audit_log (performed_by, action, created_at);
+
+-- ─── Chat message edit history ─────────────────────────────────────────────────
+-- Messages can be edited after sending, but the previous content is kept —
+-- one row per edit, storing what the content WAS right before that edit.
+CREATE TABLE IF NOT EXISTS public.chat_message_edits (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id       uuid NOT NULL REFERENCES public.chat_messages(id) ON DELETE CASCADE,
+  previous_content text NOT NULL,
+  edited_by        uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  edited_at        timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.chat_message_edits ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "chat_message_edits_all" ON public.chat_message_edits;
+CREATE POLICY "chat_message_edits_all" ON public.chat_message_edits FOR ALL USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS chat_message_edits_message_idx ON public.chat_message_edits (message_id, edited_at);
+
+-- ─── Test Mode ──────────────────────────────────────────────────────────────
+-- An admin can grant a specific user (e.g. someone on the team doing pre-
+-- launch testing) the ability to self-switch into any teacher/staff/student
+-- account in the school without needing an admin to do it for them each
+-- time — reuses the same "View As" magic-link impersonation flow admins get,
+-- just gated by this flag instead of by role.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS test_mode_enabled boolean NOT NULL DEFAULT false;
+
+-- Force PostgREST to pick up the columns above immediately instead of
+-- waiting for its schema cache to refresh on its own.
+NOTIFY pgrst, 'reload schema';

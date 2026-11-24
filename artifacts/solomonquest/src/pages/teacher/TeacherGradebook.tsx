@@ -54,8 +54,16 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/common/States";
+import { HelpLink } from "@/help/components/HelpLink";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface RubricCriterion {
+  id: string;
+  name: string;
+  maxPoints: number;
+}
 
 interface CellSelection {
   studentId: string;
@@ -68,6 +76,12 @@ interface CellSelection {
   currentFeedback: string | null;
   content: string | null;
   fileUrl: string | null;
+  rubric: RubricCriterion[] | null;
+  currentRubricScores: Record<string, { score: number }> | null;
+  /** Late-work info: the grade input edits the raw (pre-penalty) score. */
+  submittedLate?: boolean;
+  daysLate?: number;
+  latePenaltyPercent?: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -78,10 +92,10 @@ function getInitials(firstName?: string | null, lastName?: string | null) {
 
 function gradeColor(pct: number | null) {
   if (pct == null) return "text-muted-foreground";
-  if (pct >= 90) return "text-green-600 font-semibold";
-  if (pct >= 70) return "text-blue-600 font-semibold";
-  if (pct >= 60) return "text-amber-600 font-semibold";
-  return "text-red-600 font-semibold";
+  if (pct >= 90) return "text-success font-semibold";
+  if (pct >= 70) return "text-primary font-semibold";
+  if (pct >= 60) return "text-warning font-semibold";
+  return "text-destructive font-semibold";
 }
 
 function calcAverage(grades: (number | null)[], maxPoints: (number | null)[]): number | null {
@@ -143,8 +157,10 @@ function GradingPanel({
 }) {
   const [grade, setGrade] = useState<string>("");
   const [feedback, setFeedback] = useState<string>("");
+  const [rubricInputs, setRubricInputs] = useState<Record<string, string>>({});
   const [converting, setConverting] = useState(false);
   const gradeSubmission = useGradeSubmission();
+  const hasRubric = !!selection?.rubric && selection.rubric.length > 0;
 
   const convertPdfToDocx = async () => {
     if (!selection?.fileUrl) return;
@@ -182,17 +198,52 @@ function GradingPanel({
     }
   };
 
-  // Reset grade/feedback whenever the selected submission changes
+  // Reset grade/feedback/rubric inputs whenever the selected submission changes
   useEffect(() => {
     setGrade(selection?.currentGrade != null ? String(selection.currentGrade) : "");
     setFeedback(selection?.currentFeedback || "");
+    const scores = selection?.currentRubricScores;
+    setRubricInputs(
+      scores
+        ? Object.fromEntries(Object.entries(scores).map(([id, v]) => [id, String(v.score)]))
+        : {}
+    );
   }, [selection?.submissionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const rubricTotal = hasRubric
+    ? selection!.rubric!.reduce((sum, c) => sum + (Number(rubricInputs[c.id]) || 0), 0)
+    : null;
+  const rubricMax = hasRubric ? selection!.rubric!.reduce((sum, c) => sum + c.maxPoints, 0) : null;
 
   const handleSave = () => {
     if (!selection?.submissionId) {
       toast.error("No submission to grade");
       return;
     }
+
+    if (hasRubric) {
+      const rubricScores: Record<string, number> = {};
+      for (const c of selection!.rubric!) {
+        const score = Number(rubricInputs[c.id]);
+        if (!Number.isFinite(score) || score < 0 || score > c.maxPoints) {
+          toast.error(`Score for "${c.name}" must be between 0 and ${c.maxPoints}`);
+          return;
+        }
+        rubricScores[c.id] = score;
+      }
+      gradeSubmission.mutate(
+        { id: selection.submissionId, data: { rubricScores, feedback } as any },
+        {
+          onSuccess: () => {
+            toast.success("Grade saved");
+            onSaved();
+          },
+          onError: () => toast.error("Failed to save grade"),
+        }
+      );
+      return;
+    }
+
     const numGrade = parseFloat(grade);
     if (isNaN(numGrade)) {
       toast.error("Enter a valid grade");
@@ -258,7 +309,7 @@ function GradingPanel({
                   href={selection.fileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
                 >
                   <FileText className="h-3.5 w-3.5" /> View PDF
                 </a>
@@ -276,31 +327,73 @@ function GradingPanel({
             )}
           </div>
 
-          {/* Grade input */}
-          <div className="space-y-2">
-            <Label htmlFor="grade-input" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Grade
-            </Label>
-            <div className="flex items-center gap-3">
-              <Input
-                id="grade-input"
-                type="number"
-                value={grade}
-                onChange={(e) => setGrade(e.target.value)}
-                placeholder="0"
-                className="w-24"
-                min={0}
-                max={selection?.pointsPossible ?? undefined}
-                disabled={!selection?.submissionId}
-              />
-              {selection?.pointsPossible != null && (
-                <span className="text-sm text-muted-foreground">/ {selection.pointsPossible}</span>
-              )}
-              {pct != null && (
-                <span className={cn("text-sm ml-auto", gradeColor(pct))}>{pct}%</span>
-              )}
+          {selection?.submittedLate && (
+            <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">
+              <span className="font-semibold">Submitted late</span>
+              {selection.daysLate ? ` (${selection.daysLate} day${selection.daysLate === 1 ? "" : "s"})` : ""}.{" "}
+              {selection.latePenaltyPercent
+                ? `Enter the score before penalty — a ${selection.latePenaltyPercent}% late penalty is applied on save.`
+                : "Any late penalty set on the assignment is applied when you save."}
             </div>
-          </div>
+          )}
+
+          {/* Grade input — rubric-based when this assignment has one, else a single value */}
+          {hasRubric ? (
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Rubric
+              </Label>
+              <div className="space-y-2">
+                {selection!.rubric!.map((c) => (
+                  <div key={c.id} className="flex items-center gap-3">
+                    <span className="text-sm flex-1 truncate">{c.name}</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={c.maxPoints}
+                      value={rubricInputs[c.id] ?? ""}
+                      onChange={(e) => setRubricInputs((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                      placeholder="0"
+                      className="w-20"
+                      disabled={!selection?.submissionId}
+                    />
+                    <span className="text-xs text-muted-foreground w-16 shrink-0">/ {c.maxPoints} pts</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</span>
+                <span className={cn("text-sm", gradeColor(rubricMax ? Math.round((rubricTotal! / rubricMax) * 100) : null))}>
+                  {rubricTotal} / {rubricMax}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="grade-input" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Grade
+              </Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="grade-input"
+                  type="number"
+                  value={grade}
+                  onChange={(e) => setGrade(e.target.value)}
+                  placeholder="0"
+                  className="w-24"
+                  min={0}
+                  max={selection?.pointsPossible ?? undefined}
+                  disabled={!selection?.submissionId}
+                />
+                {selection?.pointsPossible != null && (
+                  <span className="text-sm text-muted-foreground">/ {selection.pointsPossible}</span>
+                )}
+                {pct != null && (
+                  <span className={cn("text-sm ml-auto", gradeColor(pct))}>{pct}%</span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Feedback */}
           <div className="space-y-2">
@@ -321,7 +414,7 @@ function GradingPanel({
         <div className="border-t px-6 py-4 flex gap-3">
           <Button
             onClick={handleSave}
-            disabled={!selection?.submissionId || grade === "" || gradeSubmission.isPending}
+            disabled={!selection?.submissionId || (!hasRubric && grade === "") || gradeSubmission.isPending}
             className="flex-1"
           >
             {gradeSubmission.isPending ? "Saving..." : "Save Grade"}
@@ -352,7 +445,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
   // by fetching the first assignment and iterating. The existing API only exposes per-assignment.
   // We'll accumulate submission data keyed by [studentId][assignmentId].
   const [submissionCache, setSubmissionCache] = useState<
-    Record<string, Record<string, { id: string; grade: number | null; feedback: string | null; content: string | null; fileUrl: string | null; status: string }>>
+    Record<string, Record<string, { id: string; grade: number | null; rawGrade: number | null; submittedLate: boolean; daysLate: number; latePenaltyPercent: number; feedback: string | null; content: string | null; fileUrl: string | null; status: string; rubricScores: Record<string, { score: number }> | null }>>
   >({});
 
   const [selectedCell, setSelectedCell] = useState<CellSelection | null>(null);
@@ -366,7 +459,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
     (
       studentId: string,
       studentName: string,
-      assignment: { id: string; title: string; pointsPossible?: number | null }
+      assignment: { id: string; title: string; pointsPossible?: number | null; rubric?: RubricCriterion[] | null }
     ) => {
       const sub = submissionCache[studentId]?.[assignment.id];
       setSelectedCell({
@@ -376,10 +469,17 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
         assignmentTitle: assignment.title,
         pointsPossible: assignment.pointsPossible ?? null,
         submissionId: sub?.id ?? null,
-        currentGrade: sub?.grade ?? null,
+        // Edit the raw score: `grade` already has any late penalty applied,
+        // and re-saving it would apply the penalty twice.
+        currentGrade: sub?.rawGrade ?? sub?.grade ?? null,
+        submittedLate: sub?.submittedLate ?? false,
+        daysLate: sub?.daysLate ?? 0,
+        latePenaltyPercent: sub?.latePenaltyPercent ?? 0,
         currentFeedback: sub?.feedback ?? null,
         content: sub?.content ?? null,
         fileUrl: sub?.fileUrl ?? null,
+        rubric: assignment.rubric ?? null,
+        currentRubricScores: sub?.rubricScores ?? null,
       });
     },
     [submissionCache]
@@ -430,10 +530,17 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
                 next[sub.studentId][a.id] = {
                   id: sub.id,
                   grade: sub.grade ?? null,
+                  rawGrade: (sub as any).rawGrade ?? null,
+                  submittedLate: (sub as any).submittedLate === true,
+                  daysLate: (sub as any).daysLate ?? 0,
+                  latePenaltyPercent: (sub as any).latePenaltyPercent ?? 0,
                   feedback: (sub as any).feedback ?? null,
                   content: (sub as any).content ?? null,
                   fileUrl: (sub as any).fileUrl ?? (sub as any).file_url ?? null,
                   status: sub.status,
+                  // Kept so reopening a rubric-graded cell shows the saved
+                  // per-criterion scores instead of a blank rubric.
+                  rubricScores: (sub as any).rubricScores ?? null,
                 };
               }
               return next;
@@ -465,7 +572,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
         {studentList.length === 0 ? (
           <div className="text-center py-10 border border-dashed rounded-lg">
             <Users className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
-            <p className="text-sm text-muted-foreground">No students enrolled yet.</p>
+            <EmptyState compact icon={Users} title="No students enrolled yet" description="Grades appear once students join this course." />
           </div>
         ) : (
           <div className="rounded-lg border overflow-x-auto">
@@ -541,6 +648,11 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
                                 {pct != null && (
                                   <span className={cn("text-xs", gradeColor(pct))}>{pct}%</span>
                                 )}
+                                {sub!.latePenaltyPercent > 0 && (
+                                  <span className="text-[11px] font-medium text-warning" title={`Raw score ${sub!.rawGrade ?? "?"} before late penalty`}>
+                                    Late −{sub!.latePenaltyPercent}%
+                                  </span>
+                                )}
                               </div>
                             ) : sub ? (
                               <Badge variant="secondary" className="text-xs">
@@ -573,7 +685,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span>Click any grade cell to open the grading panel.</span>
           <div className="flex items-center gap-1">
-            <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> Graded
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-success" /> Graded
           </div>
           <div className="flex items-center gap-1">
             <span className="inline-block w-2.5 h-2.5 rounded-full bg-muted-foreground/40" /> Pending
@@ -624,7 +736,7 @@ export default function TeacherGradebook() {
     <TeacherLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/teacher">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
@@ -634,7 +746,10 @@ export default function TeacherGradebook() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Gradebook</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight">Gradebook</h1>
+              <HelpLink slug="teacher-gradebook-rubrics" label="How grading and rubrics work" />
+            </div>
             <p className="text-muted-foreground mt-1">
               View and manage student grades across all your courses.
             </p>

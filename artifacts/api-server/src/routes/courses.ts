@@ -1,8 +1,102 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { enrollStudentInCourse } from "../lib/enrollment";
+
+function canManageCourses(role: string | undefined): boolean {
+  return role === "admin" || role === "super_admin" || role === "teacher";
+}
+
+/**
+ * Confirms the caller may modify/delete this specific course: a teacher
+ * must own it, an admin must be in the same school, super_admin always
+ * passes. Every write route below previously only checked the caller's
+ * ROLE, never that the course actually belonged to them — any teacher or
+ * admin in any school could edit/delete/enroll into any other school's
+ * course by id, a cross-tenant IDOR.
+ */
+async function assertCanManageCourse(
+  courseId: string,
+  userId: string | undefined,
+  role: string | undefined
+): Promise<{ ok: true; schoolId: string | null } | { ok: false; status: number; error: string }> {
+  const { data: course } = await supabaseAdmin
+    .from("courses")
+    .select("teacher_id, school_id")
+    .eq("id", courseId)
+    .single();
+
+  if (!course) return { ok: false, status: 404, error: "Course not found" };
+  if (role === "super_admin") return { ok: true, schoolId: course.school_id as string | null };
+  if (role === "teacher") {
+    return course.teacher_id === userId
+      ? { ok: true, schoolId: course.school_id as string | null }
+      : { ok: false, status: 403, error: "You do not teach this course" };
+  }
+  if (role === "admin") {
+    const { data: caller } = await supabaseAdmin
+      .from("profiles")
+      .select("school_id")
+      .eq("id", userId ?? "")
+      .single();
+    return caller?.school_id === course.school_id
+      ? { ok: true, schoolId: course.school_id as string | null }
+      : { ok: false, status: 403, error: "Forbidden" };
+  }
+  return { ok: false, status: 403, error: "Forbidden" };
+}
+
+/**
+ * teacherId is raw client input on create/update. Nothing checked that the
+ * profile belonged to the course's school, so an admin could assign any
+ * profile id on the platform (another school's teacher, a student) as the
+ * teacher of record — which then grants that account full teacher access
+ * to the course (roster, grades, attendance) via every teacher_id check.
+ */
+async function assertTeacherInSchool(
+  teacherId: string,
+  schoolId: string | null | undefined
+): Promise<string | null> {
+  const { data: teacher } = await supabaseAdmin
+    .from("profiles")
+    .select("school_id, role")
+    .eq("id", teacherId)
+    .maybeSingle();
+  if (!teacher) return "Teacher not found";
+  if (teacher.school_id !== schoolId) return "That teacher is not in this school";
+  if (teacher.role === "student" || teacher.role === "parent") return "Only staff can be assigned as a course teacher";
+  return null;
+}
 
 const router: IRouter = Router();
+
+// Public: list a school's published courses for its public homepage —
+// no auth required, and school is taken from the school_id query param
+// rather than the caller's own school (GET /courses below does the
+// opposite: it's for an authenticated user's own school and ignores
+// school_id entirely).
+router.get("/courses/public", async (req, res): Promise<void> => {
+  const schoolId = req.query.school_id as string | undefined;
+  if (!schoolId) {
+    res.status(400).json({ error: "school_id query parameter is required" });
+    return;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("courses")
+    .select("*")
+    .eq("school_id", schoolId)
+    .eq("is_published", true)
+    .order("title");
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  const courses = await enrichCourses(data ?? []);
+  res.json(courses);
+});
 
 // Get my courses (teacher = teaching, student = enrolled)
 router.get("/courses/my", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
@@ -20,7 +114,7 @@ router.get("/courses/my", requireAuth, async (req: AuthenticatedRequest, res): P
       return;
     }
 
-    const courses = await Promise.all((data ?? []).map(enrichCourse));
+    const courses = await enrichCourses(data ?? []);
     res.json(courses);
     return;
   }
@@ -54,7 +148,7 @@ router.get("/courses/my", requireAuth, async (req: AuthenticatedRequest, res): P
     return;
   }
 
-  const courses = await Promise.all((data ?? []).map(enrichCourse));
+  const courses = await enrichCourses(data ?? []);
   res.json(courses);
 });
 
@@ -79,17 +173,49 @@ router.get("/courses", requireAuth, async (req: AuthenticatedRequest, res): Prom
     return;
   }
 
-  const courses = await Promise.all((data ?? []).map(enrichCourse));
+  const courses = await enrichCourses(data ?? []);
   res.json(courses);
 });
 
 // Create course
 router.post("/courses", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
-  const { title, programId, teacherId, code, term, description } = req.body;
+  if (!canManageCourses(req.userRole)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const {
+    title, programId, teacherId, code, term, termStartDate, termEndDate, termId, description,
+    isPublished, attendanceWeightPercent, isLive, classDate, classEndTime,
+  } = req.body;
 
   if (!title) {
     res.status(400).json({ error: "title is required" });
     return;
+  }
+
+  if (
+    attendanceWeightPercent !== undefined &&
+    (typeof attendanceWeightPercent !== "number" || attendanceWeightPercent < 0 || attendanceWeightPercent > 100)
+  ) {
+    res.status(400).json({ error: "attendanceWeightPercent must be a number between 0 and 100" });
+    return;
+  }
+
+  if (termId) {
+    const { data: termRow } = await supabaseAdmin.from("terms").select("id").eq("id", termId).eq("school_id", req.schoolId ?? "").maybeSingle();
+    if (!termRow) {
+      res.status(400).json({ error: "Term not found" });
+      return;
+    }
+  }
+
+  if (teacherId) {
+    const teacherError = await assertTeacherInSchool(teacherId, req.schoolId);
+    if (teacherError) {
+      res.status(400).json({ error: teacherError });
+      return;
+    }
   }
 
   const { data, error } = await supabaseAdmin
@@ -101,8 +227,19 @@ router.post("/courses", requireAuth, async (req: AuthenticatedRequest, res): Pro
       teacher_id: teacherId ?? null,
       code: code ?? null,
       term: term ?? null,
+      term_start_date: termStartDate ?? null,
+      term_end_date: termEndDate ?? null,
+      term_id: termId ?? null,
       description: description ?? null,
-      is_published: false,
+      // The create form sends Published / attendance weight / live-class
+      // fields; they used to be dropped (every new course came out
+      // unpublished, 0% attendance weight, not live) until a second edit.
+      is_published: isPublished === true,
+      attendance_weight_percent: attendanceWeightPercent ?? 0,
+      is_live: isLive === true,
+      class_date: isLive === true && classDate ? classDate : null,
+      class_end_time: isLive === true && classEndTime ? classEndTime : null,
+      created_by: req.userId,
     })
     .select()
     .single();
@@ -112,11 +249,25 @@ router.post("/courses", requireAuth, async (req: AuthenticatedRequest, res): Pro
     return;
   }
 
+  // Fire-and-forget: who built this course, and whether a teacher was
+  // assigned right away. Never blocks the response on logging.
+  supabaseAdmin
+    .from("course_audit_log")
+    .insert({
+      course_id: data.id,
+      action: "created",
+      performed_by: req.userId,
+      new_teacher_id: teacherId ?? null,
+    })
+    .then(({ error: logError }) => {
+      if (logError) console.warn("[courses] audit log error:", logError);
+    });
+
   res.status(201).json(await enrichCourse(data));
 });
 
 // Get single course
-router.get("/courses/:id", requireAuth, async (req, res): Promise<void> => {
+router.get("/courses/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
   const { data, error } = await supabaseAdmin
@@ -130,13 +281,54 @@ router.get("/courses/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
+  if (req.userRole !== "super_admin" && data.school_id !== req.schoolId) {
+    res.status(404).json({ error: "Course not found" });
+    return;
+  }
+
   res.json(await enrichCourse(data));
 });
 
 // Update course
-router.patch("/courses/:id", requireAuth, async (req, res): Promise<void> => {
+router.patch("/courses/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!canManageCourses(req.userRole)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { title, programId, teacherId, code, term, description, isPublished } = req.body;
+
+  const access = await assertCanManageCourse(id, req.userId, req.userRole);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
+  const { title, programId, teacherId, code, term, termStartDate, termEndDate, termId, description, isPublished, attendanceWeightPercent } = req.body;
+
+  if (termId) {
+    const { data: termRow } = await supabaseAdmin.from("terms").select("id").eq("id", termId).eq("school_id", req.schoolId ?? "").maybeSingle();
+    if (!termRow && req.userRole !== "super_admin") {
+      res.status(400).json({ error: "Term not found" });
+      return;
+    }
+  }
+
+  if (
+    attendanceWeightPercent !== undefined &&
+    (typeof attendanceWeightPercent !== "number" || attendanceWeightPercent < 0 || attendanceWeightPercent > 100)
+  ) {
+    res.status(400).json({ error: "attendanceWeightPercent must be a number between 0 and 100" });
+    return;
+  }
+
+  if (teacherId) {
+    const teacherError = await assertTeacherInSchool(teacherId, access.schoolId);
+    if (teacherError) {
+      res.status(400).json({ error: teacherError });
+      return;
+    }
+  }
 
   const updates: Record<string, unknown> = {};
   if (title !== undefined) updates.title = title;
@@ -144,8 +336,21 @@ router.patch("/courses/:id", requireAuth, async (req, res): Promise<void> => {
   if (teacherId !== undefined) updates.teacher_id = teacherId;
   if (code !== undefined) updates.code = code;
   if (term !== undefined) updates.term = term;
+  if (termStartDate !== undefined) updates.term_start_date = termStartDate;
+  if (termEndDate !== undefined) updates.term_end_date = termEndDate;
+  if (termId !== undefined) updates.term_id = termId;
   if (description !== undefined) updates.description = description;
   if (isPublished !== undefined) updates.is_published = isPublished;
+  if (attendanceWeightPercent !== undefined) updates.attendance_weight_percent = attendanceWeightPercent;
+
+  // Capture the pre-update teacher so a reassignment can be logged with
+  // both sides of the change — fetched before the write, not from
+  // assertCanManageCourse's result, since that only ran the auth check.
+  let previousTeacherId: string | null = null;
+  if (teacherId !== undefined) {
+    const { data: before } = await supabaseAdmin.from("courses").select("teacher_id").eq("id", id).single();
+    previousTeacherId = (before?.teacher_id as string | null) ?? null;
+  }
 
   const { data, error } = await supabaseAdmin
     .from("courses")
@@ -153,6 +358,21 @@ router.patch("/courses/:id", requireAuth, async (req, res): Promise<void> => {
     .eq("id", id)
     .select()
     .single();
+
+  if (teacherId !== undefined && !error && data && previousTeacherId !== (teacherId ?? null)) {
+    supabaseAdmin
+      .from("course_audit_log")
+      .insert({
+        course_id: id,
+        action: teacherId ? "teacher_assigned" : "teacher_unassigned",
+        performed_by: req.userId,
+        previous_teacher_id: previousTeacherId,
+        new_teacher_id: teacherId ?? null,
+      })
+      .then(({ error: logError }) => {
+        if (logError) console.warn("[courses] audit log error:", logError);
+      });
+  }
 
   if (error || !data) {
     res.status(404).json({ error: "Course not found" });
@@ -163,8 +383,19 @@ router.patch("/courses/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 // Delete course
-router.delete("/courses/:id", requireAuth, async (req, res): Promise<void> => {
+router.delete("/courses/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  if (!canManageCourses(req.userRole)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const access = await assertCanManageCourse(id, req.userId, req.userRole);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
 
   const { error } = await supabaseAdmin.from("courses").delete().eq("id", id);
 
@@ -177,8 +408,34 @@ router.delete("/courses/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 // Get course students
-router.get("/courses/:id/students", requireAuth, async (req, res): Promise<void> => {
+router.get("/courses/:id/students", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const { data: course } = await supabaseAdmin.from("courses").select("school_id, teacher_id").eq("id", id).maybeSingle();
+  if (!course) {
+    res.status(404).json({ error: "Course not found" });
+    return;
+  }
+
+  const isSchoolStaff =
+    (req.userRole === "admin" || req.userRole === "super_admin") && course.school_id === req.schoolId;
+  const isCourseTeacher = req.userRole === "teacher" && course.teacher_id === req.userId;
+  let isEnrolledStudent = false;
+  if (!isSchoolStaff && !isCourseTeacher && req.userRole === "student") {
+    const { data: ownEnrollment } = await supabaseAdmin
+      .from("course_enrollments")
+      .select("course_id")
+      .eq("course_id", id)
+      .eq("student_id", req.userId ?? "")
+      .eq("status", "active")
+      .maybeSingle();
+    isEnrolledStudent = !!ownEnrollment;
+  }
+
+  if (!isSchoolStaff && !isCourseTeacher && !isEnrolledStudent) {
+    res.status(403).json({ error: "Not authorized to view this course's roster" });
+    return;
+  }
 
   const { data, error } = await supabaseAdmin
     .from("course_enrollments")
@@ -208,7 +465,7 @@ router.get("/courses/:id/students", requireAuth, async (req, res): Promise<void>
     return;
   }
 
-  res.json((profiles ?? []).map((p: Record<string, unknown>) => ({
+  const withEmails = (profiles ?? []).map((p: Record<string, unknown>) => ({
     id: p.id,
     schoolId: p.school_id,
     role: p.role,
@@ -216,47 +473,72 @@ router.get("/courses/:id/students", requireAuth, async (req, res): Promise<void>
     lastName: p.last_name,
     avatarUrl: p.avatar_url,
     bio: p.bio,
-    email: null,
-  })));
+    email: (p.email as string | null) ?? null,
+  }));
+
+  res.json(withEmails);
 });
 
 // Enroll student
-router.post("/courses/:id/enroll", requireAuth, async (req, res): Promise<void> => {
+router.post("/courses/:id/enroll", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const { studentId } = req.body;
+
+  if (!canManageCourses(req.userRole)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
 
   if (!studentId) {
     res.status(400).json({ error: "studentId is required" });
     return;
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("course_enrollments")
-    .insert({ course_id: id, student_id: studentId, status: "active" })
-    .select()
-    .single();
-
-  if (error) {
-    res.status(400).json({ error: error.message });
+  const access = await assertCanManageCourse(id, req.userId, req.userRole);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
     return;
   }
 
-  res.status(201).json({
-    courseId: data.course_id,
-    studentId: data.student_id,
-    status: data.status,
-  });
+  // The student being enrolled must also belong to the same school as the
+  // course — otherwise a caller could enroll an arbitrary user from a
+  // different school into a course they're legitimately allowed to manage.
+  const { data: studentProfile } = await supabaseAdmin
+    .from("profiles")
+    .select("school_id")
+    .eq("id", studentId)
+    .single();
+  if (!studentProfile || studentProfile.school_id !== access.schoolId) {
+    res.status(403).json({ error: "That student is not in this course's school" });
+    return;
+  }
+
+  try {
+    await enrollStudentInCourse(id, studentId);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || "Failed to enroll student" });
+    return;
+  }
+
+  res.status(201).json({ courseId: id, studentId, status: "active" });
 });
 
 // Update live class settings
 router.put("/courses/:id/live-settings", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const role = req.userRole;
-  if (role !== "admin" && role !== "teacher") {
+  if (role !== "admin" && role !== "super_admin" && role !== "teacher") {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
 
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const access = await assertCanManageCourse(id, req.userId, role);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
   const { is_live, class_date, class_end_time } = req.body;
 
   const updates: Record<string, unknown> = {};
@@ -287,9 +569,10 @@ router.put("/courses/:id/live-settings", requireAuth, async (req: AuthenticatedR
     if (enrollments && enrollments.length > 0) {
       const notifications = (enrollments as Record<string, unknown>[]).map((e) => ({
         user_id: e.student_id,
-        course_id: id,
-        message: `Live class scheduled for ${class_date}`,
         type: "live_class",
+        title: "Live class scheduled",
+        body: `Live class scheduled for ${class_date}`,
+        link: `/dashboard/student/courses/${id}`,
       }));
 
       await supabaseAdmin.from("notifications").insert(notifications);
@@ -302,6 +585,7 @@ router.put("/courses/:id/live-settings", requireAuth, async (req: AuthenticatedR
 async function enrichCourse(c: Record<string, unknown>) {
   let teacherName: string | null = null;
   let studentCount: number | null = null;
+  let createdByName: string | null = null;
 
   if (c.teacher_id) {
     const { data: teacher } = await supabaseAdmin
@@ -311,6 +595,17 @@ async function enrichCourse(c: Record<string, unknown>) {
       .single();
     if (teacher) {
       teacherName = [teacher.first_name, teacher.last_name].filter(Boolean).join(" ") || null;
+    }
+  }
+
+  if (c.created_by) {
+    const { data: creator } = await supabaseAdmin
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("id", c.created_by as string)
+      .single();
+    if (creator) {
+      createdByName = [creator.first_name, creator.last_name].filter(Boolean).join(" ") || null;
     }
   }
 
@@ -330,11 +625,135 @@ async function enrichCourse(c: Record<string, unknown>) {
     title: c.title,
     code: c.code,
     term: c.term,
+    termStartDate: c.term_start_date,
+    termEndDate: c.term_end_date,
+    termId: c.term_id ?? null,
+    attendanceWeightPercent: c.attendance_weight_percent ?? 0,
     description: c.description,
     isPublished: c.is_published,
+    // Live-class schedule (PUT /courses/:id/live-settings). Without these the
+    // admin edit form always reopened as "not live" and the student
+    // dashboard never showed a live class / check-in.
+    isLive: c.is_live ?? false,
+    classDate: c.class_date ?? null,
+    classEndTime: c.class_end_time ?? null,
     teacherName,
     studentCount,
+    createdBy: c.created_by ?? null,
+    createdByName,
+    createdAt: c.created_at ?? null,
   };
 }
+
+// Batched version of enrichCourse for list endpoints — one profiles query
+// for all teacher/creator ids and one enrollments query for all courses,
+// instead of 3 queries per course.
+async function enrichCourses(rows: Record<string, unknown>[]) {
+  if (rows.length === 0) return [];
+
+  const profileIds = new Set<string>();
+  const courseIds: string[] = [];
+  for (const c of rows) {
+    if (c.teacher_id) profileIds.add(c.teacher_id as string);
+    if (c.created_by) profileIds.add(c.created_by as string);
+    courseIds.push(c.id as string);
+  }
+
+  const { data: profiles } = profileIds.size
+    ? await supabaseAdmin.from("profiles").select("id, first_name, last_name").in("id", Array.from(profileIds))
+    : { data: [] as { id: string; first_name: string | null; last_name: string | null }[] };
+
+  const nameById = new Map(
+    (profiles ?? []).map((p) => [p.id, [p.first_name, p.last_name].filter(Boolean).join(" ") || null])
+  );
+
+  const { data: enrollments } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("course_id")
+    .in("course_id", courseIds)
+    .eq("status", "active");
+
+  const countByCourse = new Map<string, number>();
+  for (const e of enrollments ?? []) {
+    const cid = e.course_id as string;
+    countByCourse.set(cid, (countByCourse.get(cid) ?? 0) + 1);
+  }
+
+  return rows.map((c) => ({
+    id: c.id,
+    schoolId: c.school_id,
+    programId: c.program_id,
+    teacherId: c.teacher_id,
+    title: c.title,
+    code: c.code,
+    term: c.term,
+    termStartDate: c.term_start_date,
+    termEndDate: c.term_end_date,
+    termId: c.term_id ?? null,
+    attendanceWeightPercent: c.attendance_weight_percent ?? 0,
+    description: c.description,
+    isPublished: c.is_published,
+    isLive: c.is_live ?? false,
+    classDate: c.class_date ?? null,
+    classEndTime: c.class_end_time ?? null,
+    teacherName: c.teacher_id ? nameById.get(c.teacher_id as string) ?? null : null,
+    studentCount: countByCourse.get(c.id as string) ?? 0,
+    createdBy: c.created_by ?? null,
+    createdByName: c.created_by ? nameById.get(c.created_by as string) ?? null : null,
+    createdAt: c.created_at ?? null,
+  }));
+}
+
+// GET /courses/:id/audit-log — who created this course and every teacher
+// (re)assignment since, newest first. Staff/admin/teacher-of-record only.
+router.get("/courses/:id/audit-log", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const access = await assertCanManageCourse(id, req.userId, req.userRole);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("course_audit_log")
+    .select("id, action, performed_by, previous_teacher_id, new_teacher_id, created_at")
+    .eq("course_id", id)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  const actorIds = new Set<string>();
+  for (const row of data ?? []) {
+    if (row.performed_by) actorIds.add(row.performed_by as string);
+    if (row.previous_teacher_id) actorIds.add(row.previous_teacher_id as string);
+    if (row.new_teacher_id) actorIds.add(row.new_teacher_id as string);
+  }
+
+  const { data: profiles } = actorIds.size
+    ? await supabaseAdmin.from("profiles").select("id, first_name, last_name").in("id", Array.from(actorIds))
+    : { data: [] as { id: string; first_name: string | null; last_name: string | null }[] };
+
+  const nameById = new Map(
+    (profiles ?? []).map((p) => [p.id, [p.first_name, p.last_name].filter(Boolean).join(" ") || null])
+  );
+
+  res.json(
+    (data ?? []).map((row) => ({
+      id: row.id,
+      action: row.action,
+      performedBy: row.performed_by,
+      performedByName: row.performed_by ? nameById.get(row.performed_by as string) ?? null : null,
+      previousTeacherId: row.previous_teacher_id,
+      previousTeacherName: row.previous_teacher_id ? nameById.get(row.previous_teacher_id as string) ?? null : null,
+      newTeacherId: row.new_teacher_id,
+      newTeacherName: row.new_teacher_id ? nameById.get(row.new_teacher_id as string) ?? null : null,
+      createdAt: row.created_at,
+    }))
+  );
+});
 
 export default router;

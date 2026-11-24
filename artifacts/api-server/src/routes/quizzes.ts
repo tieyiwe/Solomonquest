@@ -1,11 +1,150 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { lockedItemError } from "../lib/courseProgress";
+import { dispatchNotifications, studentAndParentRecipients, parentsOfStudents, parentLinkForChild } from "../lib/notifyAudience";
+import { logger } from "../lib/logger";
+
+/**
+ * Scores on a quiz that held them back (release_scores_immediately=false)
+ * were just released: notify every student with a submitted attempt, plus
+ * their linked parents. Runs in the background.
+ */
+async function notifyQuizScoresReleased(quizId: string, quizTitle: string, actorId: string | undefined): Promise<void> {
+  const { data: attempts } = await supabaseAdmin
+    .from("quiz_attempts")
+    .select("student_id")
+    .eq("quiz_id", quizId)
+    .eq("status", "submitted");
+  const studentIds = Array.from(new Set((attempts ?? []).map((a) => a.student_id as string).filter(Boolean)));
+  if (studentIds.length === 0) return;
+  const recipients = await studentAndParentRecipients(studentIds, () => "/dashboard/student/quizzes");
+  dispatchNotifications({
+    recipients,
+    type: "quiz_scores_released",
+    category: "grades",
+    title: `Quiz scores released: ${quizTitle}`,
+    body: "Scores for this quiz are now available.",
+    excludeUserId: actorId ?? null,
+    metadata: { quizId },
+  });
+}
+import { drawQuestionsForQuiz, drawnIdsOf, loadBankQuestionsAsQuizRows } from "../lib/questionBanks";
 
 const router: IRouter = Router();
 
 function isTeacherOrAdmin(role?: string): boolean {
   return role === "teacher" || role === "admin" || role === "super_admin";
+}
+
+/**
+ * Confirms the caller may manage the quiz's course: a teacher must own it,
+ * an admin must be in the same school, super_admin always passes. Every
+ * mutation route in this file previously checked only the caller's ROLE
+ * ("is this a teacher or admin?"), never that the quiz's course actually
+ * belonged to them — any teacher/admin account in any school could edit
+ * questions (including correct_answer), delete, or publish/unpublish any
+ * OTHER school's quiz just by knowing/guessing its id.
+ */
+export async function assertCanManageQuiz(
+  quizIdParam: string | string[],
+  userId: string | undefined,
+  role: string | undefined
+): Promise<{ ok: true; courseId: string } | { ok: false; status: number; error: string }> {
+  const quizId = Array.isArray(quizIdParam) ? quizIdParam[0] : quizIdParam;
+  const { data: quiz } = await supabaseAdmin
+    .from("quizzes")
+    .select("course_id")
+    .eq("id", quizId)
+    .single();
+  if (!quiz) return { ok: false, status: 404, error: "Quiz not found" };
+
+  const { data: course } = await supabaseAdmin
+    .from("courses")
+    .select("teacher_id, school_id")
+    .eq("id", quiz.course_id as string)
+    .single();
+  if (!course) return { ok: false, status: 404, error: "Course not found" };
+
+  if (role === "super_admin") return { ok: true, courseId: quiz.course_id as string };
+  if (role === "admin") {
+    const { data: caller } = await supabaseAdmin
+      .from("profiles")
+      .select("school_id")
+      .eq("id", userId ?? "")
+      .single();
+    return caller?.school_id === course.school_id
+      ? { ok: true, courseId: quiz.course_id as string }
+      : { ok: false, status: 403, error: "Forbidden" };
+  }
+  return course.teacher_id === userId
+    ? { ok: true, courseId: quiz.course_id as string }
+    : { ok: false, status: 403, error: "You do not teach this course" };
+}
+
+/**
+ * Course-level access check for the two GET routes below (list quizzes for
+ * a course, fetch a single quiz to take/edit) — neither previously checked
+ * that the caller has any relationship to the course at all, so any
+ * authenticated user in any school could list or fetch any other school's
+ * quizzes, including the raw correct_answer on every question, just by
+ * supplying/guessing a course_id or quiz id.
+ */
+async function assertCourseAccess(
+  courseId: string,
+  userId: string | undefined,
+  role: string | undefined
+): Promise<{ ok: true; isManager: boolean } | { ok: false; status: number; error: string }> {
+  const { data: course } = await supabaseAdmin
+    .from("courses")
+    .select("teacher_id, school_id")
+    .eq("id", courseId)
+    .single();
+  if (!course) return { ok: false, status: 404, error: "Course not found" };
+
+  if (role === "super_admin") return { ok: true, isManager: true };
+
+  if (role === "admin") {
+    const { data: caller } = await supabaseAdmin.from("profiles").select("school_id").eq("id", userId ?? "").single();
+    if (caller?.school_id === course.school_id) return { ok: true, isManager: true };
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  if (role === "teacher") {
+    if (course.teacher_id === userId) return { ok: true, isManager: true };
+    return { ok: false, status: 403, error: "You do not teach this course" };
+  }
+
+  // Student/staff: must be actively enrolled in the course.
+  const { data: enrollment } = await supabaseAdmin
+    .from("course_enrollments")
+    .select("course_id")
+    .eq("course_id", courseId)
+    .eq("student_id", userId ?? "")
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (!enrollment) return { ok: false, status: 403, error: "You are not enrolled in this course" };
+  return { ok: true, isManager: false };
+}
+
+/** Strips answer keys from questions for non-managers (students taking the quiz).
+ *  The quiz builder also marks the right choice inside `options`
+ *  ({ id, text, is_correct }), so stripping only `correct_answer` still
+ *  handed every student the answer key in the options array. */
+export function sanitizeQuestionsForStudent(questions: Record<string, unknown>[]): Record<string, unknown>[] {
+  return questions.map(({ correct_answer, ...rest }) => ({
+    ...rest,
+    options: Array.isArray(rest.options)
+      ? (rest.options as unknown[]).map((o) => {
+          if (o && typeof o === "object") {
+            const { is_correct, isCorrect, ...opt } = o as Record<string, unknown>;
+            return opt;
+          }
+          return o;
+        })
+      : rest.options ?? null,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -20,11 +159,22 @@ router.get("/quizzes", requireAuth, async (req: AuthenticatedRequest, res): Prom
   }
 
   try {
-    const { data, error } = await supabaseAdmin
+    const access = await assertCourseAccess(course_id as string, req.userId, req.userRole);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
+
+    let query = supabaseAdmin
       .from("quizzes")
       .select("*")
       .eq("course_id", course_id as string)
       .order("created_at", { ascending: true });
+
+    // Students/staff only ever see published quizzes in the list.
+    if (!access.isManager) query = query.eq("is_published", true);
+
+    const { data, error } = await query;
 
     if (error) {
       res.status(500).json({ error: error.message });
@@ -57,6 +207,19 @@ router.post("/quizzes", requireAuth, async (req: AuthenticatedRequest, res): Pro
 
   if (!course_id || !title) {
     res.status(400).json({ error: "course_id and title are required" });
+    return;
+  }
+
+  // Every other write route here checks the caller manages the quiz's
+  // course; creation only checked the caller's role, so a teacher/admin
+  // in any school could plant a quiz on any other school's course_id.
+  const access = await assertCourseAccess(String(course_id), req.userId, req.userRole);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+  if (!access.isManager) {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
 
@@ -105,6 +268,20 @@ router.get("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): 
       return;
     }
 
+    const access = await assertCourseAccess(quiz.course_id as string, req.userId, req.userRole);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
+
+    // A student/staff caller may only ever fetch a published quiz — an
+    // unpublished one isn't meant to be visible to them at all, let alone
+    // its questions.
+    if (!access.isManager && quiz.is_published !== true) {
+      res.status(404).json({ error: "Quiz not found" });
+      return;
+    }
+
     const { data: questions, error: qError } = await supabaseAdmin
       .from("quiz_questions")
       .select("*")
@@ -116,7 +293,22 @@ router.get("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): 
       return;
     }
 
-    res.json({ ...quiz, questions: questions ?? [] });
+    const safeQuestions = access.isManager
+      ? questions ?? []
+      : sanitizeQuestionsForStudent(questions ?? []);
+
+    // Random-draw rules (question banks): students get their drawn questions
+    // when they start an attempt; here they only learn how many to expect.
+    let randomQuestionCount = 0;
+    const { data: draws, error: drawsError } = await supabaseAdmin
+      .from("quiz_bank_draws")
+      .select("draw_count")
+      .eq("quiz_id", id);
+    if (!drawsError) {
+      randomQuestionCount = (draws ?? []).reduce((sum, d) => sum + (Number(d.draw_count) || 0), 0);
+    }
+
+    res.json({ ...quiz, questions: safeQuestions, random_question_count: randomQuestionCount });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -132,13 +324,28 @@ router.put("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): 
   }
 
   const { id } = req.params;
+
+  const access = await assertCanManageQuiz(id, req.userId, req.userRole);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
   const {
     title,
     description,
     time_limit_minutes,
     attempt_limit,
     release_scores_immediately,
+    is_published,
+    due_date,
   } = req.body;
+
+  const { data: before } = await supabaseAdmin
+    .from("quizzes")
+    .select("release_scores_immediately")
+    .eq("id", id)
+    .maybeSingle();
 
   const updates: Record<string, unknown> = {};
   if (title !== undefined) updates.title = title;
@@ -147,6 +354,8 @@ router.put("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): 
   if (attempt_limit !== undefined) updates.attempt_limit = attempt_limit;
   if (release_scores_immediately !== undefined)
     updates.release_scores_immediately = release_scores_immediately;
+  if (is_published !== undefined) updates.is_published = is_published;
+  if (due_date !== undefined) updates.due_date = due_date;
 
   try {
     const { data, error } = await supabaseAdmin
@@ -166,6 +375,12 @@ router.put("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res): 
       return;
     }
 
+    if (release_scores_immediately === true && before && before.release_scores_immediately !== true) {
+      notifyQuizScoresReleased(String(id), String(data.title ?? "Quiz"), req.userId).catch((err) =>
+        logger.error({ err }, "quiz release notification failed")
+      );
+    }
+
     res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -182,6 +397,12 @@ router.delete("/quizzes/:id", requireAuth, async (req: AuthenticatedRequest, res
   }
 
   const { id } = req.params;
+
+  const access = await assertCanManageQuiz(id, req.userId, req.userRole);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
 
   try {
     const { error } = await supabaseAdmin.from("quizzes").delete().eq("id", id);
@@ -210,6 +431,13 @@ router.post(
     }
 
     const { id } = req.params;
+
+    const access = await assertCanManageQuiz(id, req.userId, req.userRole);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
+
     const { type, question, options, correct_answer, points, order_index } = req.body;
 
     if (!type || !question) {
@@ -257,6 +485,13 @@ router.put(
     }
 
     const { id, qid } = req.params;
+
+    const access = await assertCanManageQuiz(id, req.userId, req.userRole);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
+
     const { type, question, options, correct_answer, points, order_index } = req.body;
 
     const updates: Record<string, unknown> = {};
@@ -307,6 +542,12 @@ router.delete(
 
     const { id, qid } = req.params;
 
+    const access = await assertCanManageQuiz(id, req.userId, req.userRole);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
+
     try {
       const { error } = await supabaseAdmin
         .from("quiz_questions")
@@ -339,6 +580,12 @@ router.post(
     }
 
     const { id } = req.params;
+
+    const access = await assertCanManageQuiz(id, req.userId, req.userRole);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
 
     try {
       const { data, error } = await supabaseAdmin
@@ -395,8 +642,8 @@ router.post(
 
       // Security: verify the student is enrolled in the quiz's course
       const { data: enrollment, error: enrollmentError } = await supabaseAdmin
-        .from("enrollments")
-        .select("id")
+        .from("course_enrollments")
+        .select("student_id")
         .eq("course_id", quiz.course_id)
         .eq("student_id", userId)
         .maybeSingle();
@@ -408,6 +655,13 @@ router.post(
 
       if (!enrollment) {
         res.status(403).json({ error: "You are not enrolled in this course" });
+        return;
+      }
+
+      // Module prerequisites / sequential items (course-modules.sql).
+      const lockError = await lockedItemError(quiz.course_id as string, userId, { type: "quiz", id: String(id) });
+      if (lockError) {
+        res.status(403).json({ error: lockError });
         return;
       }
 
@@ -430,6 +684,10 @@ router.post(
         }
       }
 
+      // Random draws from question banks are resolved HERE, server-side, and
+      // stored on the attempt so grading uses exactly these questions.
+      const drawnIds = await drawQuestionsForQuiz(String(id));
+
       const { data, error } = await supabaseAdmin
         .from("quiz_attempts")
         .insert({
@@ -437,6 +695,7 @@ router.post(
           student_id: userId,
           started_at: new Date().toISOString(),
           status: "in_progress",
+          ...(drawnIds.length > 0 ? { drawn_question_ids: drawnIds } : {}),
         })
         .select()
         .single();
@@ -446,7 +705,16 @@ router.post(
         return;
       }
 
-      res.status(201).json(data);
+      // The attempt's full question set (fixed + drawn), answer keys stripped.
+      const { data: fixedQuestions } = await supabaseAdmin
+        .from("quiz_questions")
+        .select("*")
+        .eq("quiz_id", id)
+        .order("order_index", { ascending: true });
+      const drawnRows = await loadBankQuestionsAsQuizRows(drawnIds, String(id));
+      const attemptQuestions = sanitizeQuestionsForStudent([...(fixedQuestions ?? []), ...drawnRows]);
+
+      res.status(201).json({ ...data, questions: attemptQuestions });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -484,8 +752,17 @@ router.put(
         return;
       }
 
+      // An attempt can only be submitted once. Without this a student could
+      // re-PUT the same attempt id with new answers indefinitely — the
+      // auto-grader re-ran every time and overwrote the score, which made
+      // attempt_limit meaningless (one "attempt" = unlimited retries).
+      if (attempt.status !== "in_progress") {
+        res.status(409).json({ error: "This attempt has already been submitted" });
+        return;
+      }
+
       // Fetch all questions for this quiz
-      const { data: questions, error: qError } = await supabaseAdmin
+      const { data: fixedQuestions, error: qError } = await supabaseAdmin
         .from("quiz_questions")
         .select("*")
         .eq("quiz_id", id);
@@ -494,6 +771,12 @@ router.put(
         res.status(500).json({ error: qError.message });
         return;
       }
+
+      // Plus the bank questions drawn for this attempt when it started.
+      const questions: Record<string, unknown>[] = [
+        ...(fixedQuestions ?? []),
+        ...(await loadBankQuestionsAsQuizRows(drawnIdsOf(attempt), String(id))),
+      ];
 
       const AUTO_GRADE_TYPES = new Set(["multiple_choice", "true_false", "fill_blank"]);
       let totalPoints = 0;
@@ -553,15 +836,69 @@ router.put(
           status: "submitted",
         })
         .eq("id", aid)
+        // Guards the race between two concurrent submits of the same
+        // attempt — only the first one to flip in_progress -> submitted wins.
+        .eq("status", "in_progress")
         .select()
-        .single();
+        .maybeSingle();
 
       if (updateError) {
         res.status(500).json({ error: updateError.message });
         return;
       }
+      if (!updatedAttempt) {
+        res.status(409).json({ error: "This attempt has already been submitted" });
+        return;
+      }
 
-      res.json(updatedAttempt);
+      // The take-quiz page renders the result from this response: it needs
+      // the quiz's release settings and a per-question breakdown, which the
+      // bare attempt row doesn't carry (so a student never saw their score
+      // even on quizzes set to release scores immediately). Correct answers
+      // are only revealed when the quiz releases results immediately.
+      const { data: quizSettings } = await supabaseAdmin
+        .from("quizzes")
+        .select("release_scores_immediately, show_results_immediately, passing_score")
+        .eq("id", id)
+        .maybeSingle();
+      const releaseNow =
+        quizSettings?.release_scores_immediately === true || quizSettings?.show_results_immediately === true;
+      const correctById = new Map((questions ?? []).map((q) => [q.id as string, q.correct_answer ?? null]));
+
+      if (quizSettings?.release_scores_immediately === true && attempt.student_id) {
+        const studentId = attempt.student_id as string;
+        (async () => {
+          const [{ data: quizRow }, links] = await Promise.all([
+            supabaseAdmin.from("quizzes").select("title").eq("id", id).maybeSingle(),
+            parentsOfStudents([studentId]),
+          ]);
+          if (links.length === 0) return;
+          dispatchNotifications({
+            recipients: links.map((l) => ({ userId: l.parentId, link: parentLinkForChild(studentId) })),
+            type: "quiz_scores_released",
+            category: "grades",
+            title: `Quiz completed: ${quizRow?.title ?? "Quiz"}`,
+            body: `Score: ${earnedPoints} / ${totalPoints} (${Math.round(scorePercent)}%).`,
+            metadata: { quizId: id, attemptId: aid, studentId },
+          });
+        })().catch((err) => logger.error({ err }, "quiz attempt parent notification failed"));
+      }
+
+      res.json({
+        ...updatedAttempt,
+        max_score: totalPoints,
+        percentage: Math.round(scorePercent),
+        passing_score: quizSettings?.passing_score ?? null,
+        release_scores_immediately: quizSettings?.release_scores_immediately === true,
+        show_results_immediately: quizSettings?.show_results_immediately === true,
+        question_results: releaseNow
+          ? gradedAnswers.map((g) => ({
+              question_id: g.question_id,
+              is_correct: g.is_correct,
+              correct_answer: correctById.get(g.question_id as string) ?? null,
+            }))
+          : [],
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -625,7 +962,9 @@ router.get(
 
         res.json(data ?? []);
       } else {
-        // Students: only return their own attempts
+        // Students: return an attempt summary (used/limit/remaining), not the
+        // raw attempt rows — the quiz-take page uses this to decide whether
+        // the student can still start a new attempt.
         const { data, error } = await supabaseAdmin
           .from("quiz_attempts")
           .select("*")
@@ -638,7 +977,22 @@ router.get(
           return;
         }
 
-        res.json(data ?? []);
+        const { data: quiz } = await supabaseAdmin
+          .from("quizzes")
+          .select("attempt_limit")
+          .eq("id", id)
+          .single();
+
+        const attemptsUsed = (data ?? []).length;
+        const attemptLimit = quiz?.attempt_limit ?? null;
+        const remainingAttempts = attemptLimit != null ? Math.max(0, attemptLimit - attemptsUsed) : null;
+
+        res.json({
+          attempts_used: attemptsUsed,
+          attempt_limit: attemptLimit,
+          remaining_attempts: remainingAttempts,
+          attempts: data ?? [],
+        });
       }
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -659,6 +1013,12 @@ router.get(
     }
 
     const { id } = req.params;
+
+    const access = await assertCanManageQuiz(id, req.userId, req.userRole);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
 
     try {
       // Fetch all submitted attempts

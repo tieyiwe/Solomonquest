@@ -81,22 +81,22 @@ const CATEGORIES = [
 function fileIconComponent(file_type: string) {
   const t = (file_type || "").toLowerCase();
   if (["jpg", "jpeg", "png", "gif", "svg"].includes(t))
-    return <Image className="h-5 w-5 text-emerald-600" />;
+    return <Image className="h-5 w-5 text-success" />;
   if (["mp4", "mov", "avi", "webm"].includes(t))
-    return <Film className="h-5 w-5 text-red-600" />;
+    return <Film className="h-5 w-5 text-destructive" />;
   if (["pdf", "doc", "docx", "txt"].includes(t))
-    return <FileText className="h-5 w-5 text-orange-600" />;
-  if (t === "link") return <Link2 className="h-5 w-5 text-blue-600" />;
-  return <File className="h-5 w-5 text-gray-600" />;
+    return <FileText className="h-5 w-5 text-warning" />;
+  if (t === "link") return <Link2 className="h-5 w-5 text-primary" />;
+  return <File className="h-5 w-5 text-muted-foreground" />;
 }
 
 function fileBg(file_type: string) {
   const t = (file_type || "").toLowerCase();
-  if (["jpg", "jpeg", "png", "gif", "svg"].includes(t)) return "bg-emerald-50";
-  if (["mp4", "mov", "avi", "webm"].includes(t)) return "bg-red-50";
-  if (["pdf", "doc", "docx", "txt"].includes(t)) return "bg-orange-50";
-  if (t === "link") return "bg-blue-50";
-  return "bg-gray-100";
+  if (["jpg", "jpeg", "png", "gif", "svg"].includes(t)) return "bg-success/10";
+  if (["mp4", "mov", "avi", "webm"].includes(t)) return "bg-destructive/10";
+  if (["pdf", "doc", "docx", "txt"].includes(t)) return "bg-warning/10";
+  if (t === "link") return "bg-primary/10";
+  return "bg-muted";
 }
 
 async function getToken(): Promise<string | null> {
@@ -132,7 +132,7 @@ function ResourceCard({
   onDownload: (resource: SchoolResource) => void;
 }) {
   return (
-    <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+    <Card className="border border-border shadow-sm hover:shadow-md transition-shadow">
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
           <div
@@ -142,13 +142,13 @@ function ResourceCard({
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
-              <p className="font-semibold text-gray-900 text-sm leading-tight">{resource.title}</p>
+              <p className="font-semibold text-foreground text-sm leading-tight">{resource.title}</p>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button
+                  <Button aria-label="Delete"
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6 shrink-0 text-gray-400 hover:text-red-500 hover:bg-red-50"
+                    className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/20"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -163,7 +163,7 @@ function ResourceCard({
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      className="bg-red-600 hover:bg-red-700"
+                      className="bg-destructive hover:bg-destructive/90"
                       onClick={() => onDelete(resource.id)}
                     >
                       Delete
@@ -274,17 +274,16 @@ export default function AdminResources() {
   const handleDownload = async (resource: SchoolResource) => {
     try {
       const token = await getToken();
-      await fetch(`/api/school-resources/${resource.id}/download`, {
+      const res = await fetch(`/api/school-resources/${resource.id}/download`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      setResources((prev) =>
-        prev.map((r) =>
-          r.id === resource.id
-            ? { ...r, download_count: r.download_count + 1 }
-            : r
-        )
-      );
+      if (res.ok) {
+        const { downloadCount } = (await res.json()) as { downloadCount: number };
+        setResources((prev) =>
+          prev.map((r) => (r.id === resource.id ? { ...r, download_count: downloadCount } : r))
+        );
+      }
     } catch {
       // silently update count failed; still open the resource
     }
@@ -356,7 +355,7 @@ export default function AdminResources() {
     <AdminLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/admin">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
@@ -366,7 +365,7 @@ export default function AdminResources() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">School Resource Center</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">School Resource Center</h1>
             <p className="text-muted-foreground mt-0.5">
               Share files, links, and documents with your school community.
             </p>
@@ -394,10 +393,10 @@ export default function AdminResources() {
             className={`p-3 rounded-xl border text-left transition-all ${
               categoryFilter === "all"
                 ? "border-primary bg-primary/5 ring-1 ring-primary"
-                : "border-gray-200 bg-white hover:border-gray-300"
+                : "border-border bg-card hover:border-input"
             }`}
           >
-            <p className="text-lg font-bold text-gray-900">{resources.length}</p>
+            <p className="text-lg font-bold text-foreground">{resources.length}</p>
             <p className="text-xs text-muted-foreground">All</p>
           </button>
           {CATEGORIES.map((cat) => (
@@ -407,10 +406,10 @@ export default function AdminResources() {
               className={`p-3 rounded-xl border text-left transition-all ${
                 categoryFilter === cat
                   ? "border-primary bg-primary/5 ring-1 ring-primary"
-                  : "border-gray-200 bg-white hover:border-gray-300"
+                  : "border-border bg-card hover:border-input"
               }`}
             >
-              <p className="text-lg font-bold text-gray-900">{categoryCounts[cat] ?? 0}</p>
+              <p className="text-lg font-bold text-foreground">{categoryCounts[cat] ?? 0}</p>
               <p className="text-xs text-muted-foreground truncate">{cat}</p>
             </button>
           ))}
@@ -502,11 +501,11 @@ export default function AdminResources() {
           </DialogHeader>
           <div className="space-y-4 mt-2">
             {/* Mode toggle */}
-            <div className="flex rounded-lg border p-1 gap-1 bg-gray-50">
+            <div className="flex rounded-lg border p-1 gap-1 bg-muted/50">
               <button
                 onClick={() => setAddMode("link")}
                 className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  addMode === "link" ? "bg-white shadow-sm text-gray-900" : "text-muted-foreground"
+                  addMode === "link" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"
                 }`}
               >
                 <Link2 className="h-3.5 w-3.5" />
@@ -515,7 +514,7 @@ export default function AdminResources() {
               <button
                 onClick={() => setAddMode("file")}
                 className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  addMode === "file" ? "bg-white shadow-sm text-gray-900" : "text-muted-foreground"
+                  addMode === "file" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"
                 }`}
               >
                 <Upload className="h-3.5 w-3.5" />
@@ -524,8 +523,8 @@ export default function AdminResources() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Title *</Label>
-              <Input
+              <Label htmlFor="adminresources-title">Title *</Label>
+              <Input id="adminresources-title"
                 placeholder="Resource title..."
                 value={form.title}
                 onChange={(e) => setField("title", e.target.value)}
@@ -533,8 +532,8 @@ export default function AdminResources() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Textarea
+              <Label htmlFor="adminresources-description">Description</Label>
+              <Textarea id="adminresources-description"
                 placeholder="Brief description..."
                 rows={2}
                 value={form.description}
@@ -554,9 +553,9 @@ export default function AdminResources() {
 
             {addMode === "file" && (
               <div className="space-y-1.5">
-                <Label>File Type</Label>
+                <Label htmlFor="adminresources-file-type">File Type</Label>
                 <Select value={form.file_type} onValueChange={(v) => setField("file_type", v)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="adminresources-file-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -570,9 +569,9 @@ export default function AdminResources() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Category</Label>
+                <Label htmlFor="adminresources-category">Category</Label>
                 <Select value={form.category} onValueChange={(v) => setField("category", v)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="adminresources-category">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -583,9 +582,9 @@ export default function AdminResources() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Visible to</Label>
+                <Label htmlFor="adminresources-visible-to">Visible to</Label>
                 <Select value={form.visibility} onValueChange={(v) => setField("visibility", v)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="adminresources-visible-to">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

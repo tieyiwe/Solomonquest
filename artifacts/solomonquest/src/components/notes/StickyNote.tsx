@@ -83,14 +83,14 @@ export function StickyNote({ note }: { note: Note }) {
         className={`flex items-center justify-between px-2.5 py-1.5 shrink-0 ${canMove ? "cursor-move" : ""}`}
         style={{ background: "rgba(0,0,0,0.06)" }}
       >
-        <div className="flex items-center gap-1.5 text-xs font-medium text-gray-700 truncate">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-foreground/80 truncate">
           <Pin className="h-3 w-3 shrink-0" />
           <span className="truncate">{note.title || "Sticky note"}</span>
         </div>
         {note.permission === "owner" && (
           <button
             onClick={() => updateNote(note.id, { is_sticky: false })}
-            className="text-gray-600 hover:text-gray-900 shrink-0"
+            className="text-muted-foreground hover:text-foreground shrink-0"
             title="Unpin from screen"
           >
             <X className="h-3.5 w-3.5" />
@@ -103,7 +103,7 @@ export function StickyNote({ note }: { note: Note }) {
         onChange={(e) => canEdit && updateNote(note.id, { content: e.target.value })}
         readOnly={!canEdit}
         placeholder="Write something..."
-        className="flex-1 resize-none bg-transparent p-2.5 text-sm outline-none placeholder:text-gray-500/70"
+        className="flex-1 resize-none bg-transparent p-2.5 text-sm outline-none placeholder:text-muted-foreground/70"
       />
 
       {canMove && (

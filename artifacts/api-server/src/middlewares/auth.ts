@@ -1,5 +1,7 @@
 import { type Request, type Response, type NextFunction } from "express";
 import { supabaseAdmin } from "../lib/supabase";
+import { getCachedProfile, setCachedProfile } from "../lib/profileCache";
+import { verifyAccessToken } from "../lib/verifyToken";
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
@@ -21,31 +23,46 @@ export async function requireAuth(
     }
 
     const token = authHeader.substring(7);
-    const { data, error } = await supabaseAdmin.auth.getUser(token);
+    const verified = await verifyAccessToken(token);
 
-    if (error || !data.user) {
+    if (!verified) {
       res.status(401).json({ error: "Invalid token" });
       return;
     }
 
-    // Fetch profile to get role + school
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("role, school_id")
-      .eq("id", data.user.id)
-      .single();
+    let cached = getCachedProfile(verified.id);
+    if (!cached) {
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("role, school_id, schools(is_active)")
+        .eq("id", verified.id)
+        .single();
+      const school = profile?.schools as { is_active: boolean } | { is_active: boolean }[] | null | undefined;
+      const schoolActive = profile?.school_id
+        ? ((Array.isArray(school) ? school[0]?.is_active : school?.is_active) ?? true)
+        : null;
+      setCachedProfile(verified.id, profile?.role ?? null, profile?.school_id ?? null, schoolActive);
+      cached = getCachedProfile(verified.id);
+    }
+
+    // A suspended school locks out everyone in it except super_admin (who
+    // isn't scoped to any school and needs access to lift the suspension).
+    if (cached?.role !== "super_admin" && cached?.schoolActive === false) {
+      res.status(403).json({ error: "This school has been suspended. Contact the platform administrator." });
+      return;
+    }
 
     // Set typed user object
     req.user = {
-      id: data.user.id,
-      role: profile?.role ?? "",
-      school_id: profile?.school_id ?? null,
+      id: verified.id,
+      role: cached?.role ?? "",
+      school_id: cached?.schoolId ?? null,
     };
 
     // Keep legacy fields for backward compat
-    req.userId = data.user.id;
-    req.userRole = profile?.role;
-    req.schoolId = profile?.school_id;
+    req.userId = verified.id;
+    req.userRole = cached?.role ?? undefined;
+    req.schoolId = cached?.schoolId ?? undefined;
 
     next();
   } catch (_err) {
@@ -62,21 +79,28 @@ export async function optionalAuth(
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.substring(7);
-      const { data } = await supabaseAdmin.auth.getUser(token);
-      if (data.user) {
-        req.userId = data.user.id;
-        const { data: profile } = await supabaseAdmin
-          .from("profiles")
-          .select("role, school_id")
-          .eq("id", data.user.id)
-          .single();
-        if (profile) {
-          req.userRole = profile.role;
-          req.schoolId = profile.school_id;
+      const verified = await verifyAccessToken(token);
+      if (verified) {
+        req.userId = verified.id;
+        let cached = getCachedProfile(verified.id);
+        if (!cached) {
+          const { data: profile } = await supabaseAdmin
+            .from("profiles")
+            .select("role, school_id")
+            .eq("id", verified.id)
+            .single();
+          if (profile) {
+            setCachedProfile(verified.id, profile.role ?? null, profile.school_id ?? null);
+            cached = getCachedProfile(verified.id);
+          }
+        }
+        if (cached) {
+          req.userRole = cached.role ?? undefined;
+          req.schoolId = cached.schoolId ?? undefined;
           req.user = {
-            id: data.user.id,
-            role: profile.role ?? "",
-            school_id: profile.school_id ?? null,
+            id: verified.id,
+            role: cached.role ?? "",
+            school_id: cached.schoolId ?? null,
           };
         }
       }

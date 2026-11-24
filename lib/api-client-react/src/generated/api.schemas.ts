@@ -114,6 +114,10 @@ export interface Course {
   /** @nullable */
   term?: string | null;
   /** @nullable */
+  termStartDate?: string | null;
+  /** @nullable */
+  termEndDate?: string | null;
+  /** @nullable */
   description?: string | null;
   isPublished: boolean;
   /** @nullable */
@@ -128,6 +132,8 @@ export interface CourseInput {
   teacherId?: string;
   code?: string;
   term?: string;
+  termStartDate?: string;
+  termEndDate?: string;
   description?: string;
 }
 
@@ -137,6 +143,8 @@ export interface CourseUpdate {
   teacherId?: string;
   code?: string;
   term?: string;
+  termStartDate?: string;
+  termEndDate?: string;
   description?: string;
   isPublished?: boolean;
 }

@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
+import { getGetMeQueryKey } from "@workspace/api-client-react";
+import { joinSchool, PENDING_SCHOOL_KEY } from "@/lib/joinSchool";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -22,8 +25,14 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export default function Register() {
   const [isLoading, setIsLoading] = useState(false);
-  const [location, setLocation] = useLocation();
-  const params = new URLSearchParams(location.split("?")[1] ?? "");
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  // wouter's location is the pathname only — the query string has to come
+  // from useSearch(). Parsing location.split("?") meant schoolId was always
+  // null, so "Join a school" sign-ups never joined anything and landed on
+  // the request-a-new-school page instead.
+  const search = useSearch();
+  const params = new URLSearchParams(search);
   const schoolId = params.get("schoolId");
   const schoolName = params.get("schoolName");
   const nextPath = params.get("next") ?? "/onboarding/setup";
@@ -50,6 +59,7 @@ export default function Register() {
             first_name: data.firstName,
             last_name: data.lastName,
             phone: data.phone,
+            ...(schoolId ? { [PENDING_SCHOOL_KEY]: schoolId } : {}),
           },
         },
       });
@@ -59,16 +69,19 @@ export default function Register() {
       if (signUpData.session) {
         // If joining a school, link the account to that school
         if (schoolId) {
-          try {
-            await fetch("/api/users/me/join-school", {
-              method: "PUT",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: "Bearer " + signUpData.session.access_token,
-              },
-              body: JSON.stringify({ schoolId }),
-            });
-          } catch { /* non-fatal */ }
+          const joinError = await joinSchool(schoolId, signUpData.session.access_token).catch(
+            (e: unknown) => (e instanceof Error ? e.message : "Could not join the school")
+          );
+          if (joinError) {
+            // Account exists but isn't linked; /onboarding/setup retries the
+            // pending join from user_metadata on its next visit.
+            toast.error(joinError);
+            setLocation("/onboarding/setup");
+            return;
+          }
+          // The profile cached on sign-in still has no role/school — refetch
+          // before routing, or ProtectedRoute bounces the new student to "/".
+          await queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
           toast.success(`Account created! Welcome to ${schoolName ?? "your school"}.`);
           setLocation("/dashboard/student");
         } else {
@@ -95,9 +108,9 @@ export default function Register() {
 
   return (
     <div className="min-h-screen flex flex-col md:grid md:grid-cols-2">
-      <div className="hidden md:block bg-primary relative overflow-hidden">
+      <div className="hidden md:block bg-brand relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-20 mix-blend-overlay"></div>
-        <div className="absolute inset-0 flex flex-col justify-center p-12 text-primary-foreground z-10 bg-gradient-to-br from-primary/90 to-primary/40">
+        <div className="absolute inset-0 flex flex-col justify-center p-12 text-white z-10 bg-gradient-to-br from-black/10 to-black/30">
           <h2 className="text-4xl font-bold mb-6">Join SolomonQuest</h2>
           <p className="text-xl opacity-90 max-w-lg">
             Experience an LMS that actually respects its users. Clean, organized, and focused on education.

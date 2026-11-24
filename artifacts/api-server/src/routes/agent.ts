@@ -1,8 +1,10 @@
 import { Router, type IRouter, type Response } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
-import { getAnthropicClient, AGENT_MODEL } from "../lib/anthropic";
+import { getAnthropicClient, AGENT_MODEL, AGENT_MODEL_FAST } from "../lib/anthropic";
 import { sendBroadcastEmail } from "../lib/email";
+import { isFeatureEnabled } from "../lib/featureFlags";
+import { logUsageEvent } from "../lib/usageTracking";
 import type Anthropic from "@anthropic-ai/sdk";
 
 const router: IRouter = Router();
@@ -12,6 +14,37 @@ const DEFAULT_AGENT_NAME = "Solomon";
 function isStaff(role?: string): boolean {
   return role === "admin" || role === "super_admin" || role === "teacher" || role === "staff";
 }
+
+// ─── Lightweight abuse/rate guard ───────────────────────────────────────────
+// A rolling per-user message count. High-volume chatting is almost always
+// either someone hammering it for fun/testing or a question the Help
+// Center already answers — past the threshold, redirect there instead of
+// burning another model call (protects cost, not just UX).
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const RATE_LIMIT = 15;
+const rateLog = new Map<string, number[]>();
+
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const timestamps = (rateLog.get(userId) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  timestamps.push(now);
+  rateLog.set(userId, timestamps);
+
+  // rateLog never otherwise shrinks — a one-time visitor's empty-after-
+  // filtering entry would sit in memory forever. A cheap opportunistic
+  // sweep on the (rare) occasion the map gets large keeps this bounded
+  // without needing a separate timer.
+  if (rateLog.size > 5000) {
+    for (const [key, times] of rateLog) {
+      if (times.every((t) => now - t >= RATE_WINDOW_MS)) rateLog.delete(key);
+    }
+  }
+
+  return timestamps.length > RATE_LIMIT;
+}
+
+const RATE_LIMIT_MESSAGE =
+  "You've sent quite a few messages in a short time! The Help Center (Help in your menu) has short step-by-step guides for your role, and it's usually faster than chatting. Feel free to come back to me for anything it doesn't cover.";
 
 // ─── Tool definitions ──────────────────────────────────────────────────────────
 // Each tool maps to a real write operation. The agent proposes a tool call;
@@ -63,7 +96,69 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["target_role", "method", "subject", "message"],
     },
   },
+  {
+    name: "post_forum_note",
+    description:
+      "Post a quick note/topic to the school forum. Teachers and admins only. Write the full title and body yourself based on what was asked — never leave placeholders.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short topic title" },
+        content: { type: "string", description: "The note's body text" },
+      },
+      required: ["title", "content"],
+    },
+  },
+  {
+    name: "open_report",
+    description:
+      "Navigate the user straight to a specific dashboard page/report instead of describing where to find it — use this whenever the user asks to 'see', 'open', 'show', or 'go to' something that exists as a page. This never modifies anything, so it runs immediately with no confirmation step.",
+    input_schema: {
+      type: "object",
+      properties: {
+        page: {
+          type: "string",
+          description: "Which page to open",
+          enum: [
+            "analytics",
+            "audit_log",
+            "admissions",
+            "users",
+            "courses",
+            "gradebook",
+            "attendance",
+            "reminders",
+            "forum",
+            "settings",
+          ],
+        },
+      },
+      required: ["page"],
+    },
+  },
 ];
+
+// Pages an admin/teacher can be navigated to via the open_report tool —
+// kept in sync with the tool's `page` enum above.
+const REPORT_PATHS: Record<string, string> = {
+  analytics: "/dashboard/admin/analytics",
+  audit_log: "/dashboard/admin/audit-log",
+  admissions: "/dashboard/admin/admissions",
+  users: "/dashboard/admin/users",
+  courses: "/dashboard/admin/courses",
+  gradebook: "/dashboard/teacher/gradebook",
+  attendance: "/dashboard/teacher/attendance",
+  reminders: "/dashboard/admin/reminders",
+  forum: "/forum",
+  settings: "/dashboard/admin/settings",
+};
+
+// A request only needs the capable (and more expensive) model + tool
+// definitions when it plausibly wants an action performed or a page
+// opened. Plain questions ("how many students do we have") never touch
+// this and go to the fast/cheap model with no tools at all — cutting both
+// the per-call cost and the input tokens tool schemas would otherwise add.
+const ACTION_INTENT = /\b(remind|reminder|announce|announcement|broadcast|send|email|message|post|note|forum|open|show me|go to|take me|report|schedule)\b/i;
 
 async function buildSchoolContext(schoolId: string, agentName: string): Promise<string> {
   const [schoolRes, studentsRes, teachersRes, coursesRes, applicationsRes, announcementsRes] =
@@ -81,14 +176,14 @@ async function buildSchoolContext(schoolId: string, agentName: string): Promise<
         .eq("role", "teacher"),
       supabaseAdmin
         .from("courses")
-        .select("id, name")
+        .select("id, title")
         .eq("school_id", schoolId)
         .limit(30),
       supabaseAdmin
-        .from("applications")
+        .from("student_applications")
         .select("id", { count: "exact", head: true })
         .eq("school_id", schoolId)
-        .eq("status", "pending"),
+        .in("status", ["submitted", "under_review"]),
       supabaseAdmin
         .from("announcements")
         .select("title, created_at")
@@ -98,21 +193,22 @@ async function buildSchoolContext(schoolId: string, agentName: string): Promise<
     ]);
 
   const schoolName = schoolRes.data?.name ?? "this school";
-  const courseNames = (coursesRes.data ?? []).map((c: any) => c.name).join(", ") || "none yet";
+  const courseNames = (coursesRes.data ?? []).map((c: any) => c.title).join(", ") || "none yet";
   const recentAnnouncements =
     (announcementsRes.data ?? []).map((a: any) => `- ${a.title}`).join("\n") || "None recently";
 
-  return `You are ${agentName}, the AI assistant for ${schoolName} on the SolomonQuest platform. Today's date is ${new Date().toISOString().slice(0, 10)}.
+  return `You are ${agentName}, the AI assistant for ${schoolName} on SolomonQuest. Today: ${new Date().toISOString().slice(0, 10)}.
 
-Current school snapshot (always current as of this message):
-- Students: ${studentsRes.count ?? 0}
-- Teachers: ${teachersRes.count ?? 0}
+School snapshot:
+- Students: ${studentsRes.count ?? 0} · Teachers: ${teachersRes.count ?? 0}
 - Courses (${(coursesRes.data ?? []).length}): ${courseNames}
 - Pending applications: ${applicationsRes.count ?? 0}
 - Recent announcements:
 ${recentAnnouncements}
 
-You assist school admins, teachers, and staff. Be concise and practical. You can answer questions about the school using the snapshot above, and you can propose actions (creating reminders, posting announcements, or — for admins only — broadcasting a message to every student, teacher, or staff member by email or in-app chat) using the tools available to you. When asked to send a message, write the full message text yourself in a professional tone matching what was requested; never leave placeholders for the user to fill in. Never claim to have performed an action yourself — when you call a tool, the user will be shown a confirmation prompt before anything actually happens, so phrase your responses accordingly (e.g. "I've drafted a message for you to review" rather than "I've sent the message").`;
+Be brief and direct — 1-3 sentences for most answers, no filler, no restating the question. Get straight to the point, then stop.
+
+You can take real actions via tools: create reminders, post announcements, post a forum note, broadcast a message (admins only), or open a specific page for the user. When writing message/note text, write the actual final content yourself — never leave a placeholder. For open_report, just call it — it's instant with no confirmation. For every other tool, the user sees a confirm/cancel prompt before anything happens, so never claim to have already done it ("I've drafted this for you to confirm," not "I've sent this").`;
 }
 
 // ─── GET /agent/settings ────────────────────────────────────────────────────────
@@ -244,9 +340,29 @@ router.post(
         return;
       }
 
+      const { data: schoolRow } = await supabaseAdmin
+        .from("schools")
+        .select("enabled_features")
+        .eq("id", schoolId)
+        .single();
+      const enabledFeatures = (schoolRow?.enabled_features as Record<string, boolean>) ?? {};
+      if (enabledFeatures.ai_agent === false) {
+        res.status(403).json({ error: "The AI assistant is not enabled for your school. Contact your platform administrator." });
+        return;
+      }
+
       const { message } = req.body as { message?: string };
       if (!message || !message.trim()) {
         res.status(400).json({ error: "message is required" });
+        return;
+      }
+
+      if (isRateLimited(userId!)) {
+        await supabaseAdmin.from("agent_conversations").insert([
+          { school_id: schoolId, user_id: userId, role: "user", content: message.trim() },
+          { school_id: schoolId, user_id: userId, role: "assistant", content: RATE_LIMIT_MESSAGE },
+        ]);
+        res.json({ type: "message", message: RATE_LIMIT_MESSAGE });
         return;
       }
 
@@ -264,7 +380,7 @@ router.post(
           .eq("school_id", schoolId)
           .eq("user_id", userId)
           .order("created_at", { ascending: true })
-          .limit(20),
+          .limit(10),
       ]);
 
       const agentName = agentRow?.name ?? DEFAULT_AGENT_NAME;
@@ -285,17 +401,35 @@ router.post(
         { role: "user", content: message.trim() },
       ];
 
+      // Route to the cheap/fast model with no tools for plain questions —
+      // most turns don't need an action at all, and even unused tool
+      // schemas cost input tokens on every call. Only pay for the capable
+      // model + tool definitions when the message actually looks
+      // action-shaped.
+      const needsTools = ACTION_INTENT.test(message);
       const isAdmin = userRole === "admin" || userRole === "super_admin";
-      const availableTools = isAdmin
-        ? TOOLS
-        : TOOLS.filter((t) => t.name !== "send_broadcast");
+      const availableTools = needsTools
+        ? isAdmin
+          ? TOOLS
+          : TOOLS.filter((t) => t.name !== "send_broadcast")
+        : undefined;
 
+      const modelUsed = needsTools ? AGENT_MODEL : AGENT_MODEL_FAST;
       const response = await anthropic.messages.create({
-        model: AGENT_MODEL,
-        max_tokens: 1024,
+        model: modelUsed,
+        max_tokens: 500,
         system: systemPrompt,
-        tools: availableTools,
+        ...(availableTools ? { tools: availableTools } : {}),
         messages: anthropicMessages,
+      });
+
+      logUsageEvent({
+        schoolId,
+        userId,
+        eventType: "ai_chat",
+        aiModel: modelUsed,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
       });
 
       const textBlock = response.content.find((b) => b.type === "text") as
@@ -304,6 +438,22 @@ router.post(
       const toolBlock = response.content.find((b) => b.type === "tool_use") as
         | Anthropic.ToolUseBlock
         | undefined;
+
+      if (toolBlock?.name === "open_report") {
+        // Pure navigation, never modifies anything — skip the
+        // confirm/execute round trip other tools require.
+        const page = (toolBlock.input as { page?: string })?.page ?? "";
+        const path = REPORT_PATHS[page];
+        const replyText = textBlock?.text || `Opening ${page.replace(/_/g, " ")}...`;
+        await supabaseAdmin.from("agent_conversations").insert({
+          school_id: schoolId,
+          user_id: userId,
+          role: "assistant",
+          content: replyText,
+        });
+        res.json({ type: "navigate", message: replyText, path: path ?? null });
+        return;
+      }
 
       if (toolBlock) {
         // Don't persist the tool proposal as a final assistant turn — it's
@@ -406,6 +556,22 @@ router.post(
             res.status(400).json({ error: "course_id is required for student reminders" });
             return;
           }
+
+          // Security: this never verified the calling teacher actually
+          // teaches course_id, or that it's even in their school — this
+          // endpoint is a plain authenticated REST route (not gated behind
+          // the LLM), so a teacher could target any other school's course
+          // id directly.
+          const { data: reminderCourse } = await supabaseAdmin
+            .from("courses")
+            .select("teacher_id")
+            .eq("id", course_id)
+            .maybeSingle();
+          if (!reminderCourse || reminderCourse.teacher_id !== userId) {
+            res.status(403).json({ error: "You do not teach this course" });
+            return;
+          }
+
           const { data, error } = await supabaseAdmin
             .from("reminders")
             .insert({
@@ -443,6 +609,27 @@ router.post(
           return;
         }
 
+        // Security: course_id was never checked against the caller — a
+        // teacher/admin could attach an announcement to any other school's
+        // course by id.
+        if (course_id) {
+          const { data: announceCourse } = await supabaseAdmin
+            .from("courses")
+            .select("teacher_id, school_id")
+            .eq("id", course_id)
+            .maybeSingle();
+          if (!announceCourse) {
+            res.status(404).json({ error: "Course not found" });
+            return;
+          }
+          const sameSchool = announceCourse.school_id === schoolId;
+          const ownsCourse = userRole === "teacher" ? announceCourse.teacher_id === userId : true;
+          if (!sameSchool || !ownsCourse) {
+            res.status(403).json({ error: "You do not have access to this course" });
+            return;
+          }
+        }
+
         const { data, error } = await supabaseAdmin
           .from("announcements")
           .insert({
@@ -458,6 +645,35 @@ router.post(
         if (error) throw error;
         result = data;
         summary = `Announcement "${title}" posted.`;
+      } else if (tool === "post_forum_note") {
+        if (userRole !== "admin" && userRole !== "super_admin" && userRole !== "teacher") {
+          res.status(403).json({ error: "Only teachers and admins can post to the forum" });
+          return;
+        }
+        if (!(await isFeatureEnabled(schoolId, "forum"))) {
+          res.status(403).json({ error: "The forum is not enabled for your school." });
+          return;
+        }
+
+        const { title, content } = input as { title?: string; content?: string };
+        if (!title?.trim() || !content?.trim()) {
+          res.status(400).json({ error: "title and content are required" });
+          return;
+        }
+
+        const { data, error } = await supabaseAdmin
+          .from("forum_topics")
+          .insert({
+            school_id: schoolId,
+            title: title.trim().slice(0, 200),
+            content: content.trim().slice(0, 5000),
+            posted_by: userId,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        result = data;
+        summary = `Posted to the forum: "${title.trim()}".`;
       } else if (tool === "send_broadcast") {
         if (userRole !== "admin" && userRole !== "super_admin") {
           res.status(403).json({ error: "Only admins can send broadcast messages" });
@@ -488,7 +704,7 @@ router.post(
           await Promise.all([
             supabaseAdmin
               .from("profiles")
-              .select("id, first_name, last_name")
+              .select("id, first_name, last_name, email")
               .eq("school_id", schoolId)
               .eq("role", target_role),
             supabaseAdmin.from("schools").select("name").eq("id", schoolId).single(),
@@ -509,8 +725,7 @@ router.post(
         if (method === "email") {
           const results = await Promise.allSettled(
             recipients.map(async (r: any) => {
-              const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(r.id);
-              const email = authUser?.user?.email;
+              const email = r.email as string | null;
               if (!email) return;
               await sendBroadcastEmail({
                 to: email,

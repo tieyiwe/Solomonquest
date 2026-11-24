@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { SidebarSchoolBrand, SchoolHeaderName } from "@/components/brand/SchoolLogo";
+import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -12,6 +14,7 @@ import { AgentWidget } from "@/components/agent/AgentWidget";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
 import { HelpCenter } from "@/components/help/HelpCenter";
+import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import {
   LayoutDashboard,
   Users,
@@ -55,6 +58,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
+import { navIconActive, navIconIdle, navItemClass } from "@/components/layout/navStyles";
 
 // ─── apiFetch helper ──────────────────────────────────────────────────────────
 
@@ -128,13 +132,13 @@ function roleBadgeClass(role?: string | null) {
   switch (role) {
     case "admin":
     case "super_admin":
-      return "bg-purple-100 text-purple-700 border-purple-200";
+      return "bg-chart-5/10 text-chart-5 border-chart-5/30";
     case "teacher":
-      return "bg-blue-100 text-blue-700 border-blue-200";
+      return "bg-primary/10 text-primary border-primary/30";
     case "student":
-      return "bg-emerald-100 text-emerald-700 border-emerald-200";
+      return "bg-success/10 text-success border-success/30";
     default:
-      return "bg-gray-100 text-gray-600 border-gray-200";
+      return "bg-muted text-muted-foreground border-border";
   }
 }
 
@@ -142,11 +146,11 @@ function statusBadgeClass(status?: string | null) {
   switch (status?.toLowerCase()) {
     case "active":
     case "approved":
-      return "bg-green-100 text-green-700 border-green-200";
+      return "bg-success/10 text-success border-success/30";
     case "rejected":
-      return "bg-red-100 text-red-700 border-red-200";
+      return "bg-destructive/10 text-destructive border-destructive/30";
     default:
-      return "bg-yellow-100 text-yellow-700 border-yellow-200";
+      return "bg-warning/10 text-warning border-warning/30";
   }
 }
 
@@ -186,44 +190,32 @@ function Sidebar({ onClose, onOpenHelp }: { onClose?: () => void; onOpenHelp: ()
   const { user, signOut } = useAuth();
 
   return (
-    <div className="flex flex-col h-full bg-slate-900">
+    <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
       {/* Logo */}
-      <div className="px-4 py-5 border-b border-white/10 flex items-center justify-between shrink-0">
+      <div className="px-4 h-16 border-b border-sidebar-border flex items-center justify-between shrink-0">
         <Link href="/dashboard/admin">
-          <div className="flex items-center gap-2.5 cursor-pointer">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm shrink-0">
-              S
-            </div>
-            <div>
-              <p className="text-white font-semibold text-sm leading-tight">SolomonQuest</p>
-              <p className="text-slate-400 text-xs">Admin Panel</p>
-            </div>
-          </div>
+          <SidebarSchoolBrand subtitle="Admin Panel" />
         </Link>
         {onClose && (
-          <button onClick={onClose} className="text-slate-400 hover:text-white md:hidden">
+          <button onClick={onClose} aria-label="Close navigation" className="p-1.5 rounded-md text-sidebar-foreground/70 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 md:hidden">
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
+      <nav aria-label="Admin navigation" className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
         {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
           const active = exact ? location === href : location.startsWith(href);
           return (
             <Link key={href} href={href}>
               <button
                 onClick={onClose}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white"
-                }`}
+                aria-current={active ? "page" : undefined}
+                className={navItemClass(active)}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className={active ? navIconActive : navIconIdle} aria-hidden="true" />
                 <span className="flex-1 text-left">{label}</span>
-                {active && <ChevronRight className="h-3 w-3 opacity-70" />}
               </button>
             </Link>
           );
@@ -231,11 +223,11 @@ function Sidebar({ onClose, onOpenHelp }: { onClose?: () => void; onOpenHelp: ()
       </nav>
 
       {/* Footer */}
-      <div className="p-3 border-t border-white/10 shrink-0">
+      <div className="p-3 border-t border-sidebar-border shrink-0">
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-slate-400 hover:text-white hover:bg-white/8 mb-1"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 mb-1"
           onClick={onOpenHelp}
         >
           <HelpCircle className="mr-2 h-3.5 w-3.5" />
@@ -244,7 +236,7 @@ function Sidebar({ onClose, onOpenHelp }: { onClose?: () => void; onOpenHelp: ()
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-slate-400 hover:text-red-400 hover:bg-red-400/10"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/15"
           onClick={signOut}
         >
           <LogOut className="mr-2 h-3.5 w-3.5" />
@@ -281,12 +273,12 @@ function StatCard({
             {loading ? (
               <Skeleton className="h-9 w-20 mt-1" />
             ) : (
-              <p className="text-3xl font-bold tracking-tight mt-1 text-gray-900">{value ?? 0}</p>
+              <p className="text-3xl font-bold tracking-tight mt-1 text-foreground">{value ?? 0}</p>
             )}
             {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
           </div>
           <div className={`p-3 rounded-xl ${color} shrink-0`}>
-            <Icon className="h-5 w-5 text-white" />
+            <Icon className="h-5 w-5" aria-hidden="true" />
           </div>
         </div>
       </CardContent>
@@ -300,6 +292,7 @@ export default function AdminOverview() {
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const { showTour, launchTour, closeTour } = useTour((user as any)?.role as "admin" | "super_admin");
   const [notifOpen, setNotifOpen] = useState(false);
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -320,7 +313,7 @@ export default function AdminOverview() {
   async function handleReleaseTranscripts() {
     setReleasing(true);
     try {
-      const result = await apiFetch<{ success: boolean; notified: number }>("/api/grading/transcripts/release", {
+      const result = await apiFetch<{ success: boolean; notified: number }>("/api/transcripts/release", {
         method: "POST",
         body: JSON.stringify({ semester: releaseSemester || undefined, message: releaseMessage || undefined }),
       });
@@ -336,7 +329,7 @@ export default function AdminOverview() {
   }
 
   useEffect(() => {
-    apiFetch<DashboardStats>("/api/dashboard")
+    apiFetch<DashboardStats>("/api/dashboard/admin/stats")
       .then(setStats)
       .catch(() => toast.error("Failed to load dashboard stats"))
       .finally(() => setStatsLoading(false));
@@ -363,7 +356,7 @@ export default function AdminOverview() {
   }, [notifOpen]);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-muted/50 flex">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col h-screen sticky top-0">
         <Sidebar onOpenHelp={() => setHelpOpen(true)} />
@@ -385,8 +378,8 @@ export default function AdminOverview() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Bar */}
-        <header className="h-14 bg-white border-b flex items-center px-4 gap-3 sticky top-0 z-20 shadow-sm">
-          <Button
+        <header className="h-16 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 border-b flex items-center px-4 md:px-6 gap-3 sticky top-0 z-20">
+          <Button aria-label="Open menu"
             variant="ghost"
             size="icon"
             className="md:hidden shrink-0"
@@ -395,16 +388,16 @@ export default function AdminOverview() {
             <Menu className="h-5 w-5" />
           </Button>
 
-          <div className="flex-1">
-            <h1 className="text-base font-semibold text-gray-900 hidden md:block">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-semibold text-foreground hidden md:block">
               Dashboard Overview
             </h1>
-            <h1 className="text-base font-semibold text-gray-900 md:hidden">SolomonQuest</h1>
+            <h1 className="text-base font-semibold text-foreground md:hidden min-w-0"><SchoolHeaderName /></h1>
           </div>
 
           {/* Notification Bell */}
           <div className="relative">
-            <Button
+            <Button aria-label="Notifications"
               variant="ghost"
               size="icon"
               className="relative"
@@ -413,33 +406,33 @@ export default function AdminOverview() {
                 setNotifOpen((o) => !o);
               }}
             >
-              <Bell className="h-5 w-5 text-gray-600" />
+              <Bell className="h-5 w-5 text-muted-foreground" />
               {pendingCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />
+                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
               )}
             </Button>
 
             {notifOpen && (
               <div
-                className="absolute right-0 top-10 w-72 bg-white rounded-xl shadow-lg border z-50 overflow-hidden"
+                className="absolute right-0 top-10 w-72 bg-card rounded-xl shadow-lg border z-50 overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="px-4 py-3 border-b flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                  <p className="text-sm font-semibold text-foreground">Notifications</p>
                   <button
-                    className="text-gray-400 hover:text-gray-600"
+                    className="text-muted-foreground hover:text-foreground"
                     onClick={() => setNotifOpen(false)}
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
                 {pendingCount > 0 ? (
-                  <div className="px-4 py-3 flex items-start gap-3 hover:bg-gray-50">
-                    <div className="mt-0.5 h-7 w-7 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
-                      <AlertCircle className="h-3.5 w-3.5 text-orange-600" />
+                  <div className="px-4 py-3 flex items-start gap-3 hover:bg-muted/50">
+                    <div className="mt-0.5 h-7 w-7 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+                      <AlertCircle className="h-3.5 w-3.5 text-warning" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-900">
+                      <p className="text-sm font-medium text-foreground">
                         {pendingCount} pending application{pendingCount > 1 ? "s" : ""}
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5">Requires your review</p>
@@ -452,7 +445,7 @@ export default function AdminOverview() {
                   </div>
                 ) : (
                   <div className="px-4 py-8 text-center">
-                    <Bell className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                    <Bell className="h-8 w-8 text-muted-foreground/60 mx-auto mb-2" />
                     <p className="text-sm text-muted-foreground">You are all caught up!</p>
                   </div>
                 )}
@@ -471,7 +464,7 @@ export default function AdminOverview() {
             {/* Welcome + Quick Actions */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+                <h2 className="text-2xl font-bold tracking-tight text-foreground">
                   Welcome back{(user as any)?.firstName ? `, ${(user as any).firstName}` : ""}!
                 </h2>
                 <p className="text-muted-foreground mt-0.5">
@@ -500,32 +493,34 @@ export default function AdminOverview() {
                 title="Total Students"
                 value={stats?.totalStudents}
                 icon={GraduationCap}
-                color="bg-emerald-500"
+                color="bg-success/10 text-success"
                 loading={statsLoading}
               />
               <StatCard
                 title="Total Teachers"
                 value={stats?.totalTeachers}
                 icon={Users}
-                color="bg-blue-500"
+                color="bg-primary/10 text-primary"
                 loading={statsLoading}
               />
               <StatCard
                 title="Active Courses"
                 value={stats?.totalCourses}
                 icon={BookOpen}
-                color="bg-violet-500"
+                color="bg-chart-5/10 text-chart-5"
                 loading={statsLoading}
               />
               <StatCard
                 title="Pending Applications"
                 value={stats?.pendingApplications}
                 icon={ClipboardList}
-                color="bg-orange-500"
+                color="bg-warning/10 text-warning"
                 loading={statsLoading}
                 sub={pendingCount > 0 ? "Requires review" : "All caught up"}
               />
             </div>
+
+            <AnnouncementsPanel canPost title="School announcements" limit={5} />
 
             {/* Quick Actions tiles */}
             <div>
@@ -534,21 +529,21 @@ export default function AdminOverview() {
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <Link href="/dashboard/admin/users">
-                  <div className="flex items-center gap-3 p-4 rounded-xl border border-blue-100 bg-blue-50 hover:bg-blue-100 transition-colors cursor-pointer">
-                    <UserPlus className="h-5 w-5 text-blue-600 shrink-0" />
-                    <span className="text-sm font-medium text-blue-700">Invite Teacher</span>
+                  <div className="flex items-center gap-3 p-4 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 transition-colors cursor-pointer">
+                    <UserPlus className="h-5 w-5 text-primary shrink-0" />
+                    <span className="text-sm font-medium text-primary">Invite Teacher</span>
                   </div>
                 </Link>
                 <Link href="/dashboard/admin/courses">
-                  <div className="flex items-center gap-3 p-4 rounded-xl border border-violet-100 bg-violet-50 hover:bg-violet-100 transition-colors cursor-pointer">
-                    <BookOpen className="h-5 w-5 text-violet-600 shrink-0" />
-                    <span className="text-sm font-medium text-violet-700">Create Course</span>
+                  <div className="flex items-center gap-3 p-4 rounded-xl border border-chart-5/30 bg-chart-5/10 hover:bg-chart-5/20 transition-colors cursor-pointer">
+                    <BookOpen className="h-5 w-5 text-chart-5 shrink-0" />
+                    <span className="text-sm font-medium text-chart-5">Create Course</span>
                   </div>
                 </Link>
                 <Link href="/dashboard/admin/admissions">
-                  <div className="flex items-center gap-3 p-4 rounded-xl border border-orange-100 bg-orange-50 hover:bg-orange-100 transition-colors cursor-pointer">
-                    <ClipboardList className="h-5 w-5 text-orange-600 shrink-0" />
-                    <span className="text-sm font-medium text-orange-700">Manage Applications</span>
+                  <div className="flex items-center gap-3 p-4 rounded-xl border border-warning/30 bg-warning/10 hover:bg-warning/20 transition-colors cursor-pointer">
+                    <ClipboardList className="h-5 w-5 text-warning shrink-0" />
+                    <span className="text-sm font-medium text-warning">Manage Applications</span>
                   </div>
                 </Link>
               </div>
@@ -573,7 +568,7 @@ export default function AdminOverview() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b bg-gray-50/60">
+                      <tr className="border-b bg-muted/40">
                         {["Name", "Student ID", "Email", "Role", "Joined", "Status"].map((h) => (
                           <th
                             key={h}
@@ -597,26 +592,26 @@ export default function AdminOverview() {
                           return (
                             <tr
                               key={s.id}
-                              className="border-b last:border-0 hover:bg-gray-50 transition-colors"
+                              className="border-b last:border-0 hover:bg-muted/50 transition-colors"
                             >
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2.5">
                                   <Avatar className="h-7 w-7 shrink-0">
                                     <AvatarImage src={avatar} />
-                                    <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs">
+                                    <AvatarFallback className="bg-success/10 text-success text-xs">
                                       {getInitials(first, last)}
                                     </AvatarFallback>
                                   </Avatar>
-                                  <span className="font-medium text-gray-900 whitespace-nowrap">
+                                  <span className="font-medium text-foreground whitespace-nowrap">
                                     {first} {last}
                                   </span>
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
-                                {studentId || <span className="text-gray-300">—</span>}
+                                {studentId || <span className="text-muted-foreground/60">—</span>}
                               </td>
                               <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate">
-                                {s.email || <span className="text-gray-300">—</span>}
+                                {s.email || <span className="text-muted-foreground/60">—</span>}
                               </td>
                               <td className="px-4 py-3">
                                 <span
@@ -673,7 +668,7 @@ export default function AdminOverview() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b bg-gray-50/60">
+                      <tr className="border-b bg-muted/40">
                         {["Name", "Email", "Courses Assigned", "Joined"].map((h) => (
                           <th
                             key={h}
@@ -696,26 +691,26 @@ export default function AdminOverview() {
                           return (
                             <tr
                               key={t.id}
-                              className="border-b last:border-0 hover:bg-gray-50 transition-colors"
+                              className="border-b last:border-0 hover:bg-muted/50 transition-colors"
                             >
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2.5">
                                   <Avatar className="h-7 w-7 shrink-0">
                                     <AvatarImage src={avatar} />
-                                    <AvatarFallback className="bg-blue-100 text-blue-700 text-xs">
+                                    <AvatarFallback className="bg-primary/10 text-primary text-xs">
                                       {getInitials(first, last)}
                                     </AvatarFallback>
                                   </Avatar>
-                                  <span className="font-medium text-gray-900 whitespace-nowrap">
+                                  <span className="font-medium text-foreground whitespace-nowrap">
                                     {first} {last}
                                   </span>
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate">
-                                {t.email || <span className="text-gray-300">—</span>}
+                                {t.email || <span className="text-muted-foreground/60">—</span>}
                               </td>
                               <td className="px-4 py-3 text-center text-muted-foreground">
-                                {t.courses_count != null ? t.courses_count : <span className="text-gray-300">—</span>}
+                                {t.courses_count != null ? t.courses_count : <span className="text-muted-foreground/60">—</span>}
                               </td>
                               <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
                                 {formatDate(createdAt)}
@@ -813,9 +808,12 @@ export default function AdminOverview() {
         <HelpCenter
           role={(user as any)?.role as "admin" | "super_admin"}
           onClose={() => setHelpOpen(false)}
-          onStartTour={() => {}}
+          onStartTour={launchTour}
         />
       )}
+      {/* Own shell instead of AdminLayout — the first-login tour (and Help
+          Center's "Start tour") never ran on the admin landing page. */}
+      {showTour && <TourOverlay role={(user as any)?.role as "admin" | "super_admin"} onClose={closeTour} />}
     </div>
   );
 }

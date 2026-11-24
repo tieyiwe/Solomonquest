@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { StudentDetailDialog } from "@/components/StudentDetailDialog";
 import {
   useListCourses,
   useCreateCourse,
   useUpdateCourse,
   useDeleteCourse,
   useListUsers,
+  useListPrograms,
   getListCoursesQueryKey,
 } from "@workspace/api-client-react";
 import { supabase } from "@/lib/supabase";
@@ -64,34 +66,344 @@ import {
   GraduationCap,
   UserPlus,
   Radio,
+  History,
+  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Course } from "@workspace/api-client-react";
+import { generateSemesterOptions, CUSTOM_SEMESTER_VALUE } from "@/lib/semesters";
+import { LoadingRows } from "@/components/common/States";
 
 interface CourseFormData {
   title: string;
   code: string;
   term: string;
+  termStartDate: string;
+  termEndDate: string;
+  termId: string;
   description: string;
   teacherId: string;
+  programId: string;
   isPublished: boolean;
   isLive: boolean;
   classDate: string;
   classEndTime: string;
+  attendanceWeightPercent: string;
 }
 
 const defaultForm: CourseFormData = {
   title: "",
   code: "",
   term: "",
+  termStartDate: "",
+  termEndDate: "",
+  termId: "",
   description: "",
   teacherId: "",
+  programId: "",
   isPublished: false,
   isLive: false,
   classDate: "",
   classEndTime: "",
+  attendanceWeightPercent: "0",
 };
+
+interface ScheduleTerm {
+  id: string;
+  name: string;
+}
+
+function useScheduleTerms() {
+  const [terms, setTerms] = useState<ScheduleTerm[]>([]);
+  useEffect(() => {
+    apiFetch("/api/terms")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setTerms((data ?? []).map((t: any) => ({ id: t.id, name: t.name }))))
+      .catch(() => {});
+  }, []);
+  return terms;
+}
+
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session?.access_token}`,
+      ...(options.headers ?? {}),
+    },
+  });
+}
+
+interface TuitionPlan {
+  id: string;
+  amountCents: number;
+  allowFullPayment: boolean;
+  allowInstallments: boolean;
+  installmentCount: number;
+}
+
+function TuitionTab({ courseId }: { courseId: string }) {
+  const [amount, setAmount] = useState("");
+  const [allowFull, setAllowFull] = useState(true);
+  const [allowInstallments, setAllowInstallments] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState("2");
+  const [existingPlanId, setExistingPlanId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiFetch(`/api/tuition-plans?courseId=${courseId}`)
+      .then((r) => r.json())
+      .then((plans: TuitionPlan[]) => {
+        const plan = plans?.[0];
+        if (plan) {
+          setExistingPlanId(plan.id);
+          setAmount((plan.amountCents / 100).toFixed(2));
+          setAllowFull(plan.allowFullPayment);
+          setAllowInstallments(plan.allowInstallments);
+          setInstallmentCount(String(plan.installmentCount));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  const handleSave = async () => {
+    if (!amount.trim() || parseFloat(amount) < 0) {
+      toast.error("Enter a valid tuition amount");
+      return;
+    }
+    if (!allowFull && !allowInstallments) {
+      toast.error("Enable at least one payment option");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiFetch("/api/tuition-plans", {
+        method: "POST",
+        body: JSON.stringify({
+          courseId,
+          amountCents: Math.round(parseFloat(amount) * 100),
+          allowFullPayment: allowFull,
+          allowInstallments,
+          installmentCount: parseInt(installmentCount, 10) || 2,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save tuition");
+      }
+      const data = await res.json();
+      setExistingPlanId(data.id);
+      toast.success("Tuition saved");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save tuition");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <LoadingRows rows={3} />;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Set the tuition for this course. Students see this at the end of enrollment — this isn't a required condition
+        yet, so applications aren't blocked on payment while this is being tested.
+      </p>
+      <div className="space-y-1.5">
+        <Label htmlFor="admincourses-tuition-amount-usd">Tuition Amount (USD)</Label>
+        <Input id="admincourses-tuition-amount-usd" type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      </div>
+      <div className="flex items-center justify-between rounded-lg border p-3">
+        <div>
+          <p className="text-sm font-medium">Allow Full Payment</p>
+          <p className="text-xs text-muted-foreground">Pay the full tuition in one payment</p>
+        </div>
+        <Switch checked={allowFull} onCheckedChange={setAllowFull} />
+      </div>
+      <div className="flex items-center justify-between rounded-lg border p-3">
+        <div>
+          <p className="text-sm font-medium">Allow Installments</p>
+          <p className="text-xs text-muted-foreground">Split tuition into multiple partial payments</p>
+        </div>
+        <Switch checked={allowInstallments} onCheckedChange={setAllowInstallments} />
+      </div>
+      {allowInstallments && (
+        <div className="space-y-1.5 pl-3 border-l-2">
+          <Label htmlFor="admincourses-number-of-installments">Number of Installments</Label>
+          <Input id="admincourses-number-of-installments"
+            type="number"
+            min="2"
+            value={installmentCount}
+            onChange={(e) => setInstallmentCount(e.target.value)}
+            className="max-w-[120px]"
+          />
+        </div>
+      )}
+      <Button onClick={handleSave} disabled={saving} size="sm">
+        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {existingPlanId ? "Update Tuition" : "Save Tuition"}
+      </Button>
+    </div>
+  );
+}
+
+interface RosterStudent {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+}
+
+interface CourseAuditLogEntry {
+  id: string;
+  action: "created" | "teacher_assigned" | "teacher_unassigned";
+  performedByName: string | null;
+  previousTeacherName: string | null;
+  newTeacherName: string | null;
+  createdAt: string;
+}
+
+function describeAuditEntry(entry: CourseAuditLogEntry): string {
+  const actor = entry.performedByName ?? "Someone";
+  if (entry.action === "created") {
+    return entry.newTeacherName
+      ? `${actor} created this course and assigned ${entry.newTeacherName} as teacher`
+      : `${actor} created this course`;
+  }
+  if (entry.action === "teacher_assigned") {
+    return entry.previousTeacherName
+      ? `${actor} reassigned the course from ${entry.previousTeacherName} to ${entry.newTeacherName}`
+      : `${actor} assigned ${entry.newTeacherName} as teacher`;
+  }
+  return `${actor} removed ${entry.previousTeacherName ?? "the teacher"} from this course`;
+}
+
+function CourseHistoryDialog({ course }: { course: Course }) {
+  const [open, setOpen] = useState(false);
+  const [entries, setEntries] = useState<CourseAuditLogEntry[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    apiFetch(`/api/courses/${course.id}/audit-log`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setEntries(data))
+      .catch(() => setEntries([]))
+      .finally(() => setLoading(false));
+  }, [open, course.id]);
+
+  const createdAt = (course as any).createdAt as string | null | undefined;
+  const createdByName = (course as any).createdByName as string | null | undefined;
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Course history">
+          <History className="h-3.5 w-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{course.title} — History</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          {createdAt && (
+            <p className="text-sm text-muted-foreground">
+              Built by <span className="font-medium text-foreground">{createdByName ?? "Unknown"}</span> on{" "}
+              {new Date(createdAt).toLocaleString(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </p>
+          )}
+          <div className="border rounded-lg divide-y max-h-80 overflow-y-auto">
+            {loading ? (
+              <div className="p-4 space-y-2">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-3/4" />
+              </div>
+            ) : !entries || entries.length === 0 ? (
+              <p className="p-4 text-sm text-muted-foreground">No log entries yet.</p>
+            ) : (
+              entries.map((entry) => (
+                <div key={entry.id} className="p-3 text-sm">
+                  <p>{describeAuditEntry(entry)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {new Date(entry.createdAt).toLocaleString(undefined, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CourseRosterTab({ courseId }: { courseId: string }) {
+  const [students, setStudents] = useState<RosterStudent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [viewStudentId, setViewStudentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch(`/api/courses/${courseId}/students`)
+      .then((r) => r.json())
+      .then((data) => setStudents(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  if (loading) return <LoadingRows rows={3} />;
+
+  return (
+    <div>
+      {students.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No students enrolled in this course yet.</p>
+      ) : (
+        <ul className="divide-y rounded-lg border">
+          {students.map((s) => (
+            <li key={s.id}>
+              <button
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-muted/50"
+                onClick={() => setViewStudentId(s.id)}
+              >
+                <div className="h-7 w-7 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center shrink-0">
+                  {`${s.firstName?.[0] ?? ""}${s.lastName?.[0] ?? ""}`.toUpperCase() || "S"}
+                </div>
+                <span className="text-sm font-medium text-foreground">
+                  {s.firstName} {s.lastName}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <StudentDetailDialog
+        studentId={viewStudentId}
+        open={!!viewStudentId}
+        onOpenChange={(v) => { if (!v) setViewStudentId(null); }}
+      />
+    </div>
+  );
+}
 
 async function updateLiveSettings(
   courseId: string,
@@ -110,7 +422,7 @@ async function updateLiveSettings(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || "Failed to update live settings");
+    throw new Error(err.error || err.message || "Failed to update live settings");
   }
   return res.json();
 }
@@ -130,6 +442,10 @@ function CourseFormDialog({
   const createCourse = useCreateCourse();
   const updateCourse = useUpdateCourse();
   const { data: teachers } = useListUsers({ role: "teacher" });
+  const { data: programs } = useListPrograms();
+  const scheduleTerms = useScheduleTerms();
+
+  const semesterOptions = generateSemesterOptions(new Date().getFullYear());
 
   const [form, setForm] = useState<CourseFormData>(() =>
     course
@@ -137,19 +453,49 @@ function CourseFormDialog({
           title: course.title || "",
           code: course.code || "",
           term: course.term || "",
+          termStartDate: (course as any).termStartDate || "",
+          termEndDate: (course as any).termEndDate || "",
+          termId: (course as any).termId || "",
           description: course.description || "",
           teacherId: course.teacherId || "",
+          programId: (course as any).programId || "",
           isPublished: course.isPublished || false,
           isLive: (course as any).isLive || false,
           classDate: (course as any).classDate || "",
           classEndTime: (course as any).classEndTime || "",
+          attendanceWeightPercent: String((course as any).attendanceWeightPercent ?? 0),
         }
       : defaultForm
   );
   const [isSaving, setIsSaving] = useState(false);
 
+  // A course's term matches a standard option only if its label AND dates
+  // line up exactly; otherwise it was a custom term (or has no dates yet).
+  const matchingStandard = semesterOptions.find(
+    (o) => o.label === form.term && o.startDate === form.termStartDate && o.endDate === form.termEndDate
+  );
+  const [semesterChoice, setSemesterChoice] = useState<string>(
+    form.term ? (matchingStandard ? matchingStandard.value : CUSTOM_SEMESTER_VALUE) : ""
+  );
+
   const set = (key: keyof CourseFormData, value: string | boolean) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  const handleSemesterChoice = (value: string) => {
+    setSemesterChoice(value);
+    if (value === CUSTOM_SEMESTER_VALUE) {
+      return;
+    }
+    const option = semesterOptions.find((o) => o.value === value);
+    if (option) {
+      setForm((f) => ({
+        ...f,
+        term: option.label,
+        termStartDate: option.startDate,
+        termEndDate: option.endDate,
+      }));
+    }
+  };
 
   const handleSubmit = async () => {
     if (!form.title.trim()) {
@@ -157,16 +503,27 @@ function CourseFormDialog({
       return;
     }
 
+    const attendanceWeightPercent = form.attendanceWeightPercent === "" ? 0 : Number(form.attendanceWeightPercent);
+    if (!Number.isFinite(attendanceWeightPercent) || attendanceWeightPercent < 0 || attendanceWeightPercent > 100) {
+      toast.error("Attendance weight must be a number between 0 and 100");
+      return;
+    }
+
     const corePayload = {
       title: form.title,
       code: form.code || undefined,
       term: form.term || undefined,
+      termStartDate: form.termStartDate || undefined,
+      termEndDate: form.termEndDate || undefined,
+      termId: form.termId || undefined,
       description: form.description || undefined,
       teacherId: form.teacherId || undefined,
+      programId: form.programId || undefined,
       isPublished: form.isPublished,
       isLive: form.isLive,
       classDate: form.isLive && form.classDate ? form.classDate : undefined,
       classEndTime: form.isLive && form.classEndTime ? form.classEndTime : undefined,
+      attendanceWeightPercent,
     };
 
     if (mode === "create") {
@@ -220,44 +577,79 @@ function CourseFormDialog({
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label>Course Title *</Label>
-            <Input
+            <Label htmlFor="admincourses-course-title">Course Title *</Label>
+            <Input id="admincourses-course-title"
               placeholder="Introduction to Mathematics"
               value={form.title}
               onChange={(e) => set("title", e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea
+            <Label htmlFor="admincourses-description">Description</Label>
+            <Textarea id="admincourses-description"
               placeholder="Brief description of the course..."
               rows={3}
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>Course Code</Label>
-              <Input
-                placeholder="MATH101"
-                value={form.code}
-                onChange={(e) => set("code", e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Term</Label>
-              <Input
-                placeholder="Fall 2025"
-                value={form.term}
-                onChange={(e) => set("term", e.target.value)}
-              />
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="admincourses-course-code">Course Code</Label>
+            <Input id="admincourses-course-code"
+              placeholder="MATH101"
+              value={form.code}
+              onChange={(e) => set("code", e.target.value)}
+            />
           </div>
           <div className="space-y-1.5">
-            <Label>Assign Teacher</Label>
+            <Label htmlFor="admincourses-semester-term">Semester / Term</Label>
+            <Select value={semesterChoice} onValueChange={handleSemesterChoice}>
+              <SelectTrigger id="admincourses-semester-term">
+                <SelectValue placeholder="Select a semester..." />
+              </SelectTrigger>
+              <SelectContent>
+                {semesterOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+                <SelectItem value={CUSTOM_SEMESTER_VALUE}>Custom…</SelectItem>
+              </SelectContent>
+            </Select>
+            {semesterChoice === CUSTOM_SEMESTER_VALUE && (
+              <div className="space-y-1.5 pt-1">
+                <Input
+                  placeholder="Custom term name, e.g. Trimester 1 2026"
+                  value={form.term}
+                  onChange={(e) => set("term", e.target.value)}
+                />
+              </div>
+            )}
+            {semesterChoice && (
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1">
+                  <Label htmlFor="admincourses-start-date" className="text-xs text-muted-foreground">Start Date</Label>
+                  <Input id="admincourses-start-date"
+                    type="date"
+                    value={form.termStartDate}
+                    onChange={(e) => set("termStartDate", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="admincourses-end-date" className="text-xs text-muted-foreground">End Date</Label>
+                  <Input id="admincourses-end-date"
+                    type="date"
+                    value={form.termEndDate}
+                    onChange={(e) => set("termEndDate", e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="admincourses-assign-teacher">Assign Teacher</Label>
             <Select value={form.teacherId} onValueChange={(v) => set("teacherId", v)}>
-              <SelectTrigger>
+              <SelectTrigger id="admincourses-assign-teacher">
                 <SelectValue placeholder="Select a teacher..." />
               </SelectTrigger>
               <SelectContent>
@@ -269,6 +661,65 @@ function CourseFormDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="admincourses-program">Program</Label>
+            <Select value={form.programId} onValueChange={(v) => set("programId", v)}>
+              <SelectTrigger id="admincourses-program">
+                <SelectValue placeholder="No program — standalone course" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">No program — standalone course</SelectItem>
+                {(programs ?? []).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Students enrolled in any course of this program are automatically enrolled in all
+              of its other courses and can chat with everyone in the program.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="admincourses-scheduling-term">Scheduling Term</Label>
+            <Select value={form.termId} onValueChange={(v) => set("termId", v)}>
+              <SelectTrigger id="admincourses-scheduling-term">
+                <SelectValue placeholder="Not scheduled to a term" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Not scheduled to a term</SelectItem>
+                {scheduleTerms.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Groups this class under a quarter/semester/cycle for scheduling — manage terms
+              under Admin → Terms & Scheduling.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="admincourses-attendance-weight-in-final-gra">Attendance Weight in Final Grade (%)</Label>
+            <Input id="admincourses-attendance-weight-in-final-gra"
+              type="number"
+              min={0}
+              max={100}
+              placeholder="0"
+              value={form.attendanceWeightPercent}
+              onChange={(e) => set("attendanceWeightPercent", e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              0 means attendance doesn't affect the grade. Set to e.g. 10 to have attendance count
+              for 10% of each student's overall grade in this course, with assignments and quizzes
+              making up the rest.
+            </p>
           </div>
 
           {/* Live Class Toggle */}
@@ -287,18 +738,18 @@ function CourseFormDialog({
 
           {/* Live Class Date/Time (conditional) */}
           {form.isLive && (
-            <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+            <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/10 p-3">
               <div className="space-y-1.5">
-                <Label>Class Date &amp; Time</Label>
-                <Input
+                <Label htmlFor="admincourses-class-date-amp-time">Class Date &amp; Time</Label>
+                <Input id="admincourses-class-date-amp-time"
                   type="datetime-local"
                   value={form.classDate}
                   onChange={(e) => set("classDate", e.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>End Time</Label>
-                <Input
+                <Label htmlFor="admincourses-end-time">End Time</Label>
+                <Input id="admincourses-end-time"
                   type="datetime-local"
                   value={form.classEndTime}
                   onChange={(e) => set("classEndTime", e.target.value)}
@@ -319,6 +770,19 @@ function CourseFormDialog({
               onCheckedChange={(v) => set("isPublished", v)}
             />
           </div>
+
+          {mode === "edit" && course && (
+            <>
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-sm font-semibold">Enrolled Students</Label>
+                <CourseRosterTab courseId={course.id} />
+              </div>
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-sm font-semibold">Tuition</Label>
+                <TuitionTab courseId={course.id} />
+              </div>
+            </>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
@@ -359,7 +823,7 @@ function InviteTeacherDialog() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to send invitation");
+        throw new Error(err.error || err.message || "Failed to send invitation");
       }
       toast.success(`Invitation sent to ${email.trim()}`);
       setEmail("");
@@ -388,8 +852,8 @@ function InviteTeacherDialog() {
             Enter the teacher's email address. They'll receive an invitation link to join your school.
           </p>
           <div className="space-y-1.5">
-            <Label>Email Address</Label>
-            <Input
+            <Label htmlFor="admincourses-email-address">Email Address</Label>
+            <Input id="admincourses-email-address"
               type="email"
               placeholder="teacher@example.com"
               value={email}
@@ -419,7 +883,13 @@ export default function AdminCourses() {
   const [editCourse, setEditCourse] = useState<Course | null>(null);
 
   const { data: courses, isLoading } = useListCourses();
+  const { data: programs } = useListPrograms();
   const deleteCourse = useDeleteCourse();
+
+  const programNameById = (programs ?? []).reduce<Record<string, string>>((acc, p) => {
+    acc[p.id] = p.name;
+    return acc;
+  }, {});
 
   const filtered = (courses ?? []).filter((c) =>
     `${c.title} ${c.code} ${c.teacherName}`.toLowerCase().includes(search.toLowerCase())
@@ -442,7 +912,7 @@ export default function AdminCourses() {
     <AdminLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/admin">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
@@ -452,7 +922,7 @@ export default function AdminCourses() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Course Management</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Course Management</h1>
             <p className="text-muted-foreground mt-0.5">
               Create, edit and manage all school courses.
             </p>
@@ -511,7 +981,7 @@ export default function AdminCourses() {
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50">
+                  <TableRow className="bg-muted/30">
                     <TableHead className="font-semibold">Course</TableHead>
                     <TableHead className="font-semibold">Teacher</TableHead>
                     <TableHead className="font-semibold">Code & Term</TableHead>
@@ -524,22 +994,27 @@ export default function AdminCourses() {
                   {filtered.map((course) => {
                     const isLive = !!(course as any).isLive;
                     return (
-                      <TableRow key={course.id} className="hover:bg-gray-50/50">
+                      <TableRow key={course.id} className="hover:bg-muted/30">
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <div className="h-9 w-9 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
-                              <BookOpen className="h-4 w-4 text-violet-600" />
+                            <div className="h-9 w-9 rounded-xl bg-chart-5/10 flex items-center justify-center shrink-0">
+                              <BookOpen className="h-4 w-4 text-chart-5" />
                             </div>
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium text-gray-900 text-sm">{course.title}</p>
+                                <p className="font-medium text-foreground text-sm">{course.title}</p>
+                                {(course as any).programId && programNameById[(course as any).programId] && (
+                                  <Badge className="bg-primary/10 text-primary border-primary/30 border text-xs">
+                                    {programNameById[(course as any).programId]}
+                                  </Badge>
+                                )}
                                 {isLive ? (
-                                  <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs gap-1">
+                                  <Badge className="bg-destructive/10 text-destructive border-destructive/30 border text-xs gap-1">
                                     <Radio className="h-3 w-3" />
                                     Live
                                   </Badge>
                                 ) : (
-                                  <Badge className="bg-gray-100 text-gray-500 border-gray-200 border text-xs">
+                                  <Badge className="bg-muted text-muted-foreground border-border border text-xs">
                                     Non-Live
                                   </Badge>
                                 )}
@@ -587,8 +1062,8 @@ export default function AdminCourses() {
                           <Badge
                             className={
                               course.isPublished
-                                ? "bg-green-100 text-green-700 border-green-200 border"
-                                : "bg-gray-100 text-gray-600 border-gray-200 border"
+                                ? "bg-success/10 text-success border-success/30 border"
+                                : "bg-muted text-muted-foreground border-border border"
                             }
                           >
                             {course.isPublished ? "Published" : "Draft"}
@@ -596,6 +1071,12 @@ export default function AdminCourses() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <CourseHistoryDialog course={course} />
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Modules & progress" asChild>
+                              <Link href={`/dashboard/admin/courses/${course.id}/modules`} aria-label="Modules & progress">
+                                <Layers className="h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -609,7 +1090,7 @@ export default function AdminCourses() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                  className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/20"
                                   disabled={deleteCourse.isPending}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -626,7 +1107,7 @@ export default function AdminCourses() {
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction
-                                    className="bg-red-600 hover:bg-red-700"
+                                    className="bg-destructive hover:bg-destructive/90"
                                     onClick={() => handleDelete(course.id, course.title)}
                                   >
                                     Delete

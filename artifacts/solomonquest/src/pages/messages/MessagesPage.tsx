@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Send, Inbox, ArrowLeft, Search, Edit, Reply } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 async function apiFetch(url: string, options: RequestInit = {}) {
   const { data } = await supabase.auth.getSession();
@@ -38,6 +39,44 @@ interface UserResult {
   id: string;
   name: string;
   internal_email: string;
+}
+
+type ApiPerson = { id?: string; name?: string; internal_email?: string | null } | null | undefined;
+
+// The backend (routes/messages.ts) returns { from_user: {id,name,...},
+// to_user: {...}, is_read, body_preview | body } — not the flat
+// from_user_id / from_name / read / body fields this page renders. Without
+// this mapping every sender showed as blank, every message stayed unread,
+// and list previews were empty. Raw internal_messages rows (the realtime
+// INSERT payload) are handled too.
+function normalizeMessage(raw: Record<string, any>): Message {
+  const from = raw.from_user as ApiPerson;
+  const to = raw.to_user as ApiPerson;
+  return {
+    id: raw.id,
+    from_user_id: raw.from_user_id ?? from?.id ?? "",
+    to_user_id: raw.to_user_id ?? to?.id ?? "",
+    subject: raw.subject ?? "",
+    body: raw.body ?? raw.body_preview ?? "",
+    created_at: raw.created_at,
+    read: raw.read ?? raw.is_read ?? false,
+    from_name: raw.from_name ?? from?.name ?? undefined,
+    from_email: raw.from_email ?? from?.internal_email ?? undefined,
+    to_name: raw.to_name ?? to?.name ?? undefined,
+    to_email: raw.to_email ?? to?.internal_email ?? undefined,
+  };
+}
+
+// GET /users/search returns raw profile rows (first_name/last_name), not
+// { name }; AvatarCircle/getInitials crashed on the undefined name.
+function normalizeUser(raw: Record<string, any>): UserResult {
+  const name =
+    raw.name ?? `${raw.first_name ?? ""} ${raw.last_name ?? ""}`.trim();
+  return {
+    id: raw.id,
+    name: name || raw.internal_email || "Unknown",
+    internal_email: raw.internal_email ?? "",
+  };
 }
 
 type Folder = "inbox" | "sent" | "search";
@@ -95,6 +134,7 @@ function AvatarCircle({ name, size = 36 }: { name: string; size?: number }) {
 export default function MessagesPage() {
   const { user } = useAuth();
   const userId = user?.id ?? "";
+  const isMobile = useIsMobile();
 
   const [folder, setFolder] = useState<Folder>("inbox");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -137,7 +177,7 @@ export default function MessagesPage() {
           filter: "to_user_id=eq." + userId,
         },
         (payload) => {
-          const newMsg = payload.new as Message;
+          const newMsg = normalizeMessage(payload.new as Record<string, any>);
           if (folder === "inbox") {
             setMessages((prev) => [newMsg, ...prev]);
           }
@@ -152,22 +192,25 @@ export default function MessagesPage() {
   }, [userId, folder]);
 
   async function fetchMessages() {
+    // There is no /api/messages/search route (it was caught by
+    // GET /messages/:id); the search folder is populated by searchMessages.
+    if (folder === "search") {
+      setMessages([]);
+      return;
+    }
     setLoading(true);
     try {
       const endpoint =
-        folder === "inbox"
-          ? "/api/messages/inbox"
-          : folder === "sent"
-          ? "/api/messages/sent"
-          : `/api/messages/search?query=${encodeURIComponent(searchQuery)}`;
+        folder === "inbox" ? "/api/messages/inbox" : "/api/messages/sent";
       const res = await apiFetch(endpoint);
       if (res.ok) {
         const data = await res.json();
-        setMessages(data.messages ?? data ?? []);
+        const rows: Message[] = (Array.isArray(data) ? data : data.messages ?? []).map(normalizeMessage);
+        setMessages(rows);
         // Build recent contacts
         const contacts: UserResult[] = [];
         const seen = new Set<string>();
-        for (const m of data.messages ?? data ?? []) {
+        for (const m of rows) {
           const otherId =
             folder === "sent" ? m.to_user_id : m.from_user_id;
           if (!seen.has(otherId) && otherId !== userId) {
@@ -198,13 +241,30 @@ export default function MessagesPage() {
     if (!searchQuery.trim()) return;
     setLoading(true);
     try {
-      const res = await apiFetch(
-        `/api/messages/search?query=${encodeURIComponent(searchQuery)}`
-      );
-      if (res.ok) {
+      // No server-side search endpoint exists; search the caller's own
+      // inbox + sent folders client-side.
+      const [inboxRes, sentRes] = await Promise.all([
+        apiFetch("/api/messages/inbox"),
+        apiFetch("/api/messages/sent"),
+      ]);
+      const rows: Message[] = [];
+      for (const res of [inboxRes, sentRes]) {
+        if (!res.ok) continue;
         const data = await res.json();
-        setMessages(data.messages ?? data ?? []);
+        rows.push(...(Array.isArray(data) ? data : data.messages ?? []).map(normalizeMessage));
       }
+      const q = searchQuery.trim().toLowerCase();
+      const seen = new Set<string>();
+      setMessages(
+        rows
+          .filter((m) => {
+            if (seen.has(m.id)) return false;
+            seen.add(m.id);
+            return [m.subject, m.body, m.from_name, m.to_name, m.from_email, m.to_email]
+              .some((v) => (v ?? "").toLowerCase().includes(q));
+          })
+          .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+      );
     } catch {
       // silently fail
     } finally {
@@ -248,7 +308,8 @@ export default function MessagesPage() {
     }
     setSending(true);
     try {
-      const res = await apiFetch("/api/messages/send", {
+      // The send route is POST /api/messages (there is no /messages/send).
+      const res = await apiFetch("/api/messages", {
         method: "POST",
         body: JSON.stringify({
           to_user_id: composeToUser.id,
@@ -288,7 +349,8 @@ export default function MessagesPage() {
         );
         if (res.ok) {
           const data = await res.json();
-          setUserSearchResults(data.users ?? data ?? []);
+          const list = Array.isArray(data) ? data : data.users ?? [];
+          setUserSearchResults(list.map(normalizeUser));
           setShowUserDropdown(true);
         }
       } catch {
@@ -304,12 +366,20 @@ export default function MessagesPage() {
     setShowUserDropdown(false);
   }
 
+  // There is no PATCH /messages/:id/read. GET /messages/:id marks the
+  // message read for its recipient and returns the full body (list rows
+  // only carry a 120-char preview).
   async function markRead(msg: Message) {
-    if (!msg.read) {
-      await apiFetch(`/api/messages/${msg.id}/read`, { method: "PATCH" });
+    try {
+      const res = await apiFetch(`/api/messages/${msg.id}`);
+      if (!res.ok) return;
+      const full = normalizeMessage(await res.json());
+      setSelectedMessage((cur) => (cur?.id === msg.id ? { ...cur, ...full, read: true } : cur));
       setMessages((prev) =>
         prev.map((m) => (m.id === msg.id ? { ...m, read: true } : m))
       );
+    } catch {
+      /* keep the preview */
     }
   }
 
@@ -332,31 +402,49 @@ export default function MessagesPage() {
     <div
       style={{
         display: "flex",
-        height: "calc(100vh - 64px)",
+        flexDirection: isMobile ? "column" : "row",
+        // Phones: the full dynamic viewport (100vh overshoots behind mobile
+        // browser toolbars, and this page has no app header to subtract).
+        height: isMobile ? "100dvh" : "calc(100vh - 64px)",
         fontFamily: "inherit",
-        background: "#f8fafc",
+        background: "hsl(var(--muted) / 0.6)",
+        overflow: isMobile ? "auto" : "hidden",
       }}
     >
-      {/* LEFT SIDEBAR */}
+      {/* LEFT SIDEBAR — hidden on mobile once a message/compose panel is open,
+          so that panel gets the full screen instead of being squeezed into
+          whatever space is left after two fixed-width desktop columns. */}
+      {(!isMobile || panelState === "empty") && (
       <div
         style={{
-          width: 200,
-          background: "#fff",
-          borderRight: "1px solid #e2e8f0",
+          width: isMobile ? "100%" : 200,
+          background: "hsl(var(--card))",
+          borderRight: isMobile ? "none" : "1px solid hsl(var(--border))",
+          borderBottom: isMobile ? "1px solid hsl(var(--border))" : "none",
           display: "flex",
-          flexDirection: "column",
-          padding: "16px 8px",
-          gap: 4,
+          // Phones: one compact row (Compose + folder pills) instead of a
+          // stacked sidebar that pushed the inbox half a screen down.
+          flexDirection: isMobile ? "row" : "column",
+          alignItems: isMobile ? "center" : undefined,
+          overflowX: isMobile ? "auto" : undefined,
+          padding: isMobile ? "10px 12px calc(10px)" : "16px 8px",
+          paddingTop: isMobile ? "max(10px, env(safe-area-inset-top))" : undefined,
+          gap: isMobile ? 6 : 4,
           flexShrink: 0,
         }}
       >
         <Button
           onClick={() => openCompose()}
+          aria-label="Compose a new message"
           style={{
-            width: "100%",
-            marginBottom: 12,
-            background: "#6366f1",
-            color: "#fff",
+            width: isMobile ? 40 : "100%",
+            minHeight: isMobile ? 40 : undefined,
+            padding: isMobile ? 0 : undefined,
+            flexShrink: 0,
+            marginBottom: isMobile ? 0 : 12,
+            marginRight: isMobile ? 4 : 0,
+            background: "hsl(var(--primary))",
+            color: "hsl(var(--primary-foreground))",
             fontWeight: 600,
             borderRadius: 8,
             display: "flex",
@@ -366,7 +454,7 @@ export default function MessagesPage() {
           }}
         >
           <Edit size={16} />
-          Compose
+          {!isMobile && "Compose"}
         </Button>
 
         {/* Folder: Inbox */}
@@ -383,22 +471,25 @@ export default function MessagesPage() {
             padding: "8px 12px",
             borderRadius: 8,
             border: "none",
-            background: folder === "inbox" ? "#eef2ff" : "transparent",
-            color: folder === "inbox" ? "#6366f1" : "#374151",
+            background: folder === "inbox" ? "hsl(var(--primary) / 0.1)" : "transparent",
+            color: folder === "inbox" ? "hsl(var(--primary))" : "hsl(var(--foreground) / 0.85)",
             fontWeight: folder === "inbox" ? 700 : 400,
             cursor: "pointer",
-            width: "100%",
+            width: isMobile ? "auto" : "100%",
+            minHeight: isMobile ? 40 : undefined,
+            flexShrink: 0,
+            ...(isMobile ? { borderRadius: 999, padding: "8px 12px" } : {}),
             textAlign: "left",
             fontSize: 14,
           }}
         >
           <Inbox size={16} />
-          <span style={{ flex: 1 }}>Inbox</span>
+          <span style={{ flex: isMobile ? undefined : 1 }}>Inbox</span>
           {unreadCount > 0 && (
             <span
               style={{
-                background: "#f97316",
-                color: "#fff",
+                background: "hsl(var(--gold))",
+                color: "hsl(var(--gold-foreground))",
                 borderRadius: "50%",
                 width: 20,
                 height: 20,
@@ -428,11 +519,14 @@ export default function MessagesPage() {
             padding: "8px 12px",
             borderRadius: 8,
             border: "none",
-            background: folder === "sent" ? "#eef2ff" : "transparent",
-            color: folder === "sent" ? "#6366f1" : "#374151",
+            background: folder === "sent" ? "hsl(var(--primary) / 0.1)" : "transparent",
+            color: folder === "sent" ? "hsl(var(--primary))" : "hsl(var(--foreground) / 0.85)",
             fontWeight: folder === "sent" ? 700 : 400,
             cursor: "pointer",
-            width: "100%",
+            width: isMobile ? "auto" : "100%",
+            minHeight: isMobile ? 40 : undefined,
+            flexShrink: 0,
+            ...(isMobile ? { borderRadius: 999, padding: "8px 12px" } : {}),
             textAlign: "left",
             fontSize: 14,
           }}
@@ -455,11 +549,14 @@ export default function MessagesPage() {
             padding: "8px 12px",
             borderRadius: 8,
             border: "none",
-            background: folder === "search" ? "#eef2ff" : "transparent",
-            color: folder === "search" ? "#6366f1" : "#374151",
+            background: folder === "search" ? "hsl(var(--primary) / 0.1)" : "transparent",
+            color: folder === "search" ? "hsl(var(--primary))" : "hsl(var(--foreground) / 0.85)",
             fontWeight: folder === "search" ? 700 : 400,
             cursor: "pointer",
-            width: "100%",
+            width: isMobile ? "auto" : "100%",
+            minHeight: isMobile ? 40 : undefined,
+            flexShrink: 0,
+            ...(isMobile ? { borderRadius: 999, padding: "8px 12px" } : {}),
             textAlign: "left",
             fontSize: 14,
           }}
@@ -469,12 +566,12 @@ export default function MessagesPage() {
         </button>
 
         {/* Recent contacts */}
-        {recentContacts.length > 0 && (
+        {!isMobile && recentContacts.length > 0 && (
           <div style={{ marginTop: 16 }}>
             <p
               style={{
                 fontSize: 11,
-                color: "#9ca3af",
+                color: "hsl(var(--muted-foreground))",
                 fontWeight: 600,
                 textTransform: "uppercase",
                 letterSpacing: "0.08em",
@@ -503,7 +600,7 @@ export default function MessagesPage() {
                   width: "100%",
                   textAlign: "left",
                   fontSize: 13,
-                  color: "#374151",
+                  color: "hsl(var(--foreground) / 0.85)",
                 }}
               >
                 <AvatarCircle name={c.name} size={24} />
@@ -521,13 +618,15 @@ export default function MessagesPage() {
           </div>
         )}
       </div>
+      )}
 
-      {/* CENTER MESSAGE LIST */}
+      {/* CENTER MESSAGE LIST — same mobile rule as the sidebar above. */}
+      {(!isMobile || panelState === "empty") && (
       <div
         style={{
-          width: 360,
-          background: "#fff",
-          borderRight: "1px solid #e2e8f0",
+          width: isMobile ? "100%" : 360,
+          background: "hsl(var(--card))",
+          borderRight: isMobile ? "none" : "1px solid hsl(var(--border))",
           display: "flex",
           flexDirection: "column",
           flexShrink: 0,
@@ -539,7 +638,7 @@ export default function MessagesPage() {
           <div
             style={{
               padding: "12px",
-              borderBottom: "1px solid #e2e8f0",
+              borderBottom: "1px solid hsl(var(--border))",
               display: "flex",
               gap: 8,
             }}
@@ -561,10 +660,10 @@ export default function MessagesPage() {
         <div
           style={{
             padding: "12px 16px",
-            borderBottom: "1px solid #f1f5f9",
+            borderBottom: "1px solid hsl(var(--border))",
             fontWeight: 600,
             fontSize: 15,
-            color: "#1e293b",
+            color: "hsl(var(--foreground))",
           }}
         >
           {folder === "inbox"
@@ -583,7 +682,7 @@ export default function MessagesPage() {
                 alignItems: "center",
                 justifyContent: "center",
                 height: 120,
-                color: "#9ca3af",
+                color: "hsl(var(--muted-foreground))",
                 fontSize: 14,
               }}
             >
@@ -597,7 +696,7 @@ export default function MessagesPage() {
                 alignItems: "center",
                 justifyContent: "center",
                 height: 200,
-                color: "#9ca3af",
+                color: "hsl(var(--muted-foreground))",
                 gap: 8,
               }}
             >
@@ -620,14 +719,15 @@ export default function MessagesPage() {
                     display: "flex",
                     alignItems: "flex-start",
                     gap: 10,
-                    padding: "12px 16px",
+                    padding: isMobile ? "14px 16px" : "12px 16px",
+                    minHeight: 64,
                     background: isSelected
-                      ? "#eef2ff"
+                      ? "hsl(var(--primary) / 0.1)"
                       : isUnread
-                      ? "#fafafa"
-                      : "#fff",
+                      ? "hsl(var(--primary) / 0.04)"
+                      : "hsl(var(--card))",
                     border: "none",
-                    borderBottom: "1px solid #f1f5f9",
+                    borderBottom: "1px solid hsl(var(--border))",
                     cursor: "pointer",
                     width: "100%",
                     textAlign: "left",
@@ -636,12 +736,12 @@ export default function MessagesPage() {
                   onMouseEnter={(e) => {
                     if (!isSelected)
                       (e.currentTarget as HTMLElement).style.background =
-                        "#f8fafc";
+                        "hsl(var(--muted) / 0.6)";
                   }}
                   onMouseLeave={(e) => {
                     if (!isSelected)
                       (e.currentTarget as HTMLElement).style.background =
-                        isUnread ? "#fafafa" : "#fff";
+                        isUnread ? "hsl(var(--primary) / 0.04)" : "hsl(var(--card))";
                   }}
                 >
                   <AvatarCircle name={displayName} />
@@ -658,16 +758,18 @@ export default function MessagesPage() {
                         style={{
                           fontWeight: isUnread ? 700 : 500,
                           fontSize: 14,
-                          color: "#1e293b",
+                          color: "hsl(var(--foreground))",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
-                          maxWidth: 160,
+                          flex: 1,
+                          minWidth: 0,
+                          marginRight: 8,
                         }}
                       >
                         {displayName}
                       </span>
-                      <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", flexShrink: 0 }}>
                         {formatDate(msg.created_at)}
                       </span>
                     </div>
@@ -675,7 +777,7 @@ export default function MessagesPage() {
                       style={{
                         fontSize: 13,
                         fontWeight: isUnread ? 600 : 400,
-                        color: "#374151",
+                        color: "hsl(var(--foreground) / 0.85)",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
@@ -687,7 +789,7 @@ export default function MessagesPage() {
                     <div
                       style={{
                         fontSize: 12,
-                        color: "#6b7280",
+                        color: "hsl(var(--muted-foreground))",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
@@ -702,7 +804,7 @@ export default function MessagesPage() {
                         width: 8,
                         height: 8,
                         borderRadius: "50%",
-                        background: "#f97316",
+                        background: "hsl(var(--gold))",
                         flexShrink: 0,
                         marginTop: 6,
                       }}
@@ -714,9 +816,14 @@ export default function MessagesPage() {
           )}
         </div>
       </div>
+      )}
 
-      {/* RIGHT PANEL */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* RIGHT PANEL — on mobile only rendered once a message is open or
+          compose is active, so it gets the full screen; the "select a
+          message" placeholder below is desktop-only (the mobile empty
+          state is just the list itself, above). */}
+      {(!isMobile || panelState !== "empty") && (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", width: isMobile ? "100%" : undefined }}>
         {panelState === "empty" && (
           <div
             style={{
@@ -725,7 +832,7 @@ export default function MessagesPage() {
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              color: "#9ca3af",
+              color: "hsl(var(--muted-foreground))",
               gap: 12,
             }}
           >
@@ -738,7 +845,7 @@ export default function MessagesPage() {
               <button
                 onClick={() => openCompose()}
                 style={{
-                  color: "#6366f1",
+                  color: "hsl(var(--primary))",
                   background: "none",
                   border: "none",
                   cursor: "pointer",
@@ -758,31 +865,55 @@ export default function MessagesPage() {
             style={{
               flex: 1,
               overflowY: "auto",
-              padding: "32px 40px",
-              background: "#fff",
+              padding: isMobile ? "12px 16px calc(24px + env(safe-area-inset-bottom))" : "32px 40px",
+              background: "hsl(var(--card))",
             }}
           >
+            {isMobile && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 8 }}>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setPanelState("empty");
+                    setSelectedMessage(null);
+                  }}
+                  style={{ minHeight: 40, paddingLeft: 8, display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  <ArrowLeft size={18} />
+                  {folder === "sent" ? "Sent" : folder === "search" ? "Results" : "Inbox"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => openCompose(selectedMessage)}
+                  style={{ minHeight: 40, display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  <Reply size={16} />
+                  Reply
+                </Button>
+              </div>
+            )}
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "flex-start",
-                marginBottom: 24,
+                marginBottom: isMobile ? 16 : 24,
               }}
             >
               <h2
                 style={{
-                  fontSize: 22,
+                  fontSize: isMobile ? 20 : 22,
                   fontWeight: 700,
-                  color: "#1e293b",
+                  color: "hsl(var(--foreground))",
                   lineHeight: 1.3,
                   flex: 1,
-                  marginRight: 16,
+                  marginRight: isMobile ? 0 : 16,
+                  overflowWrap: "anywhere",
                 }}
               >
                 {selectedMessage.subject}
               </h2>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: isMobile ? "none" : "flex", gap: 8 }}>
                 <Button
                   variant="outline"
                   size="sm"
@@ -807,17 +938,18 @@ export default function MessagesPage() {
 
             <div
               style={{
-                background: "#f8fafc",
+                background: "hsl(var(--muted) / 0.6)",
                 borderRadius: 10,
-                padding: "16px 20px",
+                padding: isMobile ? "12px 14px" : "16px 20px",
                 marginBottom: 24,
                 fontSize: 14,
-                color: "#374151",
+                overflowWrap: "anywhere",
+                color: "hsl(var(--foreground) / 0.85)",
                 lineHeight: 1.7,
               }}
             >
               <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                <span style={{ color: "#9ca3af", width: 40 }}>From:</span>
+                <span style={{ color: "hsl(var(--muted-foreground))", width: 44, flexShrink: 0 }}>From:</span>
                 <span style={{ fontWeight: 500 }}>
                   {selectedMessage.from_name ?? selectedMessage.from_user_id}
                   {selectedMessage.from_email
@@ -826,7 +958,7 @@ export default function MessagesPage() {
                 </span>
               </div>
               <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                <span style={{ color: "#9ca3af", width: 40 }}>To:</span>
+                <span style={{ color: "hsl(var(--muted-foreground))", width: 44, flexShrink: 0 }}>To:</span>
                 <span style={{ fontWeight: 500 }}>
                   {selectedMessage.to_name ?? selectedMessage.to_user_id}
                   {selectedMessage.to_email
@@ -835,7 +967,7 @@ export default function MessagesPage() {
                 </span>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <span style={{ color: "#9ca3af", width: 40 }}>Date:</span>
+                <span style={{ color: "hsl(var(--muted-foreground))", width: 44, flexShrink: 0 }}>Date:</span>
                 <span>
                   {new Date(selectedMessage.created_at).toLocaleString()}
                 </span>
@@ -844,10 +976,12 @@ export default function MessagesPage() {
 
             <div
               style={{
-                fontSize: 15,
-                color: "#1e293b",
-                lineHeight: 1.8,
+                fontSize: isMobile ? 16 : 15,
+                color: "hsl(var(--foreground))",
+                lineHeight: 1.75,
                 whiteSpace: "pre-wrap",
+                overflowWrap: "anywhere",
+                maxWidth: "70ch",
               }}
             >
               {selectedMessage.body}
@@ -860,8 +994,8 @@ export default function MessagesPage() {
             style={{
               flex: 1,
               overflowY: "auto",
-              padding: "32px 40px",
-              background: "#fff",
+              padding: isMobile ? "12px 16px calc(24px + env(safe-area-inset-bottom))" : "32px 40px",
+              background: "hsl(var(--card))",
             }}
           >
             <div
@@ -869,11 +1003,11 @@ export default function MessagesPage() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                marginBottom: 24,
+                marginBottom: isMobile ? 16 : 24,
               }}
             >
               <h2
-                style={{ fontSize: 20, fontWeight: 700, color: "#1e293b" }}
+                style={{ fontSize: 20, fontWeight: 700, color: "hsl(var(--foreground))" }}
               >
                 {replyContext ? "Reply" : "New Message"}
               </h2>
@@ -893,16 +1027,16 @@ export default function MessagesPage() {
             {replyContext && (
               <div
                 style={{
-                  background: "#f8fafc",
-                  borderLeft: "3px solid #6366f1",
+                  background: "hsl(var(--muted) / 0.6)",
+                  borderLeft: "3px solid hsl(var(--primary))",
                   padding: "10px 16px",
                   marginBottom: 20,
                   borderRadius: "0 6px 6px 0",
                   fontSize: 13,
-                  color: "#6b7280",
+                  color: "hsl(var(--muted-foreground))",
                 }}
               >
-                <p style={{ fontWeight: 600, color: "#374151", marginBottom: 2 }}>
+                <p style={{ fontWeight: 600, color: "hsl(var(--foreground) / 0.85)", marginBottom: 2 }}>
                   Replying to: {replyContext.subject}
                 </p>
                 <p>
@@ -919,7 +1053,7 @@ export default function MessagesPage() {
                   style={{
                     fontSize: 13,
                     fontWeight: 500,
-                    color: "#374151",
+                    color: "hsl(var(--foreground) / 0.85)",
                     display: "block",
                     marginBottom: 6,
                   }}
@@ -945,8 +1079,8 @@ export default function MessagesPage() {
                       top: "100%",
                       left: 0,
                       right: 0,
-                      background: "#fff",
-                      border: "1px solid #e2e8f0",
+                      background: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
                       borderRadius: 8,
                       boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
                       zIndex: 100,
@@ -970,11 +1104,11 @@ export default function MessagesPage() {
                           textAlign: "left",
                           cursor: "pointer",
                           fontSize: 14,
-                          color: "#1e293b",
+                          color: "hsl(var(--foreground))",
                         }}
                         onMouseEnter={(e) => {
                           (e.currentTarget as HTMLElement).style.background =
-                            "#f8fafc";
+                            "hsl(var(--muted) / 0.6)";
                         }}
                         onMouseLeave={(e) => {
                           (e.currentTarget as HTMLElement).style.background =
@@ -984,7 +1118,7 @@ export default function MessagesPage() {
                         <AvatarCircle name={u.name} size={28} />
                         <div>
                           <div style={{ fontWeight: 500 }}>{u.name}</div>
-                          <div style={{ fontSize: 12, color: "#6b7280" }}>
+                          <div style={{ fontSize: 12, color: "hsl(var(--muted-foreground))" }}>
                             {u.internal_email}
                           </div>
                         </div>
@@ -999,11 +1133,11 @@ export default function MessagesPage() {
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 6,
-                      background: "#eef2ff",
+                      background: "hsl(var(--primary) / 0.1)",
                       borderRadius: 20,
                       padding: "4px 10px",
                       fontSize: 13,
-                      color: "#6366f1",
+                      color: "hsl(var(--primary))",
                       fontWeight: 500,
                     }}
                   >
@@ -1018,7 +1152,7 @@ export default function MessagesPage() {
                         background: "none",
                         border: "none",
                         cursor: "pointer",
-                        color: "#6366f1",
+                        color: "hsl(var(--primary))",
                         padding: 0,
                         lineHeight: 1,
                         fontSize: 16,
@@ -1036,7 +1170,7 @@ export default function MessagesPage() {
                   style={{
                     fontSize: 13,
                     fontWeight: 500,
-                    color: "#374151",
+                    color: "hsl(var(--foreground) / 0.85)",
                     display: "block",
                     marginBottom: 6,
                   }}
@@ -1056,7 +1190,7 @@ export default function MessagesPage() {
                   style={{
                     fontSize: 13,
                     fontWeight: 500,
-                    color: "#374151",
+                    color: "hsl(var(--foreground) / 0.85)",
                     display: "block",
                     marginBottom: 6,
                   }}
@@ -1067,7 +1201,7 @@ export default function MessagesPage() {
                   placeholder="Write your message..."
                   value={composeBody}
                   onChange={(e) => setComposeBody(e.target.value)}
-                  style={{ minHeight: 200, resize: "vertical" }}
+                  style={{ minHeight: isMobile ? 160 : 200, resize: "vertical", fontSize: isMobile ? 16 : undefined }}
                 />
               </div>
 
@@ -1077,8 +1211,11 @@ export default function MessagesPage() {
                   onClick={handleSend}
                   disabled={sending}
                   style={{
-                    background: "#6366f1",
-                    color: "#fff",
+                    flex: isMobile ? 1 : undefined,
+                    minHeight: isMobile ? 44 : undefined,
+                    justifyContent: "center",
+                    background: "hsl(var(--primary))",
+                    color: "hsl(var(--primary-foreground))",
                     fontWeight: 600,
                     display: "flex",
                     alignItems: "center",
@@ -1102,6 +1239,7 @@ export default function MessagesPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

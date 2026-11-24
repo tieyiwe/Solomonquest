@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useRoute, Link } from "wouter";
+import { useParams, Link } from "wouter";
 import { StudentLayout } from "@/components/layout/StudentLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +45,9 @@ interface Quiz {
   attempt_limit?: number;
   show_results_immediately?: boolean;
   release_scores_immediately?: boolean;
+  passing_score?: number | null;
+  /** Questions drawn at random from a question bank when an attempt starts. */
+  random_question_count?: number;
   questions: QuizQuestion[];
 }
 
@@ -70,6 +73,43 @@ interface SubmissionResult {
   question_results?: QuestionResult[];
 }
 
+// quiz_questions rows come back as stored by the quiz builder:
+// { question, type, options: [{ id, text }] } — this page was written
+// against question_text / question_type, so every question rendered with no
+// text and no answer inputs. Older rows may use the *_text/_type columns or
+// plain-string options; accept all of them.
+function normalizeQuestion(raw: Record<string, any>): QuizQuestion {
+  const options = Array.isArray(raw.options)
+    ? raw.options.map((o: any, i: number) =>
+        o && typeof o === "object"
+          ? { id: String(o.id ?? i), text: String(o.text ?? o.label ?? "") }
+          : { id: String(o), text: String(o) }
+      )
+    : undefined;
+  return {
+    id: raw.id,
+    question_text: raw.question_text ?? raw.question ?? "",
+    question_type: raw.question_type ?? raw.type ?? "short_answer",
+    options,
+    points: Number(raw.points ?? 1),
+    explanation: raw.explanation ?? undefined,
+  };
+}
+
+// PUT /quizzes/:id/attempts/:aid returns the graded attempt row (score =
+// percent, earned_points / total_points) plus the quiz's release settings
+// and question_results.
+function normalizeResult(raw: Record<string, any>): SubmissionResult {
+  return {
+    score: raw.earned_points ?? undefined,
+    max_score: raw.max_score ?? raw.total_points ?? undefined,
+    percentage: raw.percentage ?? (raw.score != null ? Math.round(Number(raw.score)) : undefined),
+    release_scores_immediately: raw.release_scores_immediately,
+    show_results_immediately: raw.show_results_immediately,
+    question_results: raw.question_results ?? [],
+  };
+}
+
 function TimerDisplay({ seconds }: { seconds: number }) {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
@@ -83,7 +123,7 @@ function TimerDisplay({ seconds }: { seconds: number }) {
         isDanger
           ? "bg-destructive/20 text-destructive animate-pulse"
           : isWarning
-          ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+          ? "bg-warning/10 text-warning  "
           : "bg-muted text-muted-foreground"
       )}
     >
@@ -110,10 +150,12 @@ function MultipleChoiceInput({
     <div className="space-y-3">
       {question.options?.map((opt) => {
         const isSelected = value === opt.id;
-        const isCorrect = opt.is_correct;
+        // The answer key is never sent with the questions; after submission
+        // it comes back per question as result.correct_answer (the option id).
+        const isCorrect = result?.correct_answer != null ? result.correct_answer === opt.id : false;
         let optStyle = "border-border hover:border-primary/60 hover:bg-muted/40";
         if (showResults && result) {
-          if (isCorrect) optStyle = "border-green-500 bg-green-50 dark:bg-green-900/20";
+          if (isCorrect) optStyle = "border-success bg-success/10 ";
           else if (isSelected && !isCorrect) optStyle = "border-destructive bg-destructive/10";
         } else if (isSelected) {
           optStyle = "border-primary bg-primary/5";
@@ -139,7 +181,7 @@ function MultipleChoiceInput({
             />
             <span className="text-sm flex-1">{opt.text}</span>
             {showResults && result && isCorrect && (
-              <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
             )}
             {showResults && result && isSelected && !isCorrect && (
               <XCircle className="h-4 w-4 text-destructive shrink-0" />
@@ -181,7 +223,7 @@ function TrueFalseInput({
               "flex-1 py-4 rounded-xl border-2 text-sm font-semibold transition-all",
               showResults
                 ? isCorrect
-                  ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                  ? "border-success bg-success/10 text-success  "
                   : isWrong
                   ? "border-destructive bg-destructive/10 text-destructive"
                   : "border-border text-muted-foreground"
@@ -199,8 +241,11 @@ function TrueFalseInput({
 }
 
 export default function StudentQuizTake() {
-  const [, params] = useRoute("/dashboard/student/quiz/:id");
-  const quizId = params?.id;
+  // Rendered for both /dashboard/student/quiz/:id and
+  // /dashboard/student/quizzes/:id — useRoute() on just the first pattern
+  // left quizId undefined on the second.
+  const params = useParams<{ id: string }>();
+  const quizId = params.id;
   const { session } = useAuth();
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -230,7 +275,7 @@ export default function StudentQuizTake() {
         ]);
         if (!quizRes.ok) throw new Error("Failed to load quiz");
         const quizData = await quizRes.json();
-        setQuiz(quizData);
+        setQuiz({ ...quizData, questions: (quizData.questions ?? []).map(normalizeQuestion) });
         if (attemptsRes.ok) {
           const attemptsData = await attemptsRes.json();
           setAttemptInfo(attemptsData);
@@ -259,7 +304,7 @@ export default function StudentQuizTake() {
         });
         if (!res.ok) throw new Error("Failed to submit quiz");
         const data = await res.json();
-        setResult(data);
+        setResult(normalizeResult(data));
         setSubmitted(true);
         toast.success("Quiz submitted successfully");
       } catch {
@@ -293,6 +338,11 @@ export default function StudentQuizTake() {
       if (!res.ok) throw new Error("Failed to start quiz");
       const data = await res.json();
       setAttemptId(data.id || data.attempt_id);
+      // The attempt carries its own question set (fixed questions plus any
+      // drawn at random from a question bank for this attempt only).
+      if (Array.isArray(data.questions)) {
+        setQuiz((prev) => (prev ? { ...prev, questions: data.questions.map(normalizeQuestion) } : prev));
+      }
       setStarted(true);
       if (quiz?.time_limit_minutes) {
         setTimeLeft(quiz.time_limit_minutes * 60);
@@ -313,7 +363,7 @@ export default function StudentQuizTake() {
       <StudentLayout>
         <div className="px-6 pt-4 pb-0">
           <Link href="/dashboard/student">
-            <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="h-4 w-4" />
               Back to Dashboard
             </button>
@@ -332,7 +382,7 @@ export default function StudentQuizTake() {
       <StudentLayout>
         <div className="px-6 pt-4 pb-0">
           <Link href="/dashboard/student">
-            <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="h-4 w-4" />
               Back to Dashboard
             </button>
@@ -361,13 +411,13 @@ export default function StudentQuizTake() {
       (result.score != null && result.max_score
         ? Math.round((result.score / result.max_score) * 100)
         : null);
-    const passed = percentage != null && percentage >= 70;
+    const passed = percentage != null && percentage >= (quiz?.passing_score ?? 70);
 
     return (
       <StudentLayout>
         <div className="px-6 pt-4 pb-0">
           <Link href="/dashboard/student">
-            <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="h-4 w-4" />
               Back to Dashboard
             </button>
@@ -380,16 +430,16 @@ export default function StudentQuizTake() {
                 "h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4",
                 showScore
                   ? passed
-                    ? "bg-green-100 dark:bg-green-900/30"
-                    : "bg-orange-100 dark:bg-orange-900/30"
+                    ? "bg-success/10 "
+                    : "bg-warning/10 "
                   : "bg-primary/10"
               )}
             >
               {showScore ? (
                 passed ? (
-                  <Award className="h-10 w-10 text-green-600" />
+                  <Award className="h-10 w-10 text-success" />
                 ) : (
-                  <AlertTriangle className="h-10 w-10 text-orange-500" />
+                  <AlertTriangle className="h-10 w-10 text-warning" />
                 )
               ) : (
                 <CheckCircle2 className="h-10 w-10 text-primary" />
@@ -411,8 +461,8 @@ export default function StudentQuizTake() {
                   className={cn(
                     "text-sm px-4 py-1",
                     passed
-                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                      : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                      ? "bg-success/10 text-success  "
+                      : "bg-warning/10 text-warning  "
                   )}
                 >
                   {passed ? "Passed" : "Needs Improvement"}
@@ -439,7 +489,7 @@ export default function StudentQuizTake() {
                     className={cn(
                       "border-l-4",
                       qResult?.is_correct === true
-                        ? "border-l-green-500"
+                        ? "border-l-success"
                         : qResult?.is_correct === false
                         ? "border-l-destructive"
                         : "border-l-muted"
@@ -457,7 +507,7 @@ export default function StudentQuizTake() {
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-xs text-muted-foreground">{q.points} pts</span>
                             {qResult?.is_correct === true && (
-                              <span className="text-xs text-green-600 font-medium flex items-center gap-0.5">
+                              <span className="text-xs text-success font-medium flex items-center gap-0.5">
                                 <CheckCircle2 className="h-3 w-3" /> Correct
                               </span>
                             )}
@@ -498,11 +548,11 @@ export default function StudentQuizTake() {
                             <p className="text-sm">{userAnswer || "(no answer)"}</p>
                           </div>
                           {qResult?.correct_answer && (
-                            <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
-                              <p className="text-xs text-green-700 dark:text-green-400 mb-1 font-medium">
+                            <div className="bg-success/10 rounded-lg p-3">
+                              <p className="text-xs text-success mb-1 font-medium">
                                 Correct answer:
                               </p>
-                              <p className="text-sm text-green-800 dark:text-green-300">
+                              <p className="text-sm text-success ">
                                 {qResult.correct_answer}
                               </p>
                             </div>
@@ -510,11 +560,11 @@ export default function StudentQuizTake() {
                         </div>
                       )}
                       {(qResult?.explanation || q.explanation) && (
-                        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 mt-2">
-                          <p className="text-xs text-blue-700 dark:text-blue-400 font-medium mb-1">
+                        <div className="bg-primary/10 rounded-lg p-3 mt-2">
+                          <p className="text-xs text-primary font-medium mb-1">
                             Explanation:
                           </p>
-                          <p className="text-sm text-blue-800 dark:text-blue-300">
+                          <p className="text-sm text-primary ">
                             {qResult?.explanation || q.explanation}
                           </p>
                         </div>
@@ -541,7 +591,7 @@ export default function StudentQuizTake() {
       <StudentLayout>
         <div className="px-6 pt-4 pb-0">
           <Link href="/dashboard/student">
-            <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="h-4 w-4" />
               Back to Dashboard
             </button>
@@ -572,7 +622,7 @@ export default function StudentQuizTake() {
               <div className="grid sm:grid-cols-3 gap-4">
                 <div className="bg-muted/40 rounded-xl p-4 text-center">
                   <p className="text-2xl font-bold text-foreground">
-                    {quiz.questions?.length ?? 0}
+                    {(quiz.questions?.length ?? 0) + (quiz.random_question_count ?? 0)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">Questions</p>
                 </div>
@@ -592,7 +642,7 @@ export default function StudentQuizTake() {
 
               {attemptInfo && attemptInfo.attempts_used > 0 && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">
-                  <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
+                  <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
                   You have used {attemptInfo.attempts_used} attempt
                   {attemptInfo.attempts_used !== 1 ? "s" : ""}.
                   {attemptInfo.remaining_attempts != null &&
@@ -601,7 +651,7 @@ export default function StudentQuizTake() {
               )}
 
               {quiz.time_limit_minutes && (
-                <div className="flex items-start gap-2 text-sm text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 rounded-lg px-4 py-3">
+                <div className="flex items-start gap-2 text-sm text-warning bg-warning/10 rounded-lg px-4 py-3">
                   <Clock className="h-4 w-4 shrink-0 mt-0.5" />
                   <p>
                     Once you start, the timer begins immediately and cannot be paused. Make sure you
@@ -645,7 +695,7 @@ export default function StudentQuizTake() {
     <StudentLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/student">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
@@ -689,7 +739,7 @@ export default function StudentQuizTake() {
                     idx === currentIndex
                       ? "bg-primary text-primary-foreground border-primary"
                       : answers[q.id]
-                      ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700"
+                      ? "bg-success/10 text-success border-success/30   "
                       : "bg-background border-border hover:bg-muted/50"
                   )}
                 >

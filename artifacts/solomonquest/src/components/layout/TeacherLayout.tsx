@@ -4,6 +4,7 @@ import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
+import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { AgentWidget } from "@/components/agent/AgentWidget";
 import { NotesWidget } from "@/components/notes/NotesWidget";
 import { StickyNotesLayer } from "@/components/notes/StickyNotesLayer";
@@ -13,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  HelpCircle,
   Bell,
   Menu,
   LogOut,
@@ -22,17 +24,22 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
-  GraduationCap,
   FolderOpen,
   X,
   BarChart2,
   CalendarCheck,
+  CalendarDays,
   AlarmClock,
+  MessageSquare,
+  AlertTriangle,
+  Library,
 } from "lucide-react";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useGetMySchool, useGetMyCourses } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
+import { navIconActive, navIconIdle, navItemActive, navItemBase, navItemIdle, navSectionLabel } from "@/components/layout/navStyles";
 
+import { SchoolLogoTile } from "@/components/brand/SchoolLogo";
 interface TeacherLayoutProps {
   children: React.ReactNode;
 }
@@ -54,14 +61,24 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
 
   const navLinks = [
     { href: "/dashboard/teacher", label: "Overview", icon: LayoutDashboard, exact: true },
+    { href: "/calendar", label: "Calendar", icon: CalendarDays, exact: false },
     { href: "/dashboard/teacher/assignments", label: "Assignments", icon: FileText, exact: false },
     { href: "/dashboard/teacher/gradebook", label: "Gradebook", icon: ClipboardList, exact: false },
     { href: "/dashboard/teacher/attendance", label: "Attendance", icon: CalendarCheck, exact: false },
     { href: "/dashboard/teacher/resources", label: "Resources", icon: FolderOpen, exact: false },
     { href: "/dashboard/teacher/analytics", label: "Analytics", icon: BarChart2, exact: false },
+    { href: "/dashboard/teacher/at-risk", label: "At-risk students", icon: AlertTriangle, exact: false },
     { href: "/dashboard/teacher/reminders", label: "Reminders", icon: AlarmClock, exact: false },
+    { href: "/dashboard/teacher/question-banks", label: "Question Banks", icon: Library, exact: false },
     { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
+    { href: "/help", label: "Help Center", icon: HelpCircle, exact: false },
   ];
+
+  // Only the 4 most-used destinations get their own bottom-nav tab — the
+  // rest live behind "More", which opens the same drawer as the hamburger.
+  const bottomNavPrimaryLinks = [navLinks[0], navLinks[1], navLinks[2], navLinks[7]];
+  const bottomNavPrimaryHrefs = new Set(bottomNavPrimaryLinks.map((l) => l.href));
+  const bottomNavOverflowLinks = navLinks.filter((l) => !bottomNavPrimaryHrefs.has(l.href));
 
   const isActive = (href: string, exact: boolean) => {
     if (exact) return location === href;
@@ -74,19 +91,17 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="p-5 border-b border-white/10 flex items-center gap-2 h-16">
-        <div className="h-7 w-7 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
-          <GraduationCap className="h-4 w-4 text-white" />
-        </div>
-        <Link href="/">
-          <span className="text-base font-bold text-white tracking-tight truncate">
+      <div className="px-4 border-b border-sidebar-border flex items-center gap-2.5 h-16">
+        <SchoolLogoTile school={school} />
+        <Link href="/" className="min-w-0">
+          <span className="block text-sm font-semibold text-sidebar-accent-foreground tracking-tight truncate">
             {school?.name || "SolomonQuest"}
           </span>
         </Link>
       </div>
 
       {/* Main Nav */}
-      <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+      <nav aria-label="Main navigation" className="flex-1 overflow-y-auto p-3 space-y-0.5">
         {navLinks.map((link) => {
           const Icon = link.icon;
           const active = isActive(link.href, link.exact);
@@ -94,17 +109,12 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
             <Button
               key={link.href}
               variant="ghost"
-              className={cn(
-                "w-full justify-start h-9 px-3 text-sm font-medium",
-                active
-                  ? "bg-white/15 text-white font-semibold border-l-2 border-white rounded-l-none"
-                  : "text-slate-300 hover:text-white hover:bg-white/8"
-              )}
+              className={cn(navItemBase, "justify-start h-auto", active ? navItemActive : navItemIdle)}
               asChild
               onClick={() => setIsMobileMenuOpen(false)}
             >
-              <Link href={link.href}>
-                <Icon className="mr-2.5 h-4 w-4 shrink-0" />
+              <Link href={link.href} aria-current={active ? "page" : undefined}>
+                <Icon className={active ? navIconActive : navIconIdle} aria-hidden="true" />
                 {link.label}
               </Link>
             </Button>
@@ -112,10 +122,11 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
         })}
 
         {/* My Courses Section */}
-        <div className="pt-3">
+        <div className="pt-2">
           <button
             onClick={() => setCoursesExpanded(!coursesExpanded)}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-white/40 hover:text-white/70 transition-colors"
+            aria-expanded={coursesExpanded}
+            className={cn(navSectionLabel, "w-full flex items-center justify-between rounded-md hover:text-sidebar-foreground/80 transition-colors")}
           >
             <span>My Courses</span>
             {coursesExpanded ? (
@@ -140,24 +151,19 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
                     <Button
                       key={course.id}
                       variant="ghost"
-                      className={cn(
-                        "w-full justify-start h-auto px-3 py-2 text-sm",
-                        active
-                          ? "bg-white/15 text-white font-semibold border-l-2 border-white rounded-l-none"
-                          : "text-slate-400 hover:text-white hover:bg-white/8"
-                      )}
+                      className={cn(navItemBase, "justify-start h-auto py-1.5", active ? navItemActive : navItemIdle)}
                       asChild
                       onClick={() => setIsMobileMenuOpen(false)}
                     >
                       <Link href={`/dashboard/teacher/courses/${course.id}`}>
                         <div className="flex items-center gap-2 w-full min-w-0">
-                          <div className="h-5 w-5 rounded bg-primary/20 flex items-center justify-center shrink-0">
-                            <BookOpen className="h-3 w-3 text-primary" />
+                          <div className="h-6 w-6 rounded-md bg-sidebar-primary/15 flex items-center justify-center shrink-0" aria-hidden="true">
+                            <BookOpen className="h-3.5 w-3.5 text-sidebar-primary" />
                           </div>
                           <div className="min-w-0 text-left">
                             <div className="text-xs font-medium truncate">{course.title}</div>
                             {course.code && (
-                              <div className="text-xs text-sidebar-foreground/50 truncate">
+                              <div className="text-[11px] text-sidebar-foreground/55 truncate font-normal">
                                 {course.code}
                               </div>
                             )}
@@ -168,7 +174,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
                   );
                 })
               ) : (
-                <div className="px-3 py-2 text-xs text-white/40">
+                <div className="px-3 py-2 text-xs text-sidebar-foreground/55">
                   No courses assigned
                 </div>
               )}
@@ -178,32 +184,32 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
       </nav>
 
       {/* User Footer */}
-      <div className="p-3 border-t border-white/10">
-        <div className="flex items-center gap-3 mb-3 px-2 py-2 rounded-lg">
-          <Avatar className="h-8 w-8 border border-white/20 shrink-0">
+      <div className="p-3 border-t border-sidebar-border">
+        <div className="flex items-center gap-3 mb-2 px-2 py-2 rounded-lg">
+          <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
             <AvatarImage src={user?.avatarUrl || ""} />
-            <AvatarFallback className="bg-white/20 text-white text-xs">
+            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold">
               {getInitials(user?.firstName, user?.lastName)}
             </AvatarFallback>
           </Avatar>
           <div className="flex flex-col overflow-hidden flex-1 min-w-0">
-            <span className="text-sm font-medium text-white truncate">
+            <span className="text-sm font-medium text-sidebar-accent-foreground truncate">
               {user?.firstName} {user?.lastName}
             </span>
-            <Badge variant="outline" className="w-fit text-xs py-0 border-white/30 text-white/60">
+            <Badge variant="outline" className="w-fit text-[11px] py-0 border-sidebar-border text-sidebar-foreground/70">
               Teacher
             </Badge>
           </div>
         </div>
         <Button
           variant="ghost"
-          className="w-full justify-start text-white/60 hover:text-red-400 hover:bg-red-500/10 h-9 text-sm"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/15 h-9 text-sm"
           onClick={signOut}
         >
           <LogOut className="mr-2.5 h-4 w-4" />
           Sign Out
         </Button>
-        <p className="text-center text-[10px] text-muted-foreground/50 tracking-widest uppercase mt-2">Powered by TIBLOGICS</p>
+        <p className="text-center text-[8px] text-sidebar-foreground/40 tracking-[0.2em] uppercase mt-2">Powered by TIBLOGICS</p>
       </div>
     </div>
   );
@@ -211,23 +217,24 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
   return (
     <div className="min-h-screen bg-background flex">
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-64 flex-col border-r bg-slate-900 h-screen sticky top-0 shrink-0">
+      <aside className="hidden md:flex w-64 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground h-screen sticky top-0 shrink-0">
         <SidebarContent />
       </aside>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
-        <header className="h-16 border-b bg-card flex items-center justify-between px-4 sticky top-0 z-10">
-          <div className="flex items-center gap-3">
+        <header className="h-16 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 flex items-center justify-between gap-3 px-4 md:px-6 sticky top-0 z-20">
+          <div className="flex items-center gap-3 min-w-0">
             {/* Mobile Menu Trigger */}
             <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden shrink-0">
+                <Button variant="ghost" size="icon" className="md:hidden shrink-0" aria-label="Open navigation menu">
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0 bg-slate-900 border-slate-700">
+              <SheetContent side="left" className="w-[min(18rem,85vw)] p-0 gap-0 bg-sidebar text-sidebar-foreground border-sidebar-border [&>button]:text-sidebar-foreground">
+                <SheetTitle className="sr-only">Navigation</SheetTitle>
                 <SidebarContent />
               </SheetContent>
             </Sheet>
@@ -235,13 +242,15 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
             <span className="font-semibold text-foreground hidden md:block">
               Teacher Dashboard
             </span>
-            <span className="font-bold text-primary md:hidden">
-              {school?.name || "SolomonQuest"}
+            <span className="md:hidden flex items-center gap-2 min-w-0 font-semibold text-foreground">
+              <SchoolLogoTile school={school} className="h-7 w-7" />
+              <span className="truncate">{school?.name || "SolomonQuest"}</span>
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="rounded-full relative">
+            <GlobalSearch />
+            <Button variant="ghost" size="icon" className="rounded-full relative" aria-label="Notifications">
               <Bell className="h-5 w-5 text-muted-foreground" />
             </Button>
             <ProfileMenu />
@@ -249,13 +258,18 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto bg-background has-bottom-nav md:pb-6">
+        <main className="flex-1 px-4 py-5 md:p-6 lg:p-8 overflow-y-auto bg-background has-bottom-nav md:pb-8">
           {children}
         </main>
       </div>
 
       {/* Mobile Bottom Nav */}
-      <BottomNav links={navLinks} />
+      <BottomNav
+        links={bottomNavPrimaryLinks}
+        moreCount={bottomNavOverflowLinks.length}
+        onMoreClick={() => setIsMobileMenuOpen(true)}
+        moreActive={bottomNavOverflowLinks.some((l) => isActive(l.href, l.exact))}
+      />
 
       <HelpButton onClick={() => setHelpOpen(true)} />
       <AgentWidget />

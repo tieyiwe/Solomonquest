@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useState } from "react";
+import { Link, useParams } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import {
   useGetMyCourses,
@@ -74,6 +74,13 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { ExtensionsPanel } from "@/components/assignments/ExtensionsPanel";
+
+interface RubricCriterionForm {
+  id: string;
+  name: string;
+  maxPoints: string;
+}
 
 interface AssignmentFormData {
   title: string;
@@ -85,6 +92,13 @@ interface AssignmentFormData {
   assignment_type: "standard" | "video";
   video_url: string;
   require_full_watch: boolean;
+  /** Video length as typed/shown ("m:ss", "h:mm:ss" or seconds); "" = unknown. */
+  video_duration: string;
+  rubric: RubricCriterionForm[];
+  allow_late_submissions: boolean;
+  late_penalty_per_day: string;
+  late_penalty_max: string;
+  late_cutoff_at: string;
 }
 
 const emptyForm: AssignmentFormData = {
@@ -97,9 +111,88 @@ const emptyForm: AssignmentFormData = {
   assignment_type: "standard",
   video_url: "",
   require_full_watch: true,
+  video_duration: "",
+  rubric: [],
+  allow_late_submissions: true,
+  late_penalty_per_day: "0",
+  late_penalty_max: "100",
+  late_cutoff_at: "",
 };
 
+/** ISO -> local "yyyy-MM-ddTHH:mm" for datetime-local inputs. */
+function isoToLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : format(d, "yyyy-MM-dd'T'HH:mm");
+}
+
+const MAX_VIDEO_SECONDS = 12 * 60 * 60;
+
+/** 75.4 → "1:15", 3725 → "1:02:05". */
+function formatVideoDuration(totalSeconds: number): string {
+  const t = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = t % 60;
+  const ss = String(sec).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}
+
+/** "1:15" / "1:02:05" / "75" / "75.4" → seconds; "" → null; anything else → NaN. */
+function parseVideoDuration(text: string): number | null {
+  const v = text.trim();
+  if (!v) return null;
+  if (/^\d+(\.\d+)?$/.test(v)) return Number(v);
+  const parts = v.split(":");
+  if (parts.length < 2 || parts.length > 3 || parts.some((p) => !/^\d+(\.\d+)?$/.test(p))) return NaN;
+  return parts.map(Number).reduce((acc, n) => acc * 60 + n, 0);
+}
+
+/**
+ * Reads the video's real length in a hidden <video preload="metadata">, so
+ * the server can check students' watch progress against it instead of the
+ * length their own browser reports. Hosted pages (YouTube, Vimeo) and files
+ * the browser can't open fail here; the teacher then types the length.
+ */
+function useVideoMetadataDuration(url: string) {
+  const [src, setSrc] = useState("");
+  const [state, setState] = useState<{ status: "idle" | "loading" | "ok" | "error"; seconds: number | null; for: string }>({
+    status: "idle",
+    seconds: null,
+    for: "",
+  });
+  // Wait until the teacher stops typing before loading anything.
+  useEffect(() => {
+    const u = url.trim();
+    const t = setTimeout(() => setSrc(/^https?:\/\/\S+$/i.test(u) ? u : ""), 500);
+    return () => clearTimeout(t);
+  }, [url]);
+  useEffect(() => {
+    setState({ status: src ? "loading" : "idle", seconds: null, for: src });
+  }, [src]);
+  const probe = src ? (
+    <video
+      key={src}
+      src={src}
+      preload="metadata"
+      muted
+      playsInline
+      aria-hidden="true"
+      className="hidden"
+      data-testid="video-duration-probe"
+      onLoadedMetadata={(e) => {
+        const d = e.currentTarget.duration;
+        if (Number.isFinite(d) && d > 0 && d <= MAX_VIDEO_SECONDS) setState({ status: "ok", seconds: d, for: src });
+        else setState({ status: "error", seconds: null, for: src });
+      }}
+      onError={() => setState({ status: "error", seconds: null, for: src })}
+    />
+  ) : null;
+  return { ...state, probe };
+}
+
 function toFormData(a: Assignment & { instructions?: string | null; fileUrl?: string | null }): AssignmentFormData {
+  const rubric = (a as any).rubric as { id: string; name: string; maxPoints: number }[] | null;
   return {
     title: a.title ?? "",
     description: a.description ?? "",
@@ -110,6 +203,12 @@ function toFormData(a: Assignment & { instructions?: string | null; fileUrl?: st
     assignment_type: (a as any).assignmentType ?? "standard",
     video_url: (a as any).videoUrl ?? "",
     require_full_watch: (a as any).requireFullWatch ?? true,
+    video_duration: (a as any).videoDurationSeconds ? formatVideoDuration((a as any).videoDurationSeconds) : "",
+    rubric: (rubric ?? []).map((c) => ({ id: c.id, name: c.name, maxPoints: String(c.maxPoints) })),
+    allow_late_submissions: (a as any).allowLateSubmissions !== false,
+    late_penalty_per_day: String((a as any).latePenaltyPerDay ?? 0),
+    late_penalty_max: String((a as any).latePenaltyMax ?? 100),
+    late_cutoff_at: isoToLocalInput((a as any).lateCutoffAt),
   };
 }
 
@@ -117,14 +216,16 @@ function SubmissionsPanel({
   assignmentId,
   assignmentTitle,
   pointsPossible,
+  dueDate,
   onClose,
 }: {
   assignmentId: string;
   assignmentTitle: string;
   pointsPossible?: number | null;
+  dueDate?: string | null;
   onClose: () => void;
 }) {
-  const { data: submissions, isLoading } = useListSubmissions(assignmentId, {
+  const { data: submissions, isLoading, refetch } = useListSubmissions(assignmentId, {
     query: { enabled: !!assignmentId },
   });
   const gradeSubmission = useGradeSubmission();
@@ -133,7 +234,10 @@ function SubmissionsPanel({
     gradeSubmission.mutate(
       { id: submissionId, data: { grade } },
       {
-        onSuccess: () => toast.success("Grade saved"),
+        onSuccess: () => {
+          toast.success("Grade saved");
+          refetch();
+        },
         onError: () => toast.error("Failed to save grade"),
       }
     );
@@ -160,6 +264,7 @@ function SubmissionsPanel({
             ))}
           </div>
         ) : submissions && submissions.length > 0 ? (
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -176,7 +281,8 @@ function SubmissionsPanel({
                     {sub.studentName || sub.studentId}
                   </TableCell>
                   <TableCell className="py-2">
-                    {(sub as any).fileUrl ? (
+                    {/* A file submission can also carry a note — show both. */}
+                    {(sub as any).fileUrl && (
                       <a
                         href={(sub as any).fileUrl}
                         target="_blank"
@@ -184,35 +290,54 @@ function SubmissionsPanel({
                         className="text-xs text-primary flex items-center gap-1 hover:underline"
                       >
                         <ExternalLink className="h-3 w-3" />
-                        Download
+                        {(sub as any).fileName || "Download"}
                       </a>
-                    ) : sub.content ? (
+                    )}
+                    {sub.content ? (
                       <span className="text-xs text-muted-foreground line-clamp-2 max-w-[180px]">
                         {sub.content}
                       </span>
-                    ) : (
+                    ) : !(sub as any).fileUrl ? (
                       <span className="text-xs text-muted-foreground">—</span>
-                    )}
+                    ) : null}
                   </TableCell>
                   <TableCell className="py-2">
-                    <Badge
-                      variant={
-                        sub.status === "graded"
-                          ? "default"
-                          : sub.status === "submitted"
-                          ? "secondary"
-                          : "outline"
-                      }
-                      className="text-xs capitalize"
-                    >
-                      {sub.status}
-                    </Badge>
+                    <div className="flex flex-col items-start gap-1">
+                      <Badge
+                        variant={
+                          sub.status === "graded"
+                            ? "default"
+                            : sub.status === "submitted"
+                            ? "secondary"
+                            : "outline"
+                        }
+                        className="text-xs capitalize"
+                      >
+                        {sub.status}
+                      </Badge>
+                      {(sub as any).submittedLate && (
+                        <Badge variant="outline" className="text-[11px] border-warning/50 text-warning">
+                          Late {(sub as any).daysLate ? `${(sub as any).daysLate}d` : ""}
+                          {(sub as any).latePenaltyPercent > 0 ? ` · −${(sub as any).latePenaltyPercent}%` : ""}
+                        </Badge>
+                      )}
+                      {(sub as any).extension && (
+                        <span className="text-[11px] text-muted-foreground">
+                          Ext. to {format(new Date((sub as any).extension.extendedDueAt), "MMM d")}
+                          {(sub as any).extension.waivePenalty ? " (waived)" : ""}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="py-2">
                     <div className="flex items-center gap-1">
                       <Input
                         type="number"
-                        defaultValue={sub.grade ?? ""}
+                        aria-label={`Score for ${sub.studentName || "student"} before late penalty`}
+                        // The raw (pre-penalty) score — grade has any late
+                        // penalty applied already; re-saving it would
+                        // apply the penalty twice.
+                        defaultValue={(sub as any).rawGrade ?? sub.grade ?? ""}
                         className="h-7 w-16 text-xs"
                         onBlur={(e) => {
                           if (e.target.value !== "") {
@@ -225,17 +350,24 @@ function SubmissionsPanel({
                         /{pointsPossible ?? "?"}
                       </span>
                     </div>
+                    {(sub as any).latePenaltyPercent > 0 && sub.grade != null && (
+                      <p className="text-[11px] text-warning mt-0.5">Counts as {sub.grade}</p>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          </div>
         ) : (
           <div className="text-center py-6">
             <Clock className="h-7 w-7 mx-auto text-muted-foreground/50 mb-2" />
             <p className="text-xs text-muted-foreground">No submissions yet.</p>
           </div>
         )}
+        <div className="mt-4">
+          <ExtensionsPanel assignmentId={assignmentId} dueDate={dueDate} onChanged={() => refetch()} />
+        </div>
       </CardContent>
     </Card>
   );
@@ -288,6 +420,35 @@ function AssignmentFormDialog({
       toast.error("Video URL is required for video assignments");
       return;
     }
+    const videoDuration = isVideo ? parseVideoDuration(form.video_duration) : null;
+    if (isVideo && videoDuration !== null && (!Number.isFinite(videoDuration) || videoDuration <= 0 || videoDuration > MAX_VIDEO_SECONDS)) {
+      toast.error("Enter the video length as minutes:seconds (e.g. 12:30), up to 12 hours");
+      return;
+    }
+
+    const perDay = Number(form.late_penalty_per_day || 0);
+    const maxPenalty = Number(form.late_penalty_max || 100);
+    if (!Number.isFinite(perDay) || perDay < 0 || perDay > 100 || !Number.isFinite(maxPenalty) || maxPenalty < 0 || maxPenalty > 100) {
+      toast.error("Late penalties must be between 0 and 100%");
+      return;
+    }
+    if (form.late_cutoff_at && isNaN(Date.parse(form.late_cutoff_at))) {
+      toast.error("Please enter a valid cutoff date");
+      return;
+    }
+    if (form.late_cutoff_at && form.due_date && Date.parse(form.late_cutoff_at) < Date.parse(form.due_date)) {
+      toast.error("The cutoff must be after the due date");
+      return;
+    }
+
+    const rubricRows = form.rubric.filter((c) => c.name.trim());
+    for (const c of rubricRows) {
+      const max = Number(c.maxPoints);
+      if (!c.name.trim() || !Number.isFinite(max) || max <= 0) {
+        toast.error(`Rubric criterion "${c.name || "(unnamed)"}" needs a name and a positive point value`);
+        return;
+      }
+    }
 
     const payload = {
       course_id: courseId,
@@ -300,6 +461,13 @@ function AssignmentFormDialog({
       assignment_type: form.assignment_type,
       video_url: isVideo ? form.video_url.trim() : undefined,
       require_full_watch: isVideo ? form.require_full_watch : undefined,
+      // The real length, checked by the server on every watch-progress report.
+      videoDurationSeconds: isVideo ? videoDuration : undefined,
+      rubric: rubricRows.length > 0 ? rubricRows.map((c) => ({ id: c.id, name: c.name.trim(), maxPoints: Number(c.maxPoints) })) : undefined,
+      allow_late_submissions: form.allow_late_submissions,
+      late_penalty_per_day: form.allow_late_submissions ? perDay : 0,
+      late_penalty_max: maxPenalty,
+      late_cutoff_at: form.late_cutoff_at ? new Date(form.late_cutoff_at).toISOString() : null,
     };
 
     if (isEditing && editAssignment) {
@@ -350,6 +518,22 @@ function AssignmentFormDialog({
   const set = (key: keyof AssignmentFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
 
+  const meta = useVideoMetadataDuration(open && form.assignment_type === "video" ? form.video_url : "");
+  // A length read from the file itself always wins over a typed one. A length
+  // filled in automatically for a previous link is cleared if the new link
+  // can't be read, so it never sticks to the wrong video.
+  const [autoFilledFor, setAutoFilledFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (meta.status === "ok" && meta.seconds) {
+      const text = formatVideoDuration(meta.seconds);
+      setForm((f) => (f.video_duration === text ? f : { ...f, video_duration: text }));
+      setAutoFilledFor(meta.for);
+    } else if (meta.status === "error" && autoFilledFor && autoFilledFor !== meta.for) {
+      setForm((f) => ({ ...f, video_duration: "" }));
+      setAutoFilledFor(null);
+    }
+  }, [meta.status, meta.seconds, meta.for]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -395,9 +579,32 @@ function AssignmentFormDialog({
                   Use a direct video file URL (e.g. from Supabase Storage). Skip-prevention works best with direct .mp4 links.
                 </p>
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="video_duration">Video length</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="video_duration"
+                    inputMode="numeric"
+                    placeholder="m:ss"
+                    className="w-32"
+                    value={form.video_duration}
+                    onChange={set("video_duration")}
+                    aria-describedby="video_duration_help"
+                  />
+                  {meta.status === "loading" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Reading video length" />}
+                </div>
+                <p id="video_duration_help" className="text-xs text-muted-foreground" aria-live="polite">
+                  {meta.status === "ok"
+                    ? "Read from the video file. Students' progress is checked against this length."
+                    : meta.status === "error"
+                    ? "Couldn't read the length from this link (hosted pages and some files block it). Type it in, e.g. 12:30."
+                    : "Filled in automatically from the video file. Students' progress is checked against this length."}
+                </p>
+                {meta.probe}
+              </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Lock className="h-4 w-4 text-orange-500" />
+                  <Lock className="h-4 w-4 text-warning" />
                   <div>
                     <p className="text-sm font-medium">Require full watch</p>
                     <p className="text-xs text-muted-foreground">Students cannot skip ahead or proceed until the video ends</p>
@@ -460,7 +667,7 @@ function AssignmentFormDialog({
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="due_date">Due Date</Label>
               <Input
@@ -480,6 +687,131 @@ function AssignmentFormDialog({
                 onChange={set("points")}
               />
             </div>
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-dashed p-4" data-testid="late-policy">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Accept late submissions</p>
+                <p className="text-xs text-muted-foreground">
+                  Off: nothing can be handed in after the due date (unless you grant an extension).
+                </p>
+              </div>
+              <Switch
+                aria-label="Accept late submissions"
+                checked={form.allow_late_submissions}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, allow_late_submissions: v }))}
+              />
+            </div>
+            {form.allow_late_submissions && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="late_penalty_per_day">Penalty per day late (%)</Label>
+                  <Input
+                    id="late_penalty_per_day"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={form.late_penalty_per_day}
+                    onChange={set("late_penalty_per_day")}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="late_penalty_max">Maximum penalty (%)</Label>
+                  <Input
+                    id="late_penalty_max"
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={form.late_penalty_max}
+                    onChange={set("late_penalty_max")}
+                  />
+                </div>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="late_cutoff_at">Hard cutoff (optional)</Label>
+              <Input
+                id="late_cutoff_at"
+                type="datetime-local"
+                value={form.late_cutoff_at}
+                onChange={set("late_cutoff_at")}
+              />
+              <p className="text-xs text-muted-foreground">
+                Submissions are refused after this time. A student's extension past the cutoff still lets them submit.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Rubric (optional)</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    rubric: [...f.rubric, { id: crypto.randomUUID(), name: "", maxPoints: "10" }],
+                  }))
+                }
+              >
+                <Plus className="mr-1 h-3 w-3" />
+                Add Criterion
+              </Button>
+            </div>
+            {form.rubric.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No rubric — this assignment grades with a single point value.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {form.rubric.map((c, i) => (
+                  <div key={c.id} className="flex items-center gap-2">
+                    <Input
+                      placeholder="Criterion name (e.g. Thesis)"
+                      value={c.name}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          rubric: f.rubric.map((r, ri) => (ri === i ? { ...r, name: e.target.value } : r)),
+                        }))
+                      }
+                      className="flex-1"
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      placeholder="Pts"
+                      value={c.maxPoints}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          rubric: f.rubric.map((r, ri) => (ri === i ? { ...r, maxPoints: e.target.value } : r)),
+                        }))
+                      }
+                      className="w-20"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => setForm((f) => ({ ...f, rubric: f.rubric.filter((_, ri) => ri !== i) }))}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">
+                  Total: {form.rubric.reduce((sum, c) => sum + (Number(c.maxPoints) || 0), 0)} points across{" "}
+                  {form.rubric.length} criteria — grading will score each one and sum them.
+                </p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -550,7 +882,7 @@ function CourseAssignmentsPanel({
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="font-medium text-sm">{assignment.title}</h4>
                       {(assignment as any).assignmentType === "video" && (
-                        <Badge variant="outline" className="text-xs gap-1 border-blue-200 text-blue-600">
+                        <Badge variant="outline" className="text-xs gap-1 border-primary/30 text-primary">
                           <Video className="h-2.5 w-2.5" />
                           Video
                           {(assignment as any).requireFullWatch && <Lock className="h-2.5 w-2.5 ml-0.5" />}
@@ -570,6 +902,17 @@ function CourseAssignmentsPanel({
                         </span>
                       )}
                       <span>{assignment.pointsPossible ?? 0} pts</span>
+                      {(assignment as any).allowLateSubmissions === false ? (
+                        <span>No late work</span>
+                      ) : (assignment as any).latePenaltyPerDay > 0 ? (
+                        <span>
+                          Late: −{(assignment as any).latePenaltyPerDay}%/day
+                          {(assignment as any).latePenaltyMax < 100 ? ` (max ${(assignment as any).latePenaltyMax}%)` : ""}
+                        </span>
+                      ) : null}
+                      {(assignment as any).lateCutoffAt && (
+                        <span>Cutoff {format(new Date((assignment as any).lateCutoffAt), "MMM d, h:mm a")}</span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 flex-wrap">
@@ -617,6 +960,7 @@ function CourseAssignmentsPanel({
             assignmentId={viewSubmissionsFor}
             assignmentTitle={viewingAssignment.title}
             pointsPossible={viewingAssignment.pointsPossible}
+            dueDate={viewingAssignment.dueDate}
             onClose={() => setViewSubmissionsFor(null)}
           />
         )}
@@ -627,7 +971,11 @@ function CourseAssignmentsPanel({
 
 export default function TeacherAssignments() {
   const queryClient = useQueryClient();
-  const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  // Also mounted at /dashboard/teacher/courses/:id/assignments (the course
+  // page's "Assignments" link) — start filtered to that course instead of
+  // ignoring the id and showing every course.
+  const params = useParams<{ id?: string }>();
+  const [selectedCourseId, setSelectedCourseId] = useState<string>(params.id ?? "");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editAssignment, setEditAssignment] = useState<Assignment | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Assignment | null>(null);
@@ -677,7 +1025,7 @@ export default function TeacherAssignments() {
     <TeacherLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/teacher">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
@@ -740,8 +1088,8 @@ export default function TeacherAssignments() {
             </Card>
             <Card className="p-4">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                  <FileText className="h-4 w-4 text-blue-600" />
+                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <FileText className="h-4 w-4 text-primary" />
                 </div>
                 <div>
                   <div className="text-2xl font-bold">—</div>
@@ -751,8 +1099,8 @@ export default function TeacherAssignments() {
             </Card>
             <Card className="p-4 col-span-2 sm:col-span-1">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                  <Users className="h-4 w-4 text-amber-600" />
+                <div className="h-9 w-9 rounded-lg bg-warning/10 flex items-center justify-center">
+                  <Users className="h-4 w-4 text-warning" />
                 </div>
                 <div>
                   <div className="text-2xl font-bold">—</div>

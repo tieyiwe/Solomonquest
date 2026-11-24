@@ -10,6 +10,9 @@ export interface HelpArticle {
   summary: string;
   steps: HelpStep[];
   troubleshoot?: { problem: string; solution: string }[];
+  /** A real, annotated screenshot of this flow — path under /help/. */
+  image?: string;
+  imageAlt?: string;
 }
 
 export interface HelpCategory {
@@ -60,6 +63,24 @@ export const adminHelp: HelpCategory[] = [
           { problem: "Slug field is greyed out", solution: "Only the school owner (the account that created the school) can change the slug." },
         ],
       },
+      {
+        id: "custom-domain",
+        title: "Connect your own domain",
+        icon: "🌐",
+        summary: "Use your own domain (e.g. school.edu) for your public page instead of the shared SolomonQuest URL.",
+        steps: [
+          { text: "Go to Settings → Branding, then open the Custom Domain tab." },
+          { text: "Enter your domain (e.g. school.edu) and click Connect Domain." },
+          { text: "Two DNS records appear — a CNAME and a TXT record." },
+          { text: "Log in to wherever you manage DNS for your domain (GoDaddy, Namecheap, Cloudflare, Google Domains, etc.) and add both records exactly as shown." },
+          { text: "DNS changes can take a few minutes to a few hours to take effect." },
+          { text: "Come back and click Verify DNS Records. Once both records are found, your domain goes live automatically." },
+        ],
+        troubleshoot: [
+          { problem: "Verification keeps failing", solution: "Double-check the TXT record's host and value were copied exactly — a common mistake is leaving out the leading underscore, or your registrar auto-appending your domain a second time." },
+          { problem: "It's been a day and it still won't verify", solution: "Some registrars take longer to propagate DNS changes. You can check propagation with any public 'DNS lookup' tool by searching your domain's TXT records." },
+        ],
+      },
     ],
   },
   {
@@ -69,19 +90,23 @@ export const adminHelp: HelpCategory[] = [
     articles: [
       {
         id: "invite-teacher",
-        title: "Invite a teacher or staff member",
+        title: "Invite a teacher, staff member, or transferring student",
         icon: "✉️",
-        summary: "Send an email invitation so teachers and staff can create their account.",
+        summary: "Send an email invitation so teachers, staff, or already-enrolled-elsewhere students can create their account directly.",
+        image: "/help/admin-users-invite-dialog.png",
+        imageAlt: "The Invite Teacher dialog open over the Users list, with the search field highlighted",
         steps: [
           { text: "Go to Users in the left sidebar." },
-          { text: "Click the Invite button (top right)." },
-          { text: "Enter the person's email address and select their role (Teacher or Staff)." },
-          { text: "Click Send Invitation. They receive an email with an Accept button.", detail: "The link expires after 7 days. You can resend from the Invitations tab." },
-          { text: "Once they accept, their account appears in the Users list." },
+          { text: "Pick the Teachers, Students, or Staff tab, then click the Invite button." },
+          { text: "Enter the person's email address.", detail: "For a student, you must also pick a Program — this is required so accepting the invite immediately enrolls them in that program's courses." },
+          { text: "Click Send Invitation. They receive an email with an Accept button.", detail: "The link expires after 7 days." },
+          { text: "Once they accept, their account appears in the Users list under the matching role." },
         ],
         troubleshoot: [
           { problem: "Invitation email not received", solution: "Ask the recipient to check their spam folder. You can also resend the invitation from Users → Invitations tab." },
           { problem: "Teacher can't see their courses after accepting", solution: "Go to Courses and verify the teacher is assigned to the course." },
+          { problem: "New invitation isn't showing up in the Invitations tab yet", solution: "The list refreshes when you open the Invitations tab — switch to another tab and back, or reload the page." },
+          { problem: "A student was invited before Program became required and has no courses", solution: "Go to Users → Students, find them, and click Add to Program on their row — this enrolls them in every course in the program you pick, same as if they'd been invited with one." },
         ],
       },
       {
@@ -89,6 +114,8 @@ export const adminHelp: HelpCategory[] = [
         title: "View and manage students",
         icon: "🎓",
         summary: "See all enrolled students, view their profiles, and update their details.",
+        image: "/help/admin-users-list.png",
+        imageAlt: "The Students tab of the Users list with the search bar highlighted",
         steps: [
           { text: "Go to Users → Students tab." },
           { text: "Use the search bar to find a student by name or ID." },
@@ -108,6 +135,8 @@ export const adminHelp: HelpCategory[] = [
         title: "Create a new course",
         icon: "➕",
         summary: "Set up a course, assign a teacher, and enroll students.",
+        image: "/help/admin-courses-new.png",
+        imageAlt: "The New Course form with the course name field highlighted",
         steps: [
           { text: "Go to Courses → New Course." },
           { text: "Fill in the course name, description, and subject." },
@@ -129,6 +158,8 @@ export const adminHelp: HelpCategory[] = [
         title: "Review and approve applications",
         icon: "✅",
         summary: "Process applications from prospective students.",
+        image: "/help/admin-admissions-list.png",
+        imageAlt: "The Admissions list with an applicant row highlighted",
         steps: [
           { text: "Go to Admissions in the sidebar." },
           { text: "Applications are listed with status: Pending, Approved, or Rejected." },
@@ -138,6 +169,90 @@ export const adminHelp: HelpCategory[] = [
         ],
         troubleshoot: [
           { problem: "Approved student can't log in", solution: "The student needs to complete registration first. Check if they received the approval email and clicked the setup link." },
+        ],
+      },
+      {
+        id: "set-tuition",
+        title: "Set tuition for a course or program",
+        icon: "💵",
+        summary: "Set a tuition amount per course or per program, and choose which payment options students can use.",
+        steps: [
+          { text: "Open the course (Courses -> edit) or program (Programs -> edit) you want to set tuition for." },
+          { text: "Scroll to the Tuition section at the bottom of the edit form." },
+          { text: "Enter the tuition amount." },
+          { text: "Turn on Allow Full Payment, Allow Installments, or both — students choose between whichever you enable." },
+          { text: "If installments are on, set how many installments to split the total into." },
+          { text: "Click Save Tuition." },
+        ],
+        troubleshoot: [
+          { problem: "Students aren't being asked to pay", solution: "Tuition + payment is currently informational only while it's being tested — it's not yet a requirement to submit an application or complete enrollment. That gate will be turned on later." },
+        ],
+      },
+    ],
+  },
+  {
+    id: "programs",
+    title: "Programs",
+    icon: "🎓",
+    articles: [
+      {
+        id: "create-program",
+        title: "Group courses into a program",
+        icon: "🗂️",
+        summary: "Create a program and assign courses to it so enrollment and chat work across the whole program.",
+        steps: [
+          { text: "Go to Programs in the sidebar and click Create Program." },
+          { text: "Give it a name, code, and level, then save." },
+          { text: "Go to Courses and open a course's edit form." },
+          { text: "Pick the program from the Program dropdown and save." },
+          { text: "Repeat for every course that belongs to the same program." },
+        ],
+        troubleshoot: [
+          { problem: "A student is only enrolled in one course, not the whole program", solution: "Program-wide auto-enrollment triggers the next time they're enrolled in any course of that program — re-approve their application or re-run the enroll action if the course was added to the program after they already enrolled." },
+        ],
+      },
+      {
+        id: "program-chat",
+        title: "How program-wide chat works",
+        icon: "💬",
+        summary: "Every student enrolled anywhere in a program automatically shares one chat channel.",
+        steps: [
+          { text: "The first time a student is enrolled in any course of a program, a shared chat channel for that program is created automatically." },
+          { text: "Every other student enrolled in any course of that program is added to the same channel." },
+          { text: "Students can find it in Chat alongside their other channels and DMs." },
+        ],
+      },
+    ],
+  },
+  {
+    id: "ai-and-productivity",
+    title: "AI Assistant & Notes",
+    icon: "🤖",
+    articles: [
+      {
+        id: "solomon-agent",
+        title: "Chat with Solomon, your AI assistant",
+        icon: "✨",
+        summary: "Solomon can answer questions and take actions in the platform on your behalf.",
+        steps: [
+          { text: "Look for the floating chat button in the bottom corner of any admin/teacher dashboard page." },
+          { text: "Click it to open Solomon and type your question or request." },
+          { text: "Solomon can look up information and, for some requests, take an action directly (like drafting a broadcast message)." },
+        ],
+        troubleshoot: [
+          { problem: "The assistant isn't responding", solution: "The AI assistant requires an API key to be configured by your platform administrator. Contact support if it stays unavailable." },
+        ],
+      },
+      {
+        id: "notes",
+        title: "Take notes and share them",
+        icon: "🗒️",
+        summary: "Keep private notes, turn them into on-screen sticky notes, or share one with a colleague.",
+        steps: [
+          { text: "Click the notes icon (next to the AI assistant button) to open your notes list." },
+          { text: "Click New Note to create one, or click an existing note to edit it." },
+          { text: "Toggle Sticky Mode to pin a note as a small floating window on your screen." },
+          { text: "Click Share on a note to give another user view or edit access." },
         ],
       },
     ],
@@ -157,6 +272,8 @@ export const teacherHelp: HelpCategory[] = [
         title: "Add lesson materials to a course",
         icon: "📎",
         summary: "Upload files, links, and videos for students to access.",
+        image: "/help/teacher-add-material.png",
+        imageAlt: "The Add Material dialog with the material type selector highlighted",
         steps: [
           { text: "Click your course name in the sidebar under My Courses." },
           { text: "Go to the Materials tab." },
@@ -196,6 +313,8 @@ export const teacherHelp: HelpCategory[] = [
         title: "Grade a student submission",
         icon: "✏️",
         summary: "Review and score submitted assignments.",
+        image: "/help/teacher-grade-assignment.png",
+        imageAlt: "A student submission open for grading with the score field highlighted",
         steps: [
           { text: "Go to Assignments in the sidebar." },
           { text: "Click the assignment you want to grade." },
@@ -213,6 +332,8 @@ export const teacherHelp: HelpCategory[] = [
         title: "Use the Gradebook",
         icon: "📊",
         summary: "View and edit all grades in a spreadsheet-style matrix.",
+        image: "/help/teacher-gradebook.png",
+        imageAlt: "The Gradebook matrix view with a grade cell highlighted",
         steps: [
           { text: "Click Gradebook in the sidebar." },
           { text: "Select the course from the dropdown at the top." },
@@ -243,6 +364,52 @@ export const teacherHelp: HelpCategory[] = [
           { text: "Click Post. All students in your school can see and reply." },
         ],
       },
+      {
+        id: "chat-basics",
+        title: "Message students and start video calls",
+        icon: "💬",
+        summary: "Chat one-on-one, in group channels, or start an in-app video call that rings the other person.",
+        steps: [
+          { text: "Go to Chat from the top navigation." },
+          { text: "Pick an existing DM/channel, or start a new one from the + button." },
+          { text: "Type a message and hit Enter, or click the paperclip to attach a document or image.", detail: "Attachments are automatically scanned before they're sent — unsafe or unsupported files are blocked." },
+          { text: "Click Reply under any message to reply in a thread — it opens right under that message, no separate panel." },
+          { text: "Click the video icon to start a call. It rings the other person (or the whole channel, for group chats) so they can join or decline." },
+        ],
+        troubleshoot: [
+          { problem: "My attachment was rejected", solution: "Only common document and image types are allowed, and files are scanned for malicious content before sending. Try a different file format." },
+          { problem: "The other person didn't get my message", solution: "As long as they're a member of the channel, they get an in-app notification and — unless they've turned it off in Notification Preferences — an email too, even if they weren't online." },
+        ],
+      },
+    ],
+  },
+  {
+    id: "ai-and-productivity",
+    title: "AI Assistant & Notes",
+    icon: "🤖",
+    articles: [
+      {
+        id: "solomon-agent",
+        title: "Chat with Solomon, your AI assistant",
+        icon: "✨",
+        summary: "Solomon can answer questions and help with routine tasks.",
+        steps: [
+          { text: "Look for the floating chat button in the bottom corner of your dashboard." },
+          { text: "Click it to open Solomon and type your question or request." },
+        ],
+      },
+      {
+        id: "notes",
+        title: "Take notes and share them",
+        icon: "🗒️",
+        summary: "Keep private notes, pin one as a sticky note, or share one with a colleague.",
+        steps: [
+          { text: "Click the notes icon next to the AI assistant button." },
+          { text: "Click New Note, or open an existing one to edit it." },
+          { text: "Toggle Sticky Mode to pin it as a small floating window on screen." },
+          { text: "Click Share to give another user view or edit access to a note." },
+        ],
+      },
     ],
   },
 ];
@@ -260,6 +427,8 @@ export const studentHelp: HelpCategory[] = [
         title: "Find and access your courses",
         icon: "🔍",
         summary: "See all the courses you're enrolled in.",
+        image: "/help/student-find-courses.png",
+        imageAlt: "The Student Dashboard overview with an enrolled course card highlighted",
         steps: [
           { text: "Log in and go to your Student Dashboard." },
           { text: "Your enrolled courses are listed on the Overview page." },
@@ -268,6 +437,17 @@ export const studentHelp: HelpCategory[] = [
         ],
         troubleshoot: [
           { problem: "A course I'm supposed to be in doesn't appear", solution: "Contact your school administrator — you may not have been added to that course's enrollment list yet." },
+        ],
+      },
+      {
+        id: "tuition-payment",
+        title: "Pay tuition during enrollment",
+        icon: "💵",
+        summary: "If a school has set tuition for a course, you'll see it at the review step of your application.",
+        steps: [
+          { text: "When applying to a school, the last step (Review & Submit) shows a Tuition & Payment section if the school has set a price for any course you selected." },
+          { text: "Choose Pay in Full or, if offered, split it into installments." },
+          { text: "This is optional for now — you can still submit your application and pay later." },
         ],
       },
       {
@@ -294,6 +474,8 @@ export const studentHelp: HelpCategory[] = [
         title: "Submit an assignment",
         icon: "📤",
         summary: "Upload your work before the deadline.",
+        image: "/help/student-submit-assignment.png",
+        imageAlt: "The assignment submission form with the Submit button highlighted",
         steps: [
           { text: "Go to Assignments in the sidebar." },
           { text: "Click the assignment title." },
@@ -361,11 +543,45 @@ export const studentHelp: HelpCategory[] = [
         title: "Download your transcript",
         icon: "📄",
         summary: "Export your official grades as a PDF.",
+        image: "/help/student-transcript.png",
+        imageAlt: "The official transcript page with the Download PDF button highlighted",
         steps: [
           { text: "Go to Transcript in the sidebar." },
           { text: "Review your course grades." },
           { text: "Click Download PDF." },
           { text: "Share the PDF or the verification link with institutions that need it." },
+        ],
+      },
+    ],
+  },
+  {
+    id: "chat",
+    title: "Chat & Notifications",
+    icon: "💬",
+    articles: [
+      {
+        id: "chat-basics",
+        title: "Message classmates and teachers",
+        icon: "💬",
+        summary: "Chat one-on-one, in group channels, or join a video call.",
+        steps: [
+          { text: "Go to Chat from the top navigation." },
+          { text: "Pick a DM or channel, or start a new one." },
+          { text: "Type a message, or click the paperclip to send a document or image.", detail: "Attachments are scanned for safety before they're sent." },
+          { text: "Click Reply under a message to reply in a thread — it opens directly under that message." },
+          { text: "If you're enrolled in a program with multiple courses, you're automatically added to that program's shared chat with everyone else enrolled in it." },
+          { text: "When someone starts a video call, an incoming call banner appears — click to join or decline." },
+        ],
+      },
+      {
+        id: "notifications",
+        title: "Manage your notifications",
+        icon: "🔔",
+        summary: "Choose what you get notified about, in-app and by email.",
+        steps: [
+          { text: "Click the bell icon to see recent notifications and unread messages." },
+          { text: "Click View all notifications to see your full notification history." },
+          { text: "Go to Settings → Notification Preferences to turn specific categories (chat, grades, assignments, etc.) on or off, and choose whether you get emailed when you're offline." },
         ],
       },
     ],
@@ -397,13 +613,132 @@ export const staffHelp: HelpCategory[] = [
   ...studentHelp.slice(1),
 ];
 
+// ─── SUPER ADMIN HELP (platform-wide, on top of admin help) ──────────────────
+
+export const superAdminHelp: HelpCategory[] = [
+  {
+    id: "platform-management",
+    title: "Platform Administration",
+    icon: "🛡️",
+    articles: [
+      {
+        id: "super-admin-dashboard",
+        title: "Find your way around the platform console",
+        icon: "🧭",
+        summary: "The Super Admin console at /super_admin manages every school on the platform.",
+        steps: [
+          { text: "Go to /super_admin (or Profile menu -> Platform Admin)." },
+          { text: "Dashboard and Analytics give a cross-school overview: schools, users, courses, enrollments, growth this month." },
+          { text: "Schools lists every school with owner, plan, and status — click Features to manage what's turned on for that school, or Deactivate/Delete as needed." },
+          { text: "All Users lets you search and manage any user platform-wide, including role changes and suspensions." },
+        ],
+      },
+      {
+        id: "domain-requests",
+        title: "Approve a school's custom domain request",
+        icon: "🌐",
+        summary: "School admins submit a domain; you add it to hosting and approve it.",
+        steps: [
+          { text: "Go to Domain Requests — you'll also get a notification when a school submits one." },
+          { text: "Add the requested domain in your hosting provider's domain settings (this is a manual step outside the app)." },
+          { text: "Click Approve — this generates the DNS records and notifies the school admin to finish connecting it." },
+        ],
+      },
+      {
+        id: "subscriptions",
+        title: "Manage plans and subscriptions",
+        icon: "💳",
+        summary: "Track each school's plan, billing status, and monthly price — the sales source of truth until a payment processor is wired up.",
+        steps: [
+          { text: "Go to Subscriptions to see total MRR and a breakdown by status (active, trialing, past due, canceled)." },
+          { text: "Click Edit on any school to change its plan, status, monthly price, or trial end date." },
+        ],
+      },
+      {
+        id: "feature-flags",
+        title: "Turn a feature on or off for one school",
+        icon: "🎛️",
+        summary: "Disable a module (chat, video calls, AI assistant, etc.) for a specific school without touching code.",
+        steps: [
+          { text: "Go to Schools and click Features next to the school." },
+          { text: "Toggle any module off — the AI assistant enforces this immediately; other modules are tracked here for future enforcement." },
+          { text: "Click Save." },
+        ],
+      },
+      {
+        id: "deletion-and-archive",
+        title: "Review deletion requests and the archive",
+        icon: "🗑️",
+        summary: "School deletions go through an approval step and a 30-day recovery window.",
+        steps: [
+          { text: "Deletion Requests shows schools an admin asked to delete — Approve archives a snapshot, Reject keeps the school active." },
+          { text: "Archive lists archived schools with days remaining before permanent deletion, and a Restore button." },
+        ],
+      },
+      {
+        id: "audit-log",
+        title: "Check the audit log",
+        icon: "📜",
+        summary: "Every platform-level action (role changes, deletions, approvals) is recorded here with who did it and when.",
+        image: "/help/admin-audit-log.png",
+        imageAlt: "The Audit Log table with a recorded action row highlighted",
+        steps: [
+          { text: "Go to Audit Log." },
+          { text: "Filter by actor, action type, target type, or date range." },
+        ],
+      },
+    ],
+  },
+];
+
+// ─── PARENT HELP ──────────────────────────────────────────────────────────────
+
+export const parentHelp: HelpCategory[] = [
+  {
+    id: "getting-started",
+    title: "Getting Started",
+    icon: "🚀",
+    articles: [
+      {
+        id: "view-children",
+        title: "View your children's grades, attendance & tuition",
+        icon: "👨‍👩‍👧",
+        summary: "See a snapshot for each linked child right on My Children.",
+        steps: [
+          { text: "Log in and go to My Children — this is your home page." },
+          { text: "Each linked child appears as their own card." },
+          { text: "Recent Grades shows their latest graded assignments." },
+          { text: "Attendance (30d) shows a present/absent/late summary for the last month." },
+          { text: "Tuition shows amounts and payment status for that child." },
+        ],
+        troubleshoot: [
+          { problem: "I don't see my child listed", solution: "Contact your school's admin office — they need to link your account to your child's student record before anything appears here." },
+        ],
+      },
+      {
+        id: "update-profile",
+        title: "Update your profile",
+        icon: "👤",
+        summary: "Keep your contact information current.",
+        steps: [
+          { text: "Click your name or avatar in the top right corner." },
+          { text: "Select Profile Settings." },
+          { text: "Update your name, phone number, or photo, then click Save Changes." },
+        ],
+      },
+    ],
+  },
+];
+
 // ─── Role selector ────────────────────────────────────────────────────────────
 
-export type HelpRole = "admin" | "super_admin" | "teacher" | "student" | "staff";
+export type HelpRole = "admin" | "super_admin" | "teacher" | "student" | "staff" | "parent";
 
 export function getHelpData(role?: HelpRole | null): HelpCategory[] {
-  if (role === "admin" || role === "super_admin") return adminHelp;
+  if (role === "super_admin") return [...superAdminHelp, ...adminHelp];
+  if (role === "admin") return adminHelp;
   if (role === "teacher") return teacherHelp;
   if (role === "staff") return staffHelp;
+  if (role === "parent") return parentHelp;
   return studentHelp;
 }

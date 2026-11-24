@@ -1,0 +1,33 @@
+name: Supabase keep-alive
+
+# The Supabase free plan pauses a project after about 7 days without
+# activity. This pings the database every 6 days, a day before that.
+# (Day-of-month */6 runs on the 1st, 7th, 13th, 19th, 25th and 31st, so the
+# longest gap is 6 days.) A failed run sends GitHub's failure email.
+on:
+  schedule:
+    - cron: "23 6 */6 * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          test -n "$SUPABASE_DB_URL" || { echo "SUPABASE_DB_URL secret is not set" >&2; exit 1; }
+          for attempt in 1 2 3; do
+            if last=$(psql "$SUPABASE_DB_URL" -tAX -v ON_ERROR_STOP=1 -c "select public.keepalive_ping();"); then
+              echo "Keep-alive recorded at $last"
+              exit 0
+            fi
+            echo "Attempt $attempt failed; retrying in 60s" >&2
+            sleep 60
+          done
+          exit 1

@@ -15,6 +15,9 @@ import {
   FileText,
   Users,
   Layers,
+  Megaphone,
+  Newspaper,
+  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,6 +45,9 @@ interface NotificationPrefs {
   gradeNotifications: boolean;
   newResources: boolean;
   applicationStatusUpdates: boolean;
+  announcements: boolean;
+  progressDigest: boolean;
+  tuition: boolean;
 }
 
 const defaultPrefs: NotificationPrefs = {
@@ -53,7 +59,45 @@ const defaultPrefs: NotificationPrefs = {
   gradeNotifications: true,
   newResources: true,
   applicationStatusUpdates: true,
+  announcements: true,
+  progressDigest: true,
+  tuition: true,
 };
+
+// The API stores prefs under the same keys lib/notifications.ts checks
+// (prefs.email / prefs[category]) and wraps them as { notification_prefs }.
+// The page used to spread the wrapper into its state (so nothing saved ever
+// loaded) and PUT its own camelCase keys, which the route ignores — every
+// save wrote an empty object, wiping the user's preferences.
+const API_KEY: Record<keyof NotificationPrefs, string> = {
+  inApp: "in_app",
+  email: "email",
+  chatMessages: "chat",
+  forumActivity: "forum",
+  assignmentUpdates: "assignments",
+  gradeNotifications: "grades",
+  newResources: "resources",
+  applicationStatusUpdates: "applications",
+  announcements: "announcements",
+  // The school's parent progress digest (a missing key means on).
+  progressDigest: "digest",
+  tuition: "tuition",
+};
+
+function fromApi(stored: Record<string, unknown> | null | undefined): NotificationPrefs {
+  const prefs = { ...defaultPrefs };
+  for (const key of Object.keys(API_KEY) as (keyof NotificationPrefs)[]) {
+    const v = stored?.[API_KEY[key]];
+    if (typeof v === "boolean") prefs[key] = v;
+  }
+  return prefs;
+}
+
+function toApi(prefs: NotificationPrefs): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const key of Object.keys(API_KEY) as (keyof NotificationPrefs)[]) out[API_KEY[key]] = prefs[key];
+  return out;
+}
 
 // ---- PreferenceRow ----
 
@@ -120,7 +164,7 @@ export default function NotificationPreferences() {
     apiFetch("/api/users/me/notification-prefs")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data) setPrefs({ ...defaultPrefs, ...data });
+        if (data) setPrefs(fromApi(data.notification_prefs));
       })
       .catch(() => {
         toast.error("Could not load notification preferences.");
@@ -133,7 +177,7 @@ export default function NotificationPreferences() {
     try {
       const res = await apiFetch("/api/users/me/notification-prefs", {
         method: "PUT",
-        body: JSON.stringify(updated),
+        body: JSON.stringify(toApi(updated)),
       });
       if (!res.ok) throw new Error();
       toast.success("Preferences saved");
@@ -199,9 +243,15 @@ export default function NotificationPreferences() {
       icon: <FileText className="h-4 w-4" />,
     },
     {
+      id: "announcements",
+      label: "Announcements",
+      description: "School-wide and course announcements.",
+      icon: <Megaphone className="h-4 w-4" />,
+    },
+    {
       id: "gradeNotifications",
       label: "Grades",
-      description: "Alerts when grades or feedback are posted.",
+      description: "Alerts when grades or feedback are posted, or quiz scores are released (parents: for your children).",
       icon: <Star className="h-4 w-4" />,
     },
     {
@@ -215,6 +265,23 @@ export default function NotificationPreferences() {
       label: "Applications",
       description: "Updates on the status of your applications.",
       icon: <Layers className="h-4 w-4" />,
+    },
+    // Only parents receive the school's progress digest.
+    ...(user?.role === "parent"
+      ? [
+          {
+            id: "progressDigest" as const,
+            label: "Progress digest",
+            description: "Your school's regular summary of how your children are doing: grades, attendance and what's due.",
+            icon: <Newspaper className="h-4 w-4" />,
+          },
+        ]
+      : []),
+    {
+      id: "tuition",
+      label: "Tuition & balances",
+      description: "Balance reminders from your school (parents: for your children). Payment receipts are always sent.",
+      icon: <Wallet className="h-4 w-4" />,
     },
   ];
 
@@ -275,7 +342,7 @@ export default function NotificationPreferences() {
         <CardContent className="space-y-4">
           {loading ? (
             <>
-              {Array.from({ length: 6 }).map((_, i) => (
+              {Array.from({ length: 7 }).map((_, i) => (
                 <div key={i}>
                   {i > 0 && <div className="border-t" />}
                   <div className={i > 0 ? "pt-4" : ""}>

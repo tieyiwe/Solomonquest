@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { SidebarSchoolBrand } from "@/components/brand/SchoolLogo";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -34,6 +35,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
+import { navIconActive, navIconIdle, navItemClass } from "@/components/layout/navStyles";
 
 // ─── apiFetch ─────────────────────────────────────────────────────────────────
 
@@ -94,19 +96,19 @@ function formatDate(raw?: string | null) {
 }
 
 function gradeColor(g: number | null) {
-  if (g === null) return "text-gray-400";
-  if (g >= 90) return "text-emerald-600 font-semibold";
-  if (g >= 70) return "text-yellow-600 font-semibold";
-  return "text-red-600 font-semibold";
+  if (g === null) return "text-muted-foreground";
+  if (g >= 90) return "text-success font-semibold";
+  if (g >= 70) return "text-warning font-semibold";
+  return "text-destructive font-semibold";
 }
 
 function gradeBadge(g: number | null) {
-  if (g === null) return <span className="text-gray-300">—</span>;
+  if (g === null) return <span className="text-muted-foreground/60">—</span>;
   const cls =
-    g >= 90 ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
-    g >= 80 ? "bg-blue-100 text-blue-700 border-blue-200" :
-    g >= 70 ? "bg-yellow-100 text-yellow-700 border-yellow-200" :
-    "bg-red-100 text-red-700 border-red-200";
+    g >= 90 ? "bg-success/10 text-success border-success/30" :
+    g >= 80 ? "bg-primary/10 text-primary border-primary/30" :
+    g >= 70 ? "bg-warning/10 text-warning border-warning/30" :
+    "bg-destructive/10 text-destructive border-destructive/30";
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}>
       {g}%
@@ -118,7 +120,7 @@ function gradeBadge(g: number | null) {
 
 const NAV_LINKS = [
   { href: "/dashboard/teacher", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/dashboard/teacher/courses", label: "My Courses", icon: BookOpen },
+  { href: "/dashboard/teacher", label: "My Courses", icon: BookOpen },
   { href: "/dashboard/teacher/assignments", label: "Assignments", icon: ClipboardList },
   { href: "/dashboard/teacher/gradebook", label: "Gradebook", icon: Star },
   { href: "/dashboard/teacher/quizzes", label: "Quizzes", icon: HelpCircle },
@@ -126,7 +128,6 @@ const NAV_LINKS = [
   { href: "/forum", label: "Forum", icon: MessageSquare },
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/dashboard/teacher/analytics", label: "Analytics", icon: BarChart2 },
-  { href: "/video", label: "Live Class", icon: Video },
 ];
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -134,67 +135,55 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
   const { user, signOut } = useAuth();
 
   return (
-    <div className="flex flex-col h-full bg-slate-900">
-      <div className="px-4 py-5 border-b border-white/10 flex items-center justify-between shrink-0">
+    <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
+      <div className="px-4 h-16 border-b border-sidebar-border flex items-center justify-between shrink-0">
         <Link href="/dashboard/teacher">
-          <div className="flex items-center gap-2.5 cursor-pointer">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm shrink-0">
-              S
-            </div>
-            <div>
-              <p className="text-white font-semibold text-sm leading-tight">SolomonQuest</p>
-              <p className="text-slate-400 text-xs">Teacher Portal</p>
-            </div>
-          </div>
+          <SidebarSchoolBrand subtitle="Teacher Portal" />
         </Link>
         {onClose && (
-          <button onClick={onClose} className="text-slate-400 hover:text-white md:hidden">
+          <button onClick={onClose} aria-label="Close navigation" className="p-1.5 rounded-md text-sidebar-foreground/70 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 md:hidden">
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
+      <nav aria-label="Main navigation" className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
         {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
           const active = exact ? location === href : location.startsWith(href);
           return (
             <Link key={href} href={href}>
               <button
                 onClick={onClose}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white"
-                }`}
+                aria-current={active ? "page" : undefined}
+                className={navItemClass(active)}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className={active ? navIconActive : navIconIdle} aria-hidden="true" />
                 <span className="flex-1 text-left">{label}</span>
-                {active && <ChevronRight className="h-3 w-3 opacity-70" />}
               </button>
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-3 border-t border-white/10 shrink-0">
+      <div className="p-3 border-t border-sidebar-border shrink-0">
         <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
-          <Avatar className="h-8 w-8 border border-white/20 shrink-0">
+          <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
             <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold">
               {getInitials((user as any)?.firstName, (user as any)?.lastName)}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 overflow-hidden">
-            <p className="text-white text-sm font-medium truncate">
+            <p className="text-sidebar-accent-foreground text-sm font-medium truncate">
               {(user as any)?.firstName} {(user as any)?.lastName}
             </p>
-            <p className="text-slate-400 text-xs capitalize truncate">Teacher</p>
+            <p className="text-sidebar-foreground/60 text-xs capitalize truncate">Teacher</p>
           </div>
         </div>
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-slate-400 hover:text-red-400 hover:bg-red-400/10"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/15"
           onClick={signOut}
         >
           <LogOut className="mr-2 h-3.5 w-3.5" />
@@ -210,7 +199,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
 function Metric({ label, value, suffix = "" }: { label: string; value: number | null; suffix?: string }) {
   return (
     <div className="text-center">
-      <p className={`text-xl font-bold ${value === null ? "text-gray-300" : "text-gray-900"}`}>
+      <p className={`text-xl font-bold ${value === null ? "text-muted-foreground/60" : "text-foreground"}`}>
         {value === null ? "—" : `${value}${suffix}`}
       </p>
       <p className="text-[11px] text-muted-foreground mt-0.5">{label}</p>
@@ -225,7 +214,7 @@ function GradeBar({ letter, count, total, color }: { letter: string; count: numb
   return (
     <div className="flex items-center gap-3">
       <span className={`w-6 text-sm font-bold ${color}`}>{letter}</span>
-      <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+      <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full transition-all ${color.replace("text-", "bg-")}`}
           style={{ width: `${pct}%` }}
@@ -257,7 +246,7 @@ export default function TeacherAnalytics() {
   const totalGrades = dist ? dist.A + dist.B + dist.C + dist.D + dist.F : 0;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-muted/50 flex">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col h-screen sticky top-0">
         <Sidebar />
@@ -275,8 +264,8 @@ export default function TeacherAnalytics() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-14 bg-white border-b flex items-center px-4 gap-3 sticky top-0 z-20 shadow-sm">
-          <Button
+        <header className="h-16 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 border-b flex items-center px-4 md:px-6 gap-3 sticky top-0 z-20">
+          <Button aria-label="Open menu"
             variant="ghost"
             size="icon"
             className="md:hidden shrink-0"
@@ -285,7 +274,7 @@ export default function TeacherAnalytics() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-base font-semibold text-gray-900">Analytics</h1>
+            <h1 className="text-base font-semibold text-foreground">Analytics</h1>
           </div>
           <Avatar className="h-8 w-8 border">
             <AvatarImage src={(user as any)?.avatarUrl || (user as any)?.avatar_url || ""} />
@@ -298,7 +287,7 @@ export default function TeacherAnalytics() {
         <main className="flex-1 overflow-y-auto">
           <div className="px-6 pt-4 pb-0">
             <Link href="/dashboard/teacher">
-              <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
                 <ArrowLeft className="h-4 w-4" />
                 Back to Dashboard
               </button>
@@ -307,7 +296,7 @@ export default function TeacherAnalytics() {
           <div className="max-w-6xl mx-auto p-4 md:p-6 lg:p-8 space-y-8">
 
             <div>
-              <h2 className="text-2xl font-bold tracking-tight text-gray-900">Your Analytics</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-foreground">Your Analytics</h2>
               <p className="text-muted-foreground mt-0.5">Performance insights across all your courses.</p>
             </div>
 
@@ -329,7 +318,7 @@ export default function TeacherAnalytics() {
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <CardTitle className="text-sm font-semibold text-gray-900 leading-tight">{c.name}</CardTitle>
+                            <CardTitle className="text-sm font-semibold text-foreground leading-tight">{c.name}</CardTitle>
                             <CardDescription className="mt-0.5 flex items-center gap-1">
                               <Users className="h-3 w-3" />
                               {c.enrolled_count} enrolled
@@ -341,7 +330,7 @@ export default function TeacherAnalytics() {
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <div className="grid grid-cols-3 gap-3 divide-x divide-gray-100">
+                        <div className="grid grid-cols-3 gap-3 divide-x divide-border">
                           <Metric label="Assignment Completion" value={c.assignment_completion_rate} suffix="%" />
                           <Metric label="Attendance Rate" value={c.attendance_rate} suffix="%" />
                           <Metric label="Quiz Avg" value={c.quiz_avg_score} suffix="%" />
@@ -353,11 +342,11 @@ export default function TeacherAnalytics() {
                               <span>Avg Grade</span>
                               <span className={gradeColor(c.avg_grade)}>{c.avg_grade}%</span>
                             </div>
-                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                               <div
                                 className={`h-full rounded-full ${
-                                  c.avg_grade >= 90 ? "bg-emerald-500" :
-                                  c.avg_grade >= 70 ? "bg-yellow-400" : "bg-red-400"
+                                  c.avg_grade >= 90 ? "bg-success" :
+                                  c.avg_grade >= 70 ? "bg-warning" : "bg-destructive"
                                 }`}
                                 style={{ width: `${c.avg_grade}%` }}
                               />
@@ -371,7 +360,7 @@ export default function TeacherAnalytics() {
               ) : (
                 <Card className="shadow-sm">
                   <CardContent className="py-12 text-center">
-                    <BookOpen className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                    <BookOpen className="h-10 w-10 text-muted-foreground/60 mx-auto mb-3" />
                     <p className="text-sm text-muted-foreground">No courses found. Create your first course to see analytics.</p>
                   </CardContent>
                 </Card>
@@ -396,13 +385,13 @@ export default function TeacherAnalytics() {
                     Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)
                   ) : totalGrades > 0 ? (
                     <>
-                      <GradeBar letter="A" count={dist?.A ?? 0} total={totalGrades} color="text-emerald-600" />
-                      <GradeBar letter="B" count={dist?.B ?? 0} total={totalGrades} color="text-blue-600" />
-                      <GradeBar letter="C" count={dist?.C ?? 0} total={totalGrades} color="text-yellow-600" />
-                      <GradeBar letter="D" count={dist?.D ?? 0} total={totalGrades} color="text-orange-600" />
-                      <GradeBar letter="F" count={dist?.F ?? 0} total={totalGrades} color="text-red-600" />
+                      <GradeBar letter="A" count={dist?.A ?? 0} total={totalGrades} color="text-success" />
+                      <GradeBar letter="B" count={dist?.B ?? 0} total={totalGrades} color="text-primary" />
+                      <GradeBar letter="C" count={dist?.C ?? 0} total={totalGrades} color="text-warning" />
+                      <GradeBar letter="D" count={dist?.D ?? 0} total={totalGrades} color="text-warning" />
+                      <GradeBar letter="F" count={dist?.F ?? 0} total={totalGrades} color="text-destructive" />
                       <div className="pt-2 border-t text-xs text-muted-foreground">
-                        Pass rate (≥70%): <span className="font-semibold text-gray-900">
+                        Pass rate (≥70%): <span className="font-semibold text-foreground">
                           {totalGrades > 0
                             ? Math.round((((dist?.A ?? 0) + (dist?.B ?? 0) + (dist?.C ?? 0)) / totalGrades) * 100)
                             : 0}%
@@ -411,7 +400,7 @@ export default function TeacherAnalytics() {
                     </>
                   ) : (
                     <div className="py-8 text-center">
-                      <Star className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                      <Star className="h-8 w-8 text-muted-foreground/60 mx-auto mb-2" />
                       <p className="text-sm text-muted-foreground">No graded submissions yet.</p>
                     </div>
                   )}
@@ -432,24 +421,24 @@ export default function TeacherAnalytics() {
                   ) : (analytics?.recent_submissions ?? []).length > 0 ? (
                     <ul className="divide-y">
                       {(analytics?.recent_submissions ?? []).map((s, i) => (
-                        <li key={i} className="px-4 py-3 hover:bg-gray-50 transition-colors">
+                        <li key={i} className="px-4 py-3 hover:bg-muted/50 transition-colors">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                              <div className="mt-0.5 h-7 w-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                              <div className="mt-0.5 h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                                 {s.grade !== null ? (
-                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                                 ) : (
-                                  <Clock className="h-3.5 w-3.5 text-blue-600" />
+                                  <Clock className="h-3.5 w-3.5 text-primary" />
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">{s.student_name}</p>
+                                <p className="text-sm font-medium text-foreground truncate">{s.student_name}</p>
                                 <p className="text-xs text-muted-foreground truncate">{s.assignment_title}</p>
                               </div>
                             </div>
                             <div className="shrink-0 text-right">
                               {gradeBadge(s.grade)}
-                              <p className="text-[10px] text-muted-foreground mt-1">{formatDate(s.submitted_at)}</p>
+                              <p className="text-[11px] text-muted-foreground mt-1">{formatDate(s.submitted_at)}</p>
                             </div>
                           </div>
                         </li>
@@ -457,7 +446,7 @@ export default function TeacherAnalytics() {
                     </ul>
                   ) : (
                     <div className="py-12 text-center">
-                      <ClipboardList className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                      <ClipboardList className="h-8 w-8 text-muted-foreground/60 mx-auto mb-2" />
                       <p className="text-sm text-muted-foreground">No recent submissions.</p>
                     </div>
                   )}

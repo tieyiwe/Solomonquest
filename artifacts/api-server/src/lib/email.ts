@@ -28,10 +28,28 @@ function getTransporter(): Transporter | null {
 
 const FROM = process.env.SMTP_FROM ?? 'SolomonQuest <solomonquest@tilogics.com>';
 
-const PRIMARY = '#1a1a2e';
-const ACCENT = '#e94560';
+// Brand colors (match the web app theme). PRIMARY = midnight navy hsl(222 44% 14%).
+// ACCENT = the champagne gold, deepened to #84602a so white button text on it
+// passes WCAG AA (5.7:1); the UI gold #c9a054 is too light for white text.
+const PRIMARY = '#141d33';
+const ACCENT = '#84602a';
 
-function baseLayout(
+// Every template below interpolates user-controlled text (names, school and
+// course titles, forum topic titles, broadcast messages, notification
+// bodies) into HTML. Unescaped, anyone who could set e.g. their name or a
+// forum topic title could inject links/markup into emails sent under the
+// platform's From address (phishing). Each exported sender escapes its
+// inputs AFTER building the plain-text subject line.
+export function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function baseLayout(
   title: string,
   body: string,
   options?: { confetti?: boolean; headerTitle?: string; headerLogoUrl?: string }
@@ -46,11 +64,29 @@ function baseLayout(
           </tr>`
     : "";
 
+  // headerTitle is expected to arrive already HTML-escaped (callers escape
+  // schoolName before passing it). The logo URL is raw school-controlled
+  // data, so only allow http(s) and escape it for the attribute context.
   const headerTitle = options?.headerTitle ?? "SolomonQuest";
-  const headerContent = options?.headerLogoUrl
+  const headerLogoUrl =
+    options?.headerLogoUrl && /^https?:\/\//i.test(options.headerLogoUrl)
+      ? escapeHtml(options.headerLogoUrl)
+      : undefined;
+  // Platform emails (no school branding) use the SolomonQuest wordmark image,
+  // served by the web app at /email-header-logo.png. Only when APP_URL is set,
+  // so a missing or wrong domain can't produce a broken image; the alt text
+  // keeps the name readable when a mail client blocks images.
+  const appUrl = (process.env.APP_URL ?? process.env.FRONTEND_URL ?? "").replace(/\/+$/, "");
+  const platformLogo =
+    !headerLogoUrl && !options?.headerTitle && /^https?:\/\//i.test(appUrl)
+      ? `<img src="${escapeHtml(`${appUrl}/email-header-logo.png`)}" alt="SolomonQuest" width="224" height="40" style="width:224px;height:40px;display:inline-block;border:0;" />`
+      : null;
+  const headerContent = platformLogo
+    ? platformLogo
+    : headerLogoUrl
     ? `<table cellpadding="0" cellspacing="0"><tr>
         <td style="padding-right:12px;vertical-align:middle;">
-          <img src="${options.headerLogoUrl}" alt="${headerTitle}" height="36" style="height:36px;max-width:120px;display:block;object-fit:contain;" />
+          <img src="${headerLogoUrl}" alt="${headerTitle}" height="36" style="height:36px;max-width:120px;display:block;object-fit:contain;" />
         </td>
         <td style="vertical-align:middle;">
           <p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">${headerTitle}</p>
@@ -63,7 +99,7 @@ function baseLayout(
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${title}</title>
+  <title>${escapeHtml(title)}</title>
 </head>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 0;">
@@ -122,6 +158,38 @@ async function send(to: string, subject: string, html: string): Promise<void> {
   }
 }
 
+/**
+ * Sends one already-rendered email and THROWS on failure (unlike `send`,
+ * which logs and swallows), so the parent digest can count failures in its
+ * send history. A missing SMTP config is also an error here; callers check
+ * isSmtpConfigured() first.
+ */
+export async function sendRenderedEmail(to: string, subject: string, html: string): Promise<void> {
+  const t = getTransporter();
+  if (!t) throw new Error("SMTP is not configured");
+  await t.sendMail({ from: FROM, to, subject, html });
+}
+
+export function isSmtpConfigured(): boolean {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+
+// Used by Super Admin -> Platform Settings' "Send test email" button so an
+// admin can confirm SMTP creds actually work without digging through
+// server logs. Throws (rather than swallowing, like `send` does) so the
+// route can report the real error back to the UI.
+export async function sendTestEmail(to: string): Promise<void> {
+  const t = getTransporter();
+  if (!t) {
+    throw new Error("SMTP is not configured (missing SMTP_HOST/SMTP_USER/SMTP_PASS)");
+  }
+  const body = `
+    ${heading("Test email")}
+    ${paragraph("This is a test email sent from SolomonQuest's Super Admin → Platform Settings page to confirm your SMTP configuration is working.")}
+  `;
+  await t.sendMail({ from: FROM, to, subject: "SolomonQuest: SMTP test email", html: baseLayout("Test email", body) });
+}
+
 // ─── 1. Teacher Invite ───────────────────────────────────────────────────────
 
 export interface TeacherInviteParams {
@@ -142,7 +210,10 @@ export async function sendTeacherInvite({
   role = 'teacher',
 }: TeacherInviteParams): Promise<void> {
   const subject = `You've been invited to join ${schoolName} on SolomonQuest`;
-  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+  schoolName = escapeHtml(schoolName);
+  inviterName = escapeHtml(inviterName);
+  inviteUrl = escapeHtml(inviteUrl);
+  const roleLabel = escapeHtml(role.charAt(0).toUpperCase() + role.slice(1));
 
   const body = `
     ${heading(`You've been invited to join ${schoolName}!`)}
@@ -179,6 +250,9 @@ export async function sendCourseAssignmentNotification({
   schoolName,
 }: CourseAssignmentParams): Promise<void> {
   const subject = `You've been assigned to teach ${courseTitle}`;
+  teacherName = escapeHtml(teacherName);
+  courseTitle = escapeHtml(courseTitle);
+  schoolName = escapeHtml(schoolName);
 
   const body = `
     ${heading('New Course Assignment')}
@@ -219,8 +293,11 @@ export async function sendApplicationStatusUpdate({
   reason,
 }: ApplicationStatusParams): Promise<void> {
   const subject = `Your application to ${schoolName} has been updated`;
+  studentName = escapeHtml(studentName);
+  schoolName = escapeHtml(schoolName);
+  reason = reason ? escapeHtml(reason) : reason;
 
-  const statusUpper = status.toUpperCase();
+  const statusUpper = escapeHtml(status.toUpperCase());
   const isApproved = /approved|accepted/i.test(status);
   const isRejected = /rejected|declined|denied/i.test(status);
 
@@ -270,7 +347,7 @@ export async function sendPasswordResetEmail({
     ${heading('Password Reset Request')}
     ${paragraph('We received a request to reset the password for your SolomonQuest account.')}
     ${paragraph('Click the button below to choose a new password:')}
-    <div style="text-align:center;">${button(resetUrl, 'Reset Password')}</div>
+    <div style="text-align:center;">${button(escapeHtml(resetUrl), 'Reset Password')}</div>
     <div style="margin-top:28px;padding:16px;background:#fff8e1;border-left:4px solid #f59e0b;border-radius:0 4px 4px 0;">
       <p style="margin:0;color:#444444;font-size:13px;">
         <strong>Note:</strong> This link will expire in <strong>1 hour</strong>. If you did not request a password reset, please ignore this email &mdash; your password will not change.
@@ -299,8 +376,11 @@ export async function sendResourceNotification({
   resourceType,
 }: ResourceNotificationParams): Promise<void> {
   const subject = `New resource added to ${courseTitle}`;
+  studentName = escapeHtml(studentName);
+  courseTitle = escapeHtml(courseTitle);
+  resourceTitle = escapeHtml(resourceTitle);
 
-  const typeLabel = resourceType.charAt(0).toUpperCase() + resourceType.slice(1).toLowerCase();
+  const typeLabel = escapeHtml(resourceType.charAt(0).toUpperCase() + resourceType.slice(1).toLowerCase());
 
   const body = `
     ${heading('New Course Resource Available')}
@@ -347,6 +427,8 @@ export async function sendForumNotification({
   const subject = isComment
     ? `Someone commented on your topic: ${topicTitle}`
     : `Someone reacted to your topic: ${topicTitle}`;
+  userName = escapeHtml(userName);
+  topicTitle = escapeHtml(topicTitle);
 
   const actionLabel = isComment ? 'left a comment on' : 'reacted to';
   const icon = isComment ? '&#128172;' : '&#128077;';
@@ -382,8 +464,11 @@ export async function sendWelcomeEmail({
   role = 'student',
   loginUrl,
 }: WelcomeEmailParams): Promise<void> {
-  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+  const roleLabel = escapeHtml(role.charAt(0).toUpperCase() + role.slice(1));
   const subject = `Welcome to SolomonQuest${schoolName ? ` — ${schoolName}` : ''}! 🎉`;
+  firstName = escapeHtml(firstName);
+  schoolName = schoolName ? escapeHtml(schoolName) : schoolName;
+  loginUrl = escapeHtml(loginUrl);
 
   const featureRows = [
     ['📚', 'Courses', 'Access all your enrolled courses and learning materials in one place.'],
@@ -444,8 +529,11 @@ export async function sendEnhancedInvite({
   role = 'teacher',
   expiresInDays = 7,
 }: EnhancedInviteParams): Promise<void> {
-  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+  const roleLabel = escapeHtml(role.charAt(0).toUpperCase() + role.slice(1));
   const subject = `You're invited to join ${schoolName} on SolomonQuest`;
+  schoolName = escapeHtml(schoolName);
+  inviterName = escapeHtml(inviterName);
+  inviteUrl = escapeHtml(inviteUrl);
 
   const steps = [
     ['1', 'Click the button below', `You'll be taken to SolomonQuest to set up your account.`],
@@ -507,15 +595,66 @@ export async function sendBroadcastEmail({
   schoolName,
 }: BroadcastEmailParams): Promise<void> {
   const body = `
-    ${heading(subject)}
-    ${paragraph(`Hi <strong>${recipientName}</strong>,`)}
-    ${paragraph(message.replace(/\n/g, '<br/>'))}
+    ${heading(escapeHtml(subject))}
+    ${paragraph(`Hi <strong>${escapeHtml(recipientName)}</strong>,`)}
+    ${paragraph(escapeHtml(message).replace(/\n/g, '<br/>'))}
     <div style="margin:24px 0;padding:16px;background:#f0f4ff;border-left:4px solid ${PRIMARY};border-radius:0 4px 4px 0;">
       <p style="margin:0;color:#666666;font-size:13px;">
-        Sent by <strong>${senderName}</strong> via ${schoolName} on SolomonQuest.
+        Sent by <strong>${escapeHtml(senderName)}</strong> via ${escapeHtml(schoolName)} on SolomonQuest.
       </p>
     </div>
   `;
 
   await send(to, subject, baseLayout(subject, body));
 }
+
+// ─── 10. Generic Notification (fallback for any notifications row) ───────────
+// Used by lib/notifications.ts so any notification type (new chat message,
+// grade posted, etc.) can reach a user even when they're offline / the app
+// tab isn't open, without needing a bespoke template per event type.
+
+export interface GenericNotificationEmailParams {
+  to: string;
+  recipientName: string;
+  title: string;
+  body: string;
+  link?: string | null;
+  appUrl: string;
+}
+
+export async function sendGenericNotificationEmail({
+  to,
+  recipientName,
+  title,
+  body: message,
+  link,
+  appUrl,
+}: GenericNotificationEmailParams): Promise<void> {
+  const url = link ? `${appUrl}${link}` : appUrl;
+  const body = `
+    ${heading(escapeHtml(title))}
+    ${paragraph(`Hi <strong>${escapeHtml(recipientName)}</strong>,`)}
+    ${paragraph(escapeHtml(message).replace(/\n/g, '<br/>'))}
+    ${button(escapeHtml(url), "View in SolomonQuest")}
+  `;
+
+  await send(to, title, baseLayout(title, body));
+}
+
+// baseLayout and escapeHtml (exported above) are also used by templates kept
+// in their own files, e.g. lib/admissionEmail.ts.
+
+/**
+ * Like `send`, but reports failure instead of swallowing it, for emails whose
+ * delivery the UI tracks (the admission congratulations email shows
+ * "could not be sent" with a Resend button; tuition reminders and receipts
+ * report sent / failed counts).
+ */
+export async function sendEmailOrThrow(to: string, subject: string, html: string, text?: string): Promise<void> {
+  const t = getTransporter();
+  if (!t) throw new Error("Email is not set up on this platform (SMTP is not configured)");
+  await t.sendMail({ from: FROM, to, subject, html, ...(text ? { text } : {}) });
+}
+
+/** Alias kept for the tuition ledger code. */
+export const sendEmailStrict = sendEmailOrThrow;

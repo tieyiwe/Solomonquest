@@ -39,6 +39,13 @@
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --color-destructive-border: var(--destructive-border);
 
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-gold: hsl(var(--gold));
+  --color-gold-foreground: hsl(var(--gold-foreground));
+
   --color-chart-1: hsl(var(--chart-1));
   --color-chart-2: hsl(var(--chart-2));
   --color-chart-3: hsl(var(--chart-3));
@@ -105,53 +112,65 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 36 47% 95%;
-  --foreground: 25 25% 14%;
-  --border: 36 22% 80%;
-  --card: 36 40% 97%;
-  --card-foreground: 25 25% 14%;
-  --card-border: 36 22% 82%;
-  --sidebar: 36 40% 92%;
-  --sidebar-foreground: 25 25% 14%;
-  --sidebar-border: 36 22% 80%;
-  --sidebar-primary: 25 34% 33%;
-  --sidebar-primary-foreground: 36 47% 97%;
-  --sidebar-accent: 36 33% 88%;
-  --sidebar-accent-foreground: 25 25% 14%;
-  --sidebar-ring: 25 34% 33%;
-  --popover: 36 40% 97%;
-  --popover-foreground: 25 25% 14%;
-  --popover-border: 36 22% 82%;
-  --primary: 25 34% 33%;
-  --primary-foreground: 36 47% 97%;
-  --secondary: 33 38% 54%;
-  --secondary-foreground: 25 25% 14%;
-  --muted: 36 33% 88%;
-  --muted-foreground: 25 15% 40%;
-  --accent: 33 38% 54%;
-  --accent-foreground: 36 47% 97%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 0 0% 98%;
-  --input: 36 22% 78%;
-  --ring: 25 34% 33%;
-  --chart-1: 25 34% 33%;
-  --chart-2: 33 38% 54%;
-  --chart-3: 36 33% 88%;
-  --chart-4: 25 60% 45%;
-  --chart-5: 33 55% 65%;
+  /* ── SolomonQuest brand: midnight navy + champagne gold on warm ivory ── */
+  --background: 40 30% 98%;
+  --foreground: 222 35% 11%;
+  --border: 36 16% 86%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 35% 11%;
+  --card-border: 36 16% 88%;
+  --sidebar: 222 44% 11%;
+  --sidebar-foreground: 40 20% 88%;
+  --sidebar-border: 222 30% 19%;
+  --sidebar-primary: 39 52% 58%;
+  --sidebar-primary-foreground: 222 44% 10%;
+  --sidebar-accent: 222 32% 18%;
+  --sidebar-accent-foreground: 40 30% 97%;
+  --sidebar-ring: 39 52% 58%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 35% 11%;
+  --popover-border: 36 16% 86%;
+  --primary: 222 44% 14%;
+  --primary-foreground: 40 30% 97%;
+  --secondary: 40 22% 94%;
+  --secondary-foreground: 222 35% 14%;
+  --muted: 40 18% 95%;
+  --muted-foreground: 222 10% 40%;
+  /* --accent stays a subtle champagne tint: shadcn uses it for menu/hover states.
+     The brand gold lives in --gold (bg-gold, text-gold, border-gold). */
+  --accent: 40 35% 93%;
+  --accent-foreground: 222 44% 14%;
+  /* Brand gold: highlights, achievements, active-nav indicator, key CTAs.
+     Use as a fill (with text-gold-foreground) or an indicator, not as text on light surfaces. */
+  --gold: 39 52% 56%;
+  --gold-foreground: 222 44% 10%;
+  --destructive: 0 72% 43%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 72% 25%;
+  --success-foreground: 0 0% 100%;
+  --warning: 30 95% 30%;
+  --warning-foreground: 0 0% 100%;
+  --input: 36 14% 80%;
+  --ring: 39 52% 48%;
+  --chart-1: 217 45% 36%;
+  --chart-2: 39 52% 52%;
+  --chart-3: 168 40% 34%;
+  --chart-4: 352 48% 42%;
+  --chart-5: 215 14% 55%;
+  --primary-rgb: 20, 29, 51;
 
-  --app-font-sans: 'Inter', sans-serif;
-  --app-font-serif: Georgia, serif;
-  --app-font-mono: Menlo, monospace;
+  --app-font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --app-font-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --app-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --radius: .5rem; /* 8px */
-  --shadow-2xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00); /*replace with H S L */
-  --shadow-xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00); /*replace with H S L */
-  --shadow-sm: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 2px 4px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 4px 6px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 8px 10px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
+  --shadow-2xs: 0px 1px 0px 0px hsl(224 32% 12% / 0.03);
+  --shadow-xs: 0px 1px 2px 0px hsl(224 32% 12% / 0.05);
+  --shadow-sm: 0px 1px 2px 0px hsl(224 32% 12% / 0.06), 0px 1px 3px 0px hsl(224 32% 12% / 0.04);
+  --shadow: 0px 1px 3px 0px hsl(224 32% 12% / 0.08), 0px 1px 2px -1px hsl(224 32% 12% / 0.06);
+  --shadow-md: 0px 4px 6px -1px hsl(224 32% 12% / 0.08), 0px 2px 4px -2px hsl(224 32% 12% / 0.06);
+  --shadow-lg: 0px 10px 15px -3px hsl(224 32% 12% / 0.08), 0px 4px 6px -4px hsl(224 32% 12% / 0.06);
+  --shadow-xl: 0px 20px 25px -5px hsl(224 32% 12% / 0.10), 0px 8px 10px -6px hsl(224 32% 12% / 0.06);
+  --shadow-2xl: 0px 25px 50px -12px hsl(224 32% 12% / 0.20);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
@@ -196,49 +215,56 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 25 20% 10%;
-  --foreground: 36 47% 95%;
-  --border: 25 20% 25%;
-  --card: 25 20% 12%;
-  --card-foreground: 36 47% 95%;
-  --card-border: 25 20% 25%;
-  --sidebar: 25 20% 12%;
-  --sidebar-foreground: 36 47% 95%;
-  --sidebar-border: 25 20% 25%;
-  --sidebar-primary: 25 34% 33%;
-  --sidebar-primary-foreground: 36 47% 97%;
-  --sidebar-accent: 25 20% 25%;
-  --sidebar-accent-foreground: 36 47% 95%;
-  --sidebar-ring: 25 34% 33%;
-  --popover: 25 20% 12%;
-  --popover-foreground: 36 47% 95%;
-  --popover-border: 25 20% 25%;
-  --primary: 25 34% 33%;
-  --primary-foreground: 36 47% 97%;
-  --secondary: 33 38% 54%;
-  --secondary-foreground: 36 47% 95%;
-  --muted: 25 20% 20%;
-  --muted-foreground: 36 22% 70%;
-  --accent: 33 38% 54%;
-  --accent-foreground: 36 47% 97%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 0 0% 98%;
-  --input: 25 20% 30%;
-  --ring: 25 34% 33%;
-  --chart-1: 25 34% 33%;
-  --chart-2: 33 38% 54%;
-  --chart-3: 36 33% 88%;
-  --chart-4: 25 60% 45%;
-  --chart-5: 33 55% 65%;
+  --background: 222 38% 6%;
+  --foreground: 40 20% 93%;
+  --border: 222 22% 17%;
+  --card: 222 32% 9%;
+  --card-foreground: 40 20% 93%;
+  --card-border: 222 22% 16%;
+  --sidebar: 222 40% 5%;
+  --sidebar-foreground: 40 15% 85%;
+  --sidebar-border: 222 24% 14%;
+  --sidebar-primary: 39 55% 62%;
+  --sidebar-primary-foreground: 222 44% 8%;
+  --sidebar-accent: 222 28% 14%;
+  --sidebar-accent-foreground: 40 30% 97%;
+  --sidebar-ring: 39 55% 62%;
+  --popover: 222 32% 10%;
+  --popover-foreground: 40 20% 93%;
+  --popover-border: 222 22% 19%;
+  --primary: 39 55% 64%;
+  --primary-foreground: 222 44% 8%;
+  --secondary: 222 24% 15%;
+  --secondary-foreground: 40 20% 92%;
+  --muted: 222 24% 13%;
+  --muted-foreground: 40 8% 66%;
+  --accent: 222 26% 16%;
+  --accent-foreground: 39 60% 78%;
+  --gold: 39 55% 62%;
+  --gold-foreground: 222 44% 8%;
+  --destructive: 0 82% 70%;
+  --destructive-foreground: 0 50% 10%;
+  --success: 152 55% 52%;
+  --success-foreground: 152 60% 8%;
+  --warning: 38 92% 58%;
+  --warning-foreground: 30 70% 10%;
+  --input: 222 20% 22%;
+  --ring: 39 55% 62%;
+  --chart-1: 214 55% 64%;
+  --chart-2: 39 55% 62%;
+  --chart-3: 168 40% 52%;
+  --chart-4: 352 55% 66%;
+  --chart-5: 215 14% 68%;
+  --primary-rgb: 214, 178, 113;
 
-  --shadow-2xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 2px 4px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 4px 6px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 8px 10px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
+  --shadow-2xs: 0px 1px 0px 0px hsl(0 0% 0% / 0.2);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.3);
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.3), 0px 1px 3px 0px hsl(0 0% 0% / 0.25);
+  --shadow: 0px 1px 3px 0px hsl(0 0% 0% / 0.35), 0px 1px 2px -1px hsl(0 0% 0% / 0.3);
+  --shadow-md: 0px 4px 6px -1px hsl(0 0% 0% / 0.35), 0px 2px 4px -2px hsl(0 0% 0% / 0.3);
+  --shadow-lg: 0px 10px 15px -3px hsl(0 0% 0% / 0.35), 0px 4px 6px -4px hsl(0 0% 0% / 0.3);
+  --shadow-xl: 0px 20px 25px -5px hsl(0 0% 0% / 0.4), 0px 8px 10px -6px hsl(0 0% 0% / 0.3);
+  --shadow-2xl: 0px 25px 50px -12px hsl(0 0% 0% / 0.5);
 
 }
 
@@ -247,8 +273,33 @@
     @apply border-border;
   }
 
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Consistent heading defaults (pages still set size with utilities) */
+  h1, h2, h3, h4 {
+    @apply tracking-tight;
+    text-wrap: balance;
+  }
+
+  /* Visible keyboard focus everywhere, without rings on mouse clicks */
+  :where(a, button, [role="button"], [role="tab"], [role="menuitem"], summary, [tabindex]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
   }
 }
 
@@ -364,6 +415,18 @@
   }
 }
 
+/* Midnight brand surface that stays dark in both themes, so ivory/gold text on it
+   always passes contrast (heroes, AI assistant header, call-to-action banners). */
+@utility bg-brand {
+  background-color: hsl(222 44% 11%);
+  background-image: radial-gradient(120% 80% at 85% 0%, hsl(222 38% 20%) 0%, transparent 60%), linear-gradient(160deg, hsl(222 42% 14%) 0%, hsl(224 50% 6%) 100%);
+}
+
+/* Money / numeric columns line up */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
 /* ─── Mobile-native feel ──────────────────────────────────────────────────── */
 html, body {
   overscroll-behavior: none;
@@ -380,3 +443,37 @@ html, body {
 .has-bottom-nav {
   padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 }
+
+/* ─── Home hero slideshow ─────────────────────────────────────────────────── */
+@keyframes hero-kenburns {
+  from { transform: scale(1.04) translate3d(0, 0, 0); }
+  to   { transform: scale(1.14) translate3d(-1.5%, -1%, 0); }
+}
+@keyframes hero-rise {
+  from { opacity: 0; transform: translate3d(0, 18px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes hero-progress {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+.hero-kenburns { animation: hero-kenburns 9s ease-out forwards; will-change: transform; }
+.hero-rise > * { animation: hero-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.hero-rise > *:nth-child(2) { animation-delay: 0.08s; }
+.hero-rise > *:nth-child(3) { animation-delay: 0.16s; }
+.hero-rise > *:nth-child(4) { animation-delay: 0.24s; }
+.hero-progress { animation-name: hero-progress; animation-timing-function: linear; animation-fill-mode: forwards; width: 0%; }
+.hero-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-kenburns, .hero-rise > *, .hero-progress { animation: none !important; }
+}
+
+/* Native-feeling horizontal swipe rows (home page on phones) */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar { display: none; }
+}
+.swipe-row { touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }

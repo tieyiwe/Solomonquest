@@ -1,6 +1,8 @@
 import { useState, useRef } from "react";
+import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
 import { useParams, Link, useSearch } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
+import { StudentDetailDialog } from "@/components/StudentDetailDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useGetCourse,
@@ -8,6 +10,7 @@ import {
   useListAssignments,
   useUpdateCourse,
   useCreateAssignment,
+  useUpdateAssignment,
   useListSubmissions,
   useGradeSubmission,
   useGetCourseAttendance,
@@ -26,6 +29,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Users,
   FileText,
@@ -44,16 +48,29 @@ import {
   Upload,
   Link2,
   Eye,
+  EyeOff,
   CheckCircle2,
   UserCheck,
+  Rocket,
+  FileQuestion,
+  Trash2,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
+
+function safeFormat(value: string | null | undefined, fmt: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return isValid(date) ? format(date, fmt) : null;
+}
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { EmptyState } from "@/components/common/States";
+import { CourseModulesManager } from "@/components/modules/CourseModulesManager";
+import { CourseProgressTable } from "@/components/modules/CourseProgressTable";
 
 const assignmentSchema = z.object({
   title: z.string().min(2, "Title is required"),
@@ -74,6 +91,7 @@ export default function TeacherCourseDetail() {
   const { session } = useAuth();
   const queryClient = useQueryClient();
 
+  const [viewStudentId, setViewStudentId] = useState<string | null>(null);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editedDescription, setEditedDescription] = useState("");
   const [isEditingBio, setIsEditingBio] = useState(false);
@@ -86,6 +104,7 @@ export default function TeacherCourseDetail() {
   const [resourceTitle, setResourceTitle] = useState("");
   const [resourceType, setResourceType] = useState<"link" | "file">("link");
   const [isUploadingResource, setIsUploadingResource] = useState(false);
+  const [resourcePublishNow, setResourcePublishNow] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: course, isLoading: isCourseLoading } = useGetCourse(courseId, {
@@ -111,7 +130,34 @@ export default function TeacherCourseDetail() {
 
   const updateCourse = useUpdateCourse();
   const createAssignment = useCreateAssignment();
+  const updateAssignment = useUpdateAssignment();
   const gradeSubmission = useGradeSubmission();
+
+  const { data: resources, isLoading: isResourcesLoading } = useQuery<any[]>({
+    queryKey: ["teacher-course-resources", courseId],
+    queryFn: async () => {
+      const res = await fetch(`/api/courses/${courseId}/resources`, {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch resources");
+      return res.json();
+    },
+    enabled: !!courseId && !!session,
+  });
+
+  const { data: quizzes, isLoading: isQuizzesLoading } = useQuery<any[]>({
+    queryKey: ["teacher-course-quizzes", courseId],
+    queryFn: async () => {
+      const res = await fetch(`/api/quizzes?course_id=${courseId}`, {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch quizzes");
+      return res.json();
+    },
+    enabled: !!courseId && !!session,
+  });
+
+  const [publishOnCreate, setPublishOnCreate] = useState(false);
 
   const assignmentForm = useForm<AssignmentFormValues>({
     resolver: zodResolver(assignmentSchema),
@@ -142,17 +188,84 @@ export default function TeacherCourseDetail() {
 
   const handleCreateAssignment = (data: AssignmentFormValues) => {
     createAssignment.mutate(
-      { courseId, data },
+      { courseId, data: { ...data, isPublished: publishOnCreate } as any },
       {
         onSuccess: () => {
-          toast.success("Assignment created");
+          toast.success(publishOnCreate ? "Assignment created and published" : "Assignment saved as draft");
           setIsCreateAssignmentOpen(false);
           assignmentForm.reset();
+          setPublishOnCreate(false);
           queryClient.invalidateQueries({ queryKey: getListAssignmentsQueryKey(courseId) });
         },
         onError: () => toast.error("Failed to create assignment"),
       }
     );
+  };
+
+  const handleToggleAssignmentPublish = (assignmentId: string, publish: boolean) => {
+    updateAssignment.mutate(
+      { id: assignmentId, data: { isPublished: publish } as any },
+      {
+        onSuccess: () => {
+          toast.success(publish ? "Assignment published to students" : "Assignment unpublished");
+          queryClient.invalidateQueries({ queryKey: getListAssignmentsQueryKey(courseId) });
+        },
+        onError: () => toast.error("Failed to update assignment"),
+      }
+    );
+  };
+
+  const handleToggleResourcePublish = async (resourceId: string, publish: boolean) => {
+    try {
+      const res = await fetch(`/api/courses/${courseId}/resources/${resourceId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ isPublished: publish }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast.success(publish ? "Resource published to students" : "Resource unpublished");
+      queryClient.invalidateQueries({ queryKey: ["teacher-course-resources", courseId] });
+    } catch {
+      toast.error("Failed to update resource");
+    }
+  };
+
+  const handleDeleteResource = async (resourceId: string) => {
+    try {
+      const res = await fetch(`/api/courses/${courseId}/resources/${resourceId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast.success("Resource removed");
+      queryClient.invalidateQueries({ queryKey: ["teacher-course-resources", courseId] });
+    } catch {
+      toast.error("Failed to remove resource");
+    }
+  };
+
+  const handleToggleQuizPublish = async (quizId: string, publish: boolean) => {
+    try {
+      const res = await fetch(
+        publish ? `/api/quizzes/${quizId}/publish` : `/api/quizzes/${quizId}`,
+        {
+          method: publish ? "POST" : "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: publish ? undefined : JSON.stringify({ is_published: false }),
+        }
+      );
+      if (!res.ok) throw new Error("Failed");
+      toast.success(publish ? "Quiz published to students" : "Quiz unpublished");
+      queryClient.invalidateQueries({ queryKey: ["teacher-course-quizzes", courseId] });
+    } catch {
+      toast.error("Failed to update quiz");
+    }
   };
 
   const handleGradeSubmission = (submissionId: string, grade: number, feedback?: string) => {
@@ -169,18 +282,26 @@ export default function TeacherCourseDetail() {
     if (!courseId) return;
     setIsStartingVideo(true);
     try {
-      const res = await fetch(`/api/courses/${courseId}/video/start`, {
+      // There is no /courses/:id/video/start route. POST /video/sessions
+      // creates the video_sessions row that students' VideoTab polls for and
+      // notifies enrolled students; joining a made-up room instead left
+      // students with "No Active Session" and a different room.
+      const res = await fetch(`/api/video/sessions`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ course_id: courseId }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setVideoRoomUrl(data.url || `https://meet.jit.si/solomonquest-${courseId}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.room_name) {
+        setVideoRoomUrl(`https://meet.jit.si/${data.room_name}`);
       } else {
-        setVideoRoomUrl(`https://meet.jit.si/solomonquest-${courseId}`);
+        toast.error(data.error || "Failed to start live class");
       }
     } catch {
-      setVideoRoomUrl(`https://meet.jit.si/solomonquest-${courseId}`);
+      toast.error("Failed to start live class");
     } finally {
       setIsStartingVideo(false);
     }
@@ -197,17 +318,24 @@ export default function TeacherCourseDetail() {
     }
     setIsUploadingResource(true);
     try {
-      await fetch(`/api/courses/${courseId}/resources`, {
+      const res = await fetch(`/api/courses/${courseId}/resources`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ title: resourceTitle, url: resourceUrl, type: resourceType }),
+        body: JSON.stringify({
+          title: resourceTitle,
+          resourceType: "link",
+          externalUrl: resourceUrl,
+          isPublished: resourcePublishNow,
+        }),
       });
-      toast.success("Resource added");
+      if (!res.ok) throw new Error("Failed");
+      toast.success(resourcePublishNow ? "Resource added and published" : "Resource saved as draft");
       setResourceTitle("");
       setResourceUrl("");
+      queryClient.invalidateQueries({ queryKey: ["teacher-course-resources", courseId] });
     } catch {
       toast.error("Failed to add resource");
     } finally {
@@ -230,7 +358,7 @@ export default function TeacherCourseDetail() {
         .from("course-resources")
         .getPublicUrl(data.path);
 
-      await fetch(`/api/courses/${courseId}/resources`, {
+      const res = await fetch(`/api/courses/${courseId}/resources`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -238,12 +366,15 @@ export default function TeacherCourseDetail() {
         },
         body: JSON.stringify({
           title: resourceTitle || file.name,
-          url: publicData.publicUrl,
-          type: "file",
+          resourceType: "document",
+          fileUrl: publicData.publicUrl,
+          isPublished: resourcePublishNow,
         }),
       });
+      if (!res.ok) throw new Error("Failed");
       toast.success("File uploaded successfully");
       setResourceTitle("");
+      queryClient.invalidateQueries({ queryKey: ["teacher-course-resources", courseId] });
     } catch {
       toast.error("Failed to upload file");
     } finally {
@@ -338,6 +469,8 @@ export default function TeacherCourseDetail() {
             <TabsTrigger value="students">
               Students {students ? `(${students.length})` : ""}
             </TabsTrigger>
+            <TabsTrigger value="modules">Modules</TabsTrigger>
+            <TabsTrigger value="progress">Progress</TabsTrigger>
             <TabsTrigger value="resources">Resources</TabsTrigger>
             <TabsTrigger value="assignments">
               Assignments {assignments ? `(${assignments.length})` : ""}
@@ -348,6 +481,16 @@ export default function TeacherCourseDetail() {
               Video
             </TabsTrigger>
           </TabsList>
+
+          {/* MODULES TAB */}
+          <TabsContent value="modules" className="space-y-4">
+            <CourseModulesManager courseId={courseId} />
+          </TabsContent>
+
+          {/* PROGRESS TAB */}
+          <TabsContent value="progress" className="space-y-4">
+            <CourseProgressTable courseId={courseId} />
+          </TabsContent>
 
           {/* OVERVIEW TAB */}
           <TabsContent value="overview" className="space-y-4">
@@ -471,16 +614,18 @@ export default function TeacherCourseDetail() {
                 <div className="text-sm text-muted-foreground mt-1">Enrolled Students</div>
               </Card>
               <Card className="text-center p-6">
-                <div className="text-3xl font-bold text-blue-600">{assignments?.length || 0}</div>
+                <div className="text-3xl font-bold text-primary">{assignments?.length || 0}</div>
                 <div className="text-sm text-muted-foreground mt-1">Assignments</div>
               </Card>
               <Card className="text-center p-6">
-                <div className="text-3xl font-bold text-green-600">
+                <div className="text-3xl font-bold text-success">
                   {attendance?.length || 0}
                 </div>
                 <div className="text-sm text-muted-foreground mt-1">Attendance Records</div>
               </Card>
             </div>
+
+            <AnnouncementsPanel courseId={courseId} canPost title="Course announcements" />
           </TabsContent>
 
           {/* STUDENTS TAB */}
@@ -504,9 +649,10 @@ export default function TeacherCourseDetail() {
                     {students.map((student) => {
                       const att = getAttendanceSummary(student.id);
                       return (
-                        <div
+                        <button
                           key={student.id}
-                          className="py-3 flex items-center justify-between gap-4"
+                          onClick={() => setViewStudentId(student.id)}
+                          className="w-full py-3 flex items-center justify-between gap-4 text-left hover:bg-muted/50 rounded-lg px-2 -mx-2 transition-colors"
                         >
                           <div className="flex items-center gap-3">
                             <Avatar className="h-9 w-9">
@@ -538,14 +684,14 @@ export default function TeacherCourseDetail() {
                               Enrolled
                             </Badge>
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
                 ) : (
                   <div className="text-center py-12 border border-dashed rounded-lg">
                     <Users className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
-                    <p className="text-muted-foreground">No students enrolled yet.</p>
+                    <EmptyState compact icon={Users} title="No students enrolled yet" description="Students appear here once they are enrolled in this course." />
                   </div>
                 )}
               </CardContent>
@@ -581,8 +727,8 @@ export default function TeacherCourseDetail() {
 
                 <div className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label>Resource Title</Label>
-                    <Input
+                    <Label htmlFor="teachercoursedetail-resource-title">Resource Title</Label>
+                    <Input id="teachercoursedetail-resource-title"
                       placeholder="e.g. Chapter 1 Reading"
                       value={resourceTitle}
                       onChange={(e) => setResourceTitle(e.target.value)}
@@ -591,8 +737,8 @@ export default function TeacherCourseDetail() {
 
                   {resourceType === "link" ? (
                     <div className="space-y-1.5">
-                      <Label>URL</Label>
-                      <Input
+                      <Label htmlFor="teachercoursedetail-url">URL</Label>
+                      <Input id="teachercoursedetail-url"
                         placeholder="https://..."
                         value={resourceUrl}
                         onChange={(e) => setResourceUrl(e.target.value)}
@@ -625,6 +771,17 @@ export default function TeacherCourseDetail() {
                     </div>
                   )}
 
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="publish-resource-now"
+                      checked={resourcePublishNow}
+                      onCheckedChange={(c) => setResourcePublishNow(c === true)}
+                    />
+                    <Label htmlFor="publish-resource-now" className="text-sm font-normal cursor-pointer">
+                      Publish immediately (otherwise saved as a draft students can't see)
+                    </Label>
+                  </div>
+
                   {resourceType === "link" && (
                     <Button
                       onClick={handleAddResource}
@@ -647,17 +804,82 @@ export default function TeacherCourseDetail() {
               <CardHeader>
                 <CardTitle>Course Resources</CardTitle>
                 <CardDescription>
-                  All resources available to students in this course.
+                  All resources for this course. Publish a resource to make it visible to students.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-10 border border-dashed rounded-lg">
-                  <FolderOpen className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
-                  <p className="text-muted-foreground text-sm">No resources added yet.</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Add links or upload files above to share with students.
-                  </p>
-                </div>
+                {isResourcesLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2].map((i) => (
+                      <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                    ))}
+                  </div>
+                ) : resources && resources.length > 0 ? (
+                  <div className="space-y-3">
+                    {resources.map((resource) => (
+                      <Card key={resource.id} className="hover:border-primary/40 transition-colors">
+                        <CardContent className="flex items-center gap-4 p-4">
+                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                            <FileText className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium truncate">{resource.title}</p>
+                              {resource.is_published ? (
+                                <Badge className="bg-success hover:bg-success/90 text-success-foreground text-xs">
+                                  Published
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">
+                                  Draft
+                                </Badge>
+                              )}
+                            </div>
+                            {(resource.external_url || resource.file_url) && (
+                              <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                {resource.external_url || resource.file_url}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex gap-2 shrink-0">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleToggleResourcePublish(resource.id, !resource.is_published)}
+                            >
+                              {resource.is_published ? (
+                                <>
+                                  <EyeOff className="h-3.5 w-3.5 mr-1.5" />
+                                  Unpublish
+                                </>
+                              ) : (
+                                <>
+                                  <Rocket className="h-3.5 w-3.5 mr-1.5" />
+                                  Publish
+                                </>
+                              )}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDeleteResource(resource.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-10 border border-dashed rounded-lg">
+                    <FolderOpen className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                    <p className="text-muted-foreground text-sm">No resources added yet.</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Add links or upload files above to share with students.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -741,6 +963,16 @@ export default function TeacherCourseDetail() {
                           )}
                         />
                       </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="publish-assignment-now"
+                          checked={publishOnCreate}
+                          onCheckedChange={(c) => setPublishOnCreate(c === true)}
+                        />
+                        <Label htmlFor="publish-assignment-now" className="text-sm font-normal cursor-pointer">
+                          Publish immediately (otherwise saved as a draft students can't see)
+                        </Label>
+                      </div>
                       <Button
                         type="submit"
                         className="w-full"
@@ -749,7 +981,7 @@ export default function TeacherCourseDetail() {
                         {createAssignment.isPending && (
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         )}
-                        Create Assignment
+                        {publishOnCreate ? "Create & Publish" : "Save as Draft"}
                       </Button>
                     </form>
                   </Form>
@@ -779,10 +1011,10 @@ export default function TeacherCourseDetail() {
                             )}
                           </div>
                           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-muted-foreground">
-                            {assignment.dueDate && (
+                            {safeFormat(assignment.dueDate, "MMM d, yyyy") && (
                               <span className="flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
-                                Due {format(new Date(assignment.dueDate), "MMM d, yyyy")}
+                                Due {safeFormat(assignment.dueDate, "MMM d, yyyy")}
                               </span>
                             )}
                             <span>{assignment.pointsPossible ?? 0} pts</span>
@@ -794,6 +1026,25 @@ export default function TeacherCourseDetail() {
                           )}
                         </div>
                         <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant={assignment.isPublished ? "outline" : "default"}
+                            onClick={() =>
+                              handleToggleAssignmentPublish(assignment.id, !assignment.isPublished)
+                            }
+                          >
+                            {assignment.isPublished ? (
+                              <>
+                                <EyeOff className="h-3.5 w-3.5 mr-1.5" />
+                                Unpublish
+                              </>
+                            ) : (
+                              <>
+                                <Rocket className="h-3.5 w-3.5 mr-1.5" />
+                                Publish
+                              </>
+                            )}
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
@@ -812,7 +1063,7 @@ export default function TeacherCourseDetail() {
               <Card className="border-dashed">
                 <CardContent className="text-center py-12">
                   <FileText className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
-                  <p className="text-muted-foreground">No assignments yet.</p>
+                  <EmptyState compact icon={FileText} title="No assignments yet" description="Create the first assignment for this course." />
                   <Button
                     size="sm"
                     className="mt-3"
@@ -937,18 +1188,95 @@ export default function TeacherCourseDetail() {
               </Button>
             </div>
 
-            <Card className="border-dashed">
-              <CardContent className="text-center py-12">
-                <ClipboardList className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
-                <p className="text-muted-foreground">No quizzes created yet.</p>
-                <Button size="sm" className="mt-3" asChild>
-                  <Link href={`/dashboard/teacher/quiz-builder?courseId=${courseId}`}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Build First Quiz
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
+            {isQuizzesLoading ? (
+              <div className="space-y-3">
+                {[1, 2].map((i) => (
+                  <Skeleton key={i} className="h-20 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : quizzes && quizzes.length > 0 ? (
+              <div className="space-y-3">
+                {quizzes.map((quiz) => (
+                  <Card key={quiz.id} className="hover:border-primary/40 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-semibold">{quiz.title}</h4>
+                            {quiz.is_published ? (
+                              <Badge className="bg-success hover:bg-success/90 text-success-foreground text-xs">
+                                Published
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs">
+                                Draft
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-muted-foreground">
+                            {quiz.time_limit_minutes && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {quiz.time_limit_minutes} min
+                              </span>
+                            )}
+                            {safeFormat(quiz.due_date, "MMM d, yyyy") && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                Due {safeFormat(quiz.due_date, "MMM d, yyyy")}
+                              </span>
+                            )}
+                          </div>
+                          {quiz.description && (
+                            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                              {quiz.description}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant={quiz.is_published ? "outline" : "default"}
+                            onClick={() => handleToggleQuizPublish(quiz.id, !quiz.is_published)}
+                          >
+                            {quiz.is_published ? (
+                              <>
+                                <EyeOff className="h-3.5 w-3.5 mr-1.5" />
+                                Unpublish
+                              </>
+                            ) : (
+                              <>
+                                <Rocket className="h-3.5 w-3.5 mr-1.5" />
+                                Publish
+                              </>
+                            )}
+                          </Button>
+                          <Button size="sm" variant="outline" asChild>
+                            <Link href={`/dashboard/teacher/quiz-builder?courseId=${courseId}&quizId=${quiz.id}`}>
+                              <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                              Edit
+                            </Link>
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="border-dashed">
+                <CardContent className="text-center py-12">
+                  <FileQuestion className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                  <EmptyState compact icon={ClipboardList} title="No quizzes yet" description="Build a quiz to check understanding." />
+                  <Button size="sm" className="mt-3" asChild>
+                    <Link href={`/dashboard/teacher/quiz-builder?courseId=${courseId}`}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Build First Quiz
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* VIDEO TAB */}
@@ -995,7 +1323,7 @@ export default function TeacherCourseDetail() {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                        <div className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
                         <span className="font-medium text-sm">Live Session Active</span>
                       </div>
                       <div className="flex gap-2">
@@ -1031,6 +1359,11 @@ export default function TeacherCourseDetail() {
           </TabsContent>
         </Tabs>
       </div>
+      <StudentDetailDialog
+        studentId={viewStudentId}
+        open={!!viewStudentId}
+        onOpenChange={(v) => { if (!v) setViewStudentId(null); }}
+      />
     </TeacherLayout>
   );
 }

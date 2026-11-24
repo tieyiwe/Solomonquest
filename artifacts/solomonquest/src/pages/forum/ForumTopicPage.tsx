@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
+import { MentionTextarea } from "@/components/forum/MentionTextarea";
 import { toast } from "sonner";
 import { useLocation, useParams } from "wouter";
 import {
@@ -46,25 +47,24 @@ interface ReactionCounts {
   celebrate: number;
 }
 
-interface UserReactions {
-  like: boolean;
-  heart: boolean;
-  celebrate: boolean;
-}
-
 interface ForumTopic {
   id: string;
   title: string;
   content: string;
+  coverImage?: string | null;
   author_id: string;
   author_name: string;
   author_avatar_url?: string | null;
   created_at: string;
   updated_at: string;
   reaction_counts: ReactionCounts;
-  user_reactions?: UserReactions;
+  // A user only ever has one active reaction per topic/comment (enforced
+  // by a unique index on (topic_id, user_id) / (comment_id, user_id)) —
+  // this is which one, or null if they haven't reacted.
+  my_reaction: ReactionType | null;
   course_id: string | null;
   course_name?: string | null;
+  program_id: string | null;
   is_pinned: boolean;
   school_id: string;
 }
@@ -78,7 +78,53 @@ interface ForumComment {
   author_avatar_url?: string | null;
   created_at: string;
   reaction_counts: ReactionCounts;
-  user_reactions?: UserReactions;
+  my_reaction: ReactionType | null;
+}
+
+function defaultReactionCounts(): ReactionCounts {
+  return { like: 0, heart: 0, celebrate: 0 };
+}
+
+/** Translates the API's camelCase response into the shape this page renders. */
+function normalizeTopic(raw: any): ForumTopic {
+  const authorName =
+    [raw.postedByProfile?.first_name, raw.postedByProfile?.last_name].filter(Boolean).join(" ") ||
+    "Unknown";
+  return {
+    id: raw.id,
+    title: raw.title,
+    content: raw.content ?? "",
+    coverImage: raw.coverImage ?? null,
+    author_id: raw.postedBy,
+    author_name: authorName,
+    author_avatar_url: raw.postedByProfile?.avatar_url ?? null,
+    created_at: raw.createdAt,
+    updated_at: raw.updatedAt,
+    reaction_counts: { ...defaultReactionCounts(), ...raw.reactionCounts },
+    my_reaction: raw.myReaction ?? null,
+    course_id: raw.courseId ?? null,
+    course_name: null,
+    program_id: raw.programId ?? null,
+    is_pinned: !!raw.isPinned,
+    school_id: raw.schoolId,
+  };
+}
+
+function normalizeComment(raw: any): ForumComment {
+  const authorName =
+    [raw.postedByProfile?.first_name, raw.postedByProfile?.last_name].filter(Boolean).join(" ") ||
+    "Unknown";
+  return {
+    id: raw.id,
+    topic_id: raw.topicId,
+    content: raw.content ?? "",
+    author_id: raw.postedBy,
+    author_name: authorName,
+    author_avatar_url: raw.postedByProfile?.avatar_url ?? null,
+    created_at: raw.createdAt,
+    reaction_counts: { ...defaultReactionCounts(), ...raw.reactionCounts },
+    my_reaction: raw.myReaction ?? null,
+  };
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -120,10 +166,6 @@ function defaultReactions(): ReactionCounts {
   return { like: 0, heart: 0, celebrate: 0 };
 }
 
-function defaultUserReactions(): UserReactions {
-  return { like: false, heart: false, celebrate: false };
-}
-
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
 function Avatar({
@@ -137,20 +179,11 @@ function Avatar({
 }) {
   const dim =
     size === "sm"
-      ? "w-7 h-7 text-[10px]"
+      ? "w-7 h-7 text-[11px]"
       : size === "lg"
       ? "w-11 h-11 text-sm"
       : "w-9 h-9 text-xs";
-  if (url) {
-    return (
-      <img
-        src={url}
-        alt={name}
-        className={cn("rounded-full object-cover shrink-0 border border-border", dim)}
-      />
-    );
-  }
-  return (
+  const initials = (
     <div
       className={cn(
         "rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center shrink-0 select-none",
@@ -159,6 +192,15 @@ function Avatar({
     >
       {getInitials(name)}
     </div>
+  );
+  // A dead avatar URL shows the initials instead of a broken-image icon.
+  return (
+    <SafeImage
+      src={url || undefined}
+      alt=""
+      className={cn("rounded-full object-cover shrink-0 border border-border", dim)}
+      fallback={initials}
+    />
   );
 }
 
@@ -172,12 +214,12 @@ const REACTIONS: { type: ReactionType; emoji: string; label: string }[] = [
 
 function ReactionBar({
   counts,
-  userReactions,
+  myReaction,
   onReact,
   disabled,
 }: {
   counts: ReactionCounts;
-  userReactions: UserReactions;
+  myReaction: ReactionType | null;
   onReact: (type: ReactionType) => void;
   disabled?: boolean;
 }) {
@@ -185,7 +227,7 @@ function ReactionBar({
     <div className="flex items-center gap-1.5 flex-wrap">
       {REACTIONS.map(({ type, emoji, label }) => {
         const count = counts[type] ?? 0;
-        const active = userReactions[type] ?? false;
+        const active = myReaction === type;
         return (
           <button
             key={type}
@@ -193,7 +235,7 @@ function ReactionBar({
             disabled={disabled}
             title={label}
             className={cn(
-              "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all",
+              "inline-flex items-center gap-1 px-2.5 py-1 min-h-9 sm:min-h-0 rounded-full text-xs font-medium border transition-all",
               "hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               active
                 ? "bg-primary/10 border-primary/40 text-primary"
@@ -278,7 +320,7 @@ function CommentCard({
         <div className="mt-2 pl-1">
           <ReactionBar
             counts={comment.reaction_counts ?? defaultReactions()}
-            userReactions={comment.user_reactions ?? defaultUserReactions()}
+            myReaction={comment.my_reaction}
             onReact={handleReact}
             disabled={reacting}
           />
@@ -292,8 +334,10 @@ function CommentCard({
 
 export default function ForumTopicPage() {
   const { user } = useAuth();
-  const params = useParams<{ topicId: string }>();
-  const topicId = params.topicId ?? "";
+  // Router registers this page as /forum/topics/:id — reading `topicId`
+  // here was always undefined, so the topic never loaded.
+  const params = useParams<{ id: string }>();
+  const topicId = params.id ?? "";
   const [, setLocation] = useLocation();
 
   const [topic, setTopic] = useState<ForumTopic | null>(null);
@@ -301,6 +345,7 @@ export default function ForumTopicPage() {
   const [isLoadingTopic, setIsLoadingTopic] = useState(true);
   const [isLoadingComments, setIsLoadingComments] = useState(true);
   const [newComment, setNewComment] = useState("");
+  const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [topicReacting, setTopicReacting] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
@@ -308,37 +353,30 @@ export default function ForumTopicPage() {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const commentEndRef = useRef<HTMLDivElement>(null);
 
-  // ── Fetch topic ──
+  // ── Fetch topic (the single GET returns the topic's own comments too,
+  // there is no separate "list comments" endpoint) ──
   const fetchTopic = useCallback(async () => {
     if (!topicId) return;
     setIsLoadingTopic(true);
+    setIsLoadingComments(true);
     try {
       const res = await apiFetch(`/api/forum/topics/${topicId}`);
       if (!res.ok) throw new Error("Topic not found");
-      const data: ForumTopic = await res.json();
-      setTopic(data);
+      const raw = await res.json();
+      setTopic(normalizeTopic(raw));
+      setComments(((raw.comments ?? []) as any[]).map(normalizeComment));
     } catch (err: any) {
       toast.error(err?.message ?? "Could not load topic.");
     } finally {
       setIsLoadingTopic(false);
-    }
-  }, [topicId]);
-
-  // ── Fetch comments ──
-  const fetchComments = useCallback(async () => {
-    if (!topicId) return;
-    setIsLoadingComments(true);
-    try {
-      const res = await apiFetch(`/api/forum/topics/${topicId}/comments`);
-      if (!res.ok) throw new Error("Failed to load comments");
-      const data: ForumComment[] = await res.json();
-      setComments(data);
-    } catch (err: any) {
-      toast.error(err?.message ?? "Could not load comments.");
-    } finally {
       setIsLoadingComments(false);
     }
   }, [topicId]);
+
+  // Kept as an alias so the rest of the file (posting a comment, deleting
+  // one, etc.) can ask for a fresh comment list without duplicating the
+  // fetch — refetching the topic is the only way to get one.
+  const fetchComments = fetchTopic;
 
   // ── Realtime subscription ──
   useEffect(() => {
@@ -362,8 +400,8 @@ export default function ForumTopicPage() {
               ...prev,
               {
                 ...newRow,
-                reaction_counts: newRow.reaction_counts ?? defaultReactions(),
-                user_reactions: newRow.user_reactions ?? defaultUserReactions(),
+                reaction_counts: defaultReactions(),
+                my_reaction: null,
               },
             ];
           });
@@ -393,30 +431,27 @@ export default function ForumTopicPage() {
 
   useEffect(() => {
     fetchTopic();
-    fetchComments();
-  }, [fetchTopic, fetchComments]);
+  }, [fetchTopic]);
 
   // ── Topic reaction ──
+  // A user only ever has one active reaction per topic (server-enforced,
+  // see forum-reaction-indexes.sql), so picking a new one replaces the old
+  // rather than adding to it, and clicking the active one clears it.
   async function handleTopicReact(type: ReactionType) {
     if (!topic) return;
     setTopicReacting(true);
 
-    const wasActive = topic.user_reactions?.[type] ?? false;
+    const prevCounts = topic.reaction_counts;
+    const prevMyReaction = topic.my_reaction;
+    const turningOff = prevMyReaction === type;
 
     // Optimistic update
     setTopic((prev) => {
       if (!prev) return prev;
-      return {
-        ...prev,
-        reaction_counts: {
-          ...prev.reaction_counts,
-          [type]: (prev.reaction_counts[type] ?? 0) + (wasActive ? -1 : 1),
-        },
-        user_reactions: {
-          ...(prev.user_reactions ?? defaultUserReactions()),
-          [type]: !wasActive,
-        },
-      };
+      const counts = { ...prev.reaction_counts };
+      if (prev.my_reaction) counts[prev.my_reaction] = Math.max(0, (counts[prev.my_reaction] ?? 0) - 1);
+      if (!turningOff) counts[type] = (counts[type] ?? 0) + 1;
+      return { ...prev, reaction_counts: counts, my_reaction: turningOff ? null : type };
     });
 
     try {
@@ -425,29 +460,14 @@ export default function ForumTopicPage() {
         body: JSON.stringify({ reaction: type }),
       });
       if (!res.ok) throw new Error("Failed to react");
-      // Optionally sync server counts
       const data = await res.json().catch(() => null);
-      if (data?.reaction_counts) {
+      if (data?.reactionCounts) {
         setTopic((prev) =>
-          prev ? { ...prev, reaction_counts: data.reaction_counts } : prev
+          prev ? { ...prev, reaction_counts: data.reactionCounts, my_reaction: data.myReaction ?? null } : prev
         );
       }
     } catch (err: any) {
-      // Revert
-      setTopic((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          reaction_counts: {
-            ...prev.reaction_counts,
-            [type]: (prev.reaction_counts[type] ?? 0) + (wasActive ? 1 : -1),
-          },
-          user_reactions: {
-            ...(prev.user_reactions ?? defaultUserReactions()),
-            [type]: wasActive,
-          },
-        };
-      });
+      setTopic((prev) => (prev ? { ...prev, reaction_counts: prevCounts, my_reaction: prevMyReaction } : prev));
       toast.error(err?.message ?? "Could not react.");
     } finally {
       setTopicReacting(false);
@@ -459,23 +479,18 @@ export default function ForumTopicPage() {
     const comment = comments.find((c) => c.id === commentId);
     if (!comment) return;
 
-    const wasActive = comment.user_reactions?.[type] ?? false;
+    const prevCounts = comment.reaction_counts;
+    const prevMyReaction = comment.my_reaction;
+    const turningOff = prevMyReaction === type;
 
     // Optimistic update
     setComments((prev) =>
       prev.map((c) => {
         if (c.id !== commentId) return c;
-        return {
-          ...c,
-          reaction_counts: {
-            ...c.reaction_counts,
-            [type]: (c.reaction_counts[type] ?? 0) + (wasActive ? -1 : 1),
-          },
-          user_reactions: {
-            ...(c.user_reactions ?? defaultUserReactions()),
-            [type]: !wasActive,
-          },
-        };
+        const counts = { ...c.reaction_counts };
+        if (c.my_reaction) counts[c.my_reaction] = Math.max(0, (counts[c.my_reaction] ?? 0) - 1);
+        if (!turningOff) counts[type] = (counts[type] ?? 0) + 1;
+        return { ...c, reaction_counts: counts, my_reaction: turningOff ? null : type };
       })
     );
 
@@ -486,30 +501,16 @@ export default function ForumTopicPage() {
       });
       if (!res.ok) throw new Error("Failed to react");
       const data = await res.json().catch(() => null);
-      if (data?.reaction_counts) {
+      if (data?.reactionCounts) {
         setComments((prev) =>
           prev.map((c) =>
-            c.id === commentId ? { ...c, reaction_counts: data.reaction_counts } : c
+            c.id === commentId ? { ...c, reaction_counts: data.reactionCounts, my_reaction: data.myReaction ?? null } : c
           )
         );
       }
     } catch (err: any) {
-      // Revert
       setComments((prev) =>
-        prev.map((c) => {
-          if (c.id !== commentId) return c;
-          return {
-            ...c,
-            reaction_counts: {
-              ...c.reaction_counts,
-              [type]: (c.reaction_counts[type] ?? 0) + (wasActive ? 1 : -1),
-            },
-            user_reactions: {
-              ...(c.user_reactions ?? defaultUserReactions()),
-              [type]: wasActive,
-            },
-          };
-        })
+        prev.map((c) => (c.id === commentId ? { ...c, reaction_counts: prevCounts, my_reaction: prevMyReaction } : c))
       );
       toast.error(err?.message ?? "Could not react.");
     }
@@ -545,13 +546,14 @@ export default function ForumTopicPage() {
     try {
       const res = await apiFetch(`/api/forum/topics/${topicId}/comments`, {
         method: "POST",
-        body: JSON.stringify({ content: newComment.trim() }),
+        body: JSON.stringify({ content: newComment.trim(), mentionedUserIds }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error((err as any).message ?? "Failed to post comment");
       }
       setNewComment("");
+      setMentionedUserIds([]);
       fetchComments(); // fallback refresh; realtime handles live append
       toast.success("Comment posted.");
       setTimeout(() => commentEndRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
@@ -560,6 +562,7 @@ export default function ForumTopicPage() {
     } finally {
       setSubmitting(false);
     }
+    return;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -619,7 +622,7 @@ export default function ForumTopicPage() {
       {/* ── Back navigation ── */}
       <button
         onClick={() => setLocation("/forum")}
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors group"
+        className="inline-flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors group"
       >
         <ArrowLeft
           size={15}
@@ -635,7 +638,7 @@ export default function ForumTopicPage() {
           {/* Badges row */}
           <div className="flex items-center gap-2 flex-wrap">
             {topic.is_pinned && (
-              <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0 gap-1 text-xs">
+              <Badge className="bg-warning/10 text-warning border-0 gap-1 text-xs">
                 <Pin size={10} />
                 Pinned
               </Badge>
@@ -643,10 +646,15 @@ export default function ForumTopicPage() {
             {topic.course_id ? (
               <Badge className="bg-primary/10 text-primary border-0 gap-1 text-xs hover:bg-primary/10">
                 <BookOpen size={10} />
-                {topic.course_name ?? "Course"}
+                {topic.course_name ?? "Class"}
+              </Badge>
+            ) : topic.program_id ? (
+              <Badge className="bg-primary/10 text-primary border-0 gap-1 text-xs hover:bg-primary/20">
+                <BookOpen size={10} />
+                Program
               </Badge>
             ) : (
-              <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0 gap-1 text-xs hover:bg-green-100">
+              <Badge className="bg-success/10 text-success border-0 gap-1 text-xs hover:bg-success/20">
                 <School size={10} />
                 School-wide
               </Badge>
@@ -655,8 +663,8 @@ export default function ForumTopicPage() {
 
           {/* Cover image */}
           {topic.coverImage && (
-            <div className="w-full rounded-lg overflow-hidden border border-border max-h-64">
-              <img src={topic.coverImage} alt="Topic cover" className="w-full h-full object-cover" />
+            <div className="hidden has-[img]:block w-full h-44 sm:h-64 rounded-lg overflow-hidden border border-border bg-muted">
+              <SafeImage src={topic.coverImage} alt="" className="w-full h-full object-cover" />
             </div>
           )}
 
@@ -698,7 +706,7 @@ export default function ForumTopicPage() {
             </span>
             <ReactionBar
               counts={topic.reaction_counts ?? defaultReactions()}
-              userReactions={topic.user_reactions ?? defaultUserReactions()}
+              myReaction={topic.my_reaction}
               onReact={handleTopicReact}
               disabled={topicReacting}
             />
@@ -771,10 +779,12 @@ export default function ForumTopicPage() {
             </div>
           </div>
           <form onSubmit={handleSubmitComment} className="p-4 space-y-3">
-            <Textarea
-              placeholder="Share your thoughts, ask a question, or add context…"
+            <MentionTextarea
+              placeholder="Share your thoughts, ask a question, or add context… Type @ to tag someone."
               value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
+              onChange={setNewComment}
+              mentionedUserIds={mentionedUserIds}
+              onMentionedUserIdsChange={setMentionedUserIds}
               disabled={submitting}
               className="min-h-[120px] resize-y text-sm border-border/60 focus:border-primary/50"
               onKeyDown={(e) => {
@@ -787,8 +797,8 @@ export default function ForumTopicPage() {
                 }
               }}
             />
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
+            <div className="flex items-center justify-end sm:justify-between">
+              <p className="hidden sm:block text-xs text-muted-foreground">
                 <kbd className="px-1 py-0.5 rounded border text-[10px] font-mono">Ctrl</kbd>
                 {" + "}
                 <kbd className="px-1 py-0.5 rounded border text-[10px] font-mono">Enter</kbd>

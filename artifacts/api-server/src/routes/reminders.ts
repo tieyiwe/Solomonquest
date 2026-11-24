@@ -25,6 +25,40 @@ router.post("/reminders", requireAuth, async (req: AuthenticatedRequest, res): P
 
   const role = req.userRole;
 
+  // target_user_id / course_id are raw client input. Without these checks a
+  // caller could address a reminder at a user in a *different* school, or
+  // attach another school's course id to it — the row is stored with their
+  // own school_id, so nothing downstream would catch the mismatch. Mirrors
+  // the checks the agent's create_reminder tool already performs.
+  if (target_user_id) {
+    const { data: targetProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("school_id")
+      .eq("id", target_user_id)
+      .maybeSingle();
+    if (!targetProfile || targetProfile.school_id !== req.schoolId) {
+      res.status(404).json({ error: "Target user not found in your school" });
+      return;
+    }
+  }
+
+  if (course_id) {
+    const { data: targetCourse } = await supabaseAdmin
+      .from("courses")
+      .select("school_id, teacher_id")
+      .eq("id", course_id)
+      .maybeSingle();
+    if (!targetCourse || targetCourse.school_id !== req.schoolId) {
+      res.status(404).json({ error: "Course not found in your school" });
+      return;
+    }
+    // A teacher may only remind about a course they actually teach.
+    if (req.userRole === "teacher" && targetCourse.teacher_id !== req.userId) {
+      res.status(403).json({ error: "You do not teach this course" });
+      return;
+    }
+  }
+
   if (role === "admin" || role === "super_admin") {
     if (!target_user_id && target_role !== "teacher") {
       res.status(400).json({ error: "Admin reminders require target_user_id or target_role='teacher'" });
@@ -105,7 +139,7 @@ router.get("/reminders", requireAuth, async (req: AuthenticatedRequest, res): Pr
     return;
   }
 
-  const enriched = await Promise.all((data ?? []).map(enrichReminder));
+  const enriched = await enrichReminders(data ?? []);
   res.json(enriched);
 });
 
@@ -157,11 +191,11 @@ async function enrichReminder(r: Record<string, unknown>) {
   if (r.course_id) {
     const { data: course } = await supabaseAdmin
       .from("courses")
-      .select("name")
+      .select("title")
       .eq("id", r.course_id as string)
       .single();
     if (course) {
-      courseName = course.name ?? null;
+      courseName = course.title ?? null;
     }
   }
 
@@ -180,6 +214,47 @@ async function enrichReminder(r: Record<string, unknown>) {
     type: r.type,
     createdAt: r.created_at,
   };
+}
+
+async function enrichReminders(rows: Record<string, unknown>[]) {
+  if (rows.length === 0) return [];
+
+  const targetUserIds = Array.from(
+    new Set(rows.filter((r) => r.target_user_id).map((r) => r.target_user_id as string))
+  );
+  const courseIds = Array.from(
+    new Set(rows.filter((r) => r.course_id).map((r) => r.course_id as string))
+  );
+
+  const [profilesRes, coursesRes] = await Promise.all([
+    targetUserIds.length
+      ? supabaseAdmin.from("profiles").select("id, first_name, last_name").in("id", targetUserIds)
+      : Promise.resolve({ data: [] as { id: string; first_name: string | null; last_name: string | null }[] }),
+    courseIds.length
+      ? supabaseAdmin.from("courses").select("id, title").in("id", courseIds)
+      : Promise.resolve({ data: [] as { id: string; title: string | null }[] }),
+  ]);
+
+  const nameById = new Map(
+    (profilesRes.data ?? []).map((p) => [p.id, [p.first_name, p.last_name].filter(Boolean).join(" ") || null])
+  );
+  const titleById = new Map((coursesRes.data ?? []).map((c) => [c.id, c.title ?? null]));
+
+  return rows.map((r) => ({
+    id: r.id,
+    schoolId: r.school_id,
+    createdBy: r.created_by,
+    targetUserId: r.target_user_id,
+    targetUserName: r.target_user_id ? nameById.get(r.target_user_id as string) ?? null : null,
+    targetRole: r.target_role,
+    courseId: r.course_id,
+    courseName: r.course_id ? titleById.get(r.course_id as string) ?? null : null,
+    message: r.message,
+    sendAt: r.send_at,
+    sent: r.sent,
+    type: r.type,
+    createdAt: r.created_at,
+  }));
 }
 
 export default router;

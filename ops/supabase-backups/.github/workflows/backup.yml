@@ -1,0 +1,65 @@
+name: Supabase backup
+
+# Daily encrypted database backup, stored on this repo's "backups" branch.
+# THIS REPO MUST BE PRIVATE. Logs never print database contents.
+on:
+  schedule:
+    - cron: "41 2 * * *" # every day at 02:41 UTC
+  workflow_dispatch: {} # "Run workflow" button for a manual backup
+
+permissions:
+  contents: write
+
+concurrency:
+  group: supabase-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out workflow files
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL 17 client
+        # pg_dump must be at least the server's major version (Supabase runs
+        # 15 or 17); 17 dumps both.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch existing backups
+        run: |
+          git fetch --depth=1 origin backups:backups 2>/dev/null || true
+          mkdir -p backups
+          if git rev-parse --verify -q backups >/dev/null; then
+            git --work-tree=. checkout backups -- backups 2>/dev/null || true
+          fi
+
+      - name: Dump, encrypt, rotate
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          BACKUP_DIR: backups
+          KEEP: "30"
+        run: bash scripts/backup.sh
+
+      - name: Save to the backups branch
+        # One fresh commit each time (force-pushed), so old dumps don't pile
+        # up in git history and the repo stays small.
+        run: |
+          git config user.name "backup-bot"
+          git config user.email "backup-bot@users.noreply.github.com"
+          tmpdir="$(mktemp -d)"
+          cp backups/*.dump.gpg "$tmpdir"/
+          git checkout --orphan backups-new
+          git rm -rq --cached . || true
+          rm -rf backups && mkdir backups && cp "$tmpdir"/*.dump.gpg backups/
+          printf 'Encrypted Supabase backups. See README.md on main for how to restore.\n' > README-backups.txt
+          git add backups README-backups.txt
+          git commit -qm "Backup $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f origin backups-new:backups

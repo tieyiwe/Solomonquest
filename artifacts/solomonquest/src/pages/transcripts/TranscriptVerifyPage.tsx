@@ -38,7 +38,7 @@ export default function TranscriptVerifyPage() {
         <CardContent>
           {!result ? (
             <form onSubmit={handleSubmit} className="space-y-4">
-              <Input placeholder="Platform email (e.g. john.d@solomonquest.com)" value={email} onChange={e => setEmail(e.target.value)} required />
+              <Input placeholder="Platform email (e.g. john.d@solomonquest.com)" inputMode="email" autoComplete="email" autoCapitalize="none" value={email} onChange={e => setEmail(e.target.value)} required />
               <Input placeholder="Unique ID (e.g. SQ-00123456)" value={uid} onChange={e => setUid(e.target.value)} required />
               {error && <p className="text-destructive text-sm">{error}</p>}
               <Button type="submit" className="w-full" disabled={loading}>{loading ? "Verifying..." : "View Transcript"}</Button>

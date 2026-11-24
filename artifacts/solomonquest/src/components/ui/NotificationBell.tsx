@@ -12,6 +12,16 @@ interface Notification {
   link?: string;
 }
 
+// Writes go through the API (service role, scoped to the caller) — the
+// browser has no UPDATE grant on notifications under rls-lockdown.sql.
+async function apiPut(path: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  return fetch(path, {
+    method: "PUT",
+    headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+  });
+}
+
 export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
@@ -29,7 +39,7 @@ export function NotificationBell() {
   }
 
   async function markAsRead(id: string) {
-    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+    await apiPut(`/api/notifications/${id}/read`);
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
     );
@@ -38,7 +48,7 @@ export function NotificationBell() {
   async function markAllRead() {
     const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
     if (unreadIds.length === 0) return;
-    await supabase.from("notifications").update({ is_read: true }).in("id", unreadIds);
+    await apiPut("/api/notifications/read-all");
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
   }
 

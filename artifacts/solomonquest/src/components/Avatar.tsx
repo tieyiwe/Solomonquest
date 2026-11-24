@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export interface AvatarProps {
   user?: {
@@ -38,12 +38,13 @@ const SIZE_EMOJI: Record<NonNullable<AvatarProps["size"]>, string> = {
 };
 
 const BG_COLORS = [
-  "bg-indigo-500",
-  "bg-purple-500",
-  "bg-blue-500",
-  "bg-green-500",
-  "bg-orange-500",
-  "bg-red-500",
+  // Categorical identity colors (same in light and dark; all >= 4.5:1 with white initials)
+  "bg-indigo-600",
+  "bg-violet-600",
+  "bg-sky-700",
+  "bg-emerald-700",
+  "bg-amber-700",
+  "bg-rose-600",
   "bg-pink-500",
   "bg-teal-500",
 ];
@@ -58,9 +59,12 @@ function hashName(name: string): number {
 
 export default function Avatar({ user, size = "md", className = "", onClick }: AvatarProps) {
   const px = SIZE_PX[size];
+  // A dead avatar URL falls back to initials instead of a broken-image icon.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  useEffect(() => setFailedUrl(null), [user?.avatar_url]);
 
   const content = useMemo(() => {
-    const url = user?.avatar_url;
+    const url = user?.avatar_url && user.avatar_url !== failedUrl ? user.avatar_url : undefined;
 
     if (url?.startsWith("default:")) {
       const idx = parseInt(url.slice(8), 10);
@@ -82,6 +86,9 @@ export default function Avatar({ user, size = "md", className = "", onClick }: A
         <img
           src={url}
           alt={`${user?.first_name ?? ""} ${user?.last_name ?? ""}`.trim() || "Avatar"}
+          width={px}
+          height={px}
+          onError={() => setFailedUrl(url)}
           className="rounded-full object-cover"
           style={{ width: px, height: px, flexShrink: 0 }}
         />
@@ -103,14 +110,14 @@ export default function Avatar({ user, size = "md", className = "", onClick }: A
         {initials}
       </div>
     );
-  }, [user, size, px]);
+  }, [user, size, px, failedUrl]);
 
   if (onClick) {
     return (
       <button
         type="button"
         onClick={onClick}
-        className={`rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${className}`}
+        className={`rounded-full focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${className}`}
         style={{ width: px, height: px }}
         aria-label="Avatar"
       >

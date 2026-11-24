@@ -1,0 +1,80 @@
+/* Help Center animation primitives (cursor, pulse, typing caret, pop-ins).
+   Everything here is switched off under prefers-reduced-motion and when the
+   player renders in static mode (.help-static). */
+
+@keyframes help-pulse {
+  0% { box-shadow: 0 0 0 0 hsl(var(--gold) / 0.55); }
+  70% { box-shadow: 0 0 0 9px hsl(var(--gold) / 0); }
+  100% { box-shadow: 0 0 0 0 hsl(var(--gold) / 0); }
+}
+@keyframes help-ripple {
+  0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0.75; }
+  100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
+}
+@keyframes help-press {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(0.82); }
+}
+@keyframes help-caret { 50% { opacity: 0; } }
+@keyframes help-pop {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes help-slide-in {
+  from { transform: translateX(-100%); }
+  to { transform: none; }
+}
+@keyframes help-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes help-progress { from { width: 0%; } to { width: 100%; } }
+
+.help-ring {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 8px;
+  border: 2px solid hsl(var(--gold));
+  animation: help-pulse 1.6s ease-out infinite;
+  transition: left 0.6s cubic-bezier(0.22, 0.7, 0.2, 1), top 0.6s cubic-bezier(0.22, 0.7, 0.2, 1),
+    width 0.6s cubic-bezier(0.22, 0.7, 0.2, 1), height 0.6s cubic-bezier(0.22, 0.7, 0.2, 1), opacity 0.3s;
+  z-index: 50;
+}
+.help-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 60;
+  transition: transform 0.7s cubic-bezier(0.22, 0.7, 0.2, 1);
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.3));
+}
+.help-press { animation: help-press 0.35s ease-out; transform-origin: 3px 2px; }
+.help-ripple {
+  position: absolute;
+  left: 3px;
+  top: 2px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  background: hsl(var(--gold) / 0.45);
+  animation: help-ripple 0.6s ease-out forwards;
+}
+.help-caret { animation: help-caret 0.9s steps(1) infinite; }
+.help-pop { animation: help-pop 0.28s ease-out both; }
+.help-slide-in { animation: help-slide-in 0.32s cubic-bezier(0.22, 0.7, 0.2, 1) both; }
+.help-grow { transform-origin: bottom; animation: help-grow 0.6s ease-out both; }
+.help-step-progress { animation-name: help-progress; animation-timing-function: linear; animation-fill-mode: forwards; }
+
+.help-static .help-ring { animation: none; transition: none; }
+.help-static .help-cursor { transition: none; }
+.help-static .help-pop, .help-static .help-slide-in, .help-static .help-grow, .help-static .help-caret { animation: none; }
+.help-static * { transition: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .help-ring, .help-cursor, .help-ripple, .help-caret, .help-pop, .help-slide-in, .help-grow, .help-step-progress,
+  .help-press {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,13 +1,55 @@
 import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
+import { gradeSubmission, computeCourseGrade, percentToLetterGrade, percentToGpaPoints } from "../lib/gradingEngine";
 
 const router: IRouter = Router();
+
+/** Verifies the caller teaches/administers this course before exposing grades for it. */
+async function assertCourseTeacherOrAdmin(
+  req: AuthenticatedRequest,
+  courseId: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (req.userRole !== "admin" && req.userRole !== "super_admin" && req.userRole !== "teacher") {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  const { data: course, error } = await supabaseAdmin
+    .from("courses")
+    .select("id, school_id, teacher_id")
+    .eq("id", courseId)
+    .single();
+
+  if (error || !course) {
+    return { ok: false, status: 404, error: "Course not found" };
+  }
+
+  if (req.userRole === "teacher" && course.teacher_id !== req.userId) {
+    return { ok: false, status: 403, error: "You do not teach this course" };
+  }
+
+  if (req.userRole !== "super_admin" && course.school_id !== req.schoolId) {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  return { ok: true };
+}
 
 // GET /grading/submissions?course_id=X&assignment_id=Y
 router.get("/submissions", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { course_id, assignment_id } = req.query;
+
+    if (!course_id) {
+      res.status(400).json({ error: "course_id is required" });
+      return;
+    }
+
+    const access = await assertCourseTeacherOrAdmin(req, course_id as string);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
 
     let query = supabaseAdmin
       .from("submissions")
@@ -22,16 +64,21 @@ router.get("/submissions", requireAuth, async (req: AuthenticatedRequest, res) =
         assignment_id,
         profiles:student_id (
           id,
-          full_name,
+          first_name,
+          last_name,
           email
         ),
-        assignments:assignment_id (
+        assignments:assignment_id!inner (
           id,
           title,
           course_id
         )
       `);
 
+    // `!inner` is load-bearing: filtering on an embedded resource without
+    // it doesn't drop non-matching parent rows in PostgREST — it just nulls
+    // the embed. So this returned EVERY submission on the platform (with
+    // student names and emails) to any teacher/admin, for any course_id.
     if (course_id) {
       query = query.eq("assignments.course_id", course_id as string);
     }
@@ -51,129 +98,80 @@ router.get("/submissions", requireAuth, async (req: AuthenticatedRequest, res) =
       graded_at: s.graded_at,
       graded_by: s.graded_by,
       student_id: s.student_id,
-      student_name: s.profiles?.full_name ?? null,
+      student_name: s.profiles ? [s.profiles.first_name, s.profiles.last_name].filter(Boolean).join(" ") || null : null,
       student_email: s.profiles?.email ?? null,
       assignment_id: s.assignment_id,
       assignment_title: s.assignments?.title ?? null,
     }));
 
     res.json({ submissions });
+    return;
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // PUT /grading/submissions/:id
-router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+// Kept as an alias of PATCH /submissions/:id/grade (submissions.ts) — some
+// older frontend code may still call this path — both now share the exact
+// same gradeSubmission() implementation so grading never diverges between
+// them again (previously this route also queried assignments.school_id
+// and assignments.max_grade, neither of which exist, so it was silently
+// broken every time it was hit).
+router.put("/submissions/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const { id } = req.params;
-    const { grade, feedback } = req.body;
-    const userId = req.user?.id;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { grade, feedback, rubricScores } = req.body as {
+      grade?: number;
+      feedback?: string;
+      rubricScores?: Record<string, number>;
+    };
     const userRole = req.userRole;
 
-    // Fetch submission joined through assignments to courses so we can check ownership
+    if (userRole !== "teacher" && userRole !== "admin" && userRole !== "super_admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
     const { data: submission, error: fetchError } = await supabaseAdmin
       .from("submissions")
-      .select(`
-        id,
-        student_id,
-        assignment_id,
-        assignments:assignment_id (
-          id,
-          title,
-          course_id,
-          school_id,
-          courses:course_id (
-            id,
-            teacher_id
-          )
-        )
-      `)
+      .select("id, assignment_id, assignments:assignment_id (course_id, courses:course_id (teacher_id, school_id))")
       .eq("id", id)
       .single();
 
-    if (fetchError) throw fetchError;
-    if (!submission) {
-      res.status(404).json({ error: "Submission not found" });
-      return;
+    if (fetchError || !submission) {
+      return res.status(404).json({ error: "Submission not found" });
     }
 
-    const assignment = (submission as any).assignments;
-    const course = assignment?.courses;
+    const course = (submission.assignments as unknown as { courses: { teacher_id: string; school_id: string } | null })
+      ?.courses;
 
-    // Security: verify teacher owns the course, or requester is admin/super_admin
-    if (userRole !== "admin" && userRole !== "super_admin") {
-      if (userRole !== "teacher" || course?.teacher_id !== userId) {
-        res.status(403).json({ error: "Access denied: you do not own this course" });
-        return;
-      }
+    if (userRole === "teacher" && course?.teacher_id !== req.userId) {
+      return res.status(403).json({ error: "Access denied: you do not own this course" });
+    }
+    if (userRole === "admin" && course?.school_id !== req.schoolId) {
+      return res.status(403).json({ error: "Access denied" });
     }
 
-    const graded_at = new Date().toISOString();
+    const result = await gradeSubmission({
+      submissionId: id,
+      grade,
+      rubricScores,
+      feedback,
+      gradedBy: req.userId,
+    });
 
-    // Update submission
-    const { data: updatedSubmission, error: updateError } = await supabaseAdmin
-      .from("submissions")
-      .update({
-        grade,
-        feedback,
-        graded_by: userId,
-        graded_at,
-      })
-      .eq("id", id)
-      .select()
-      .single();
-
-    if (updateError) throw updateError;
-
-    // Upsert into transcripts
-    const { error: transcriptError } = await supabaseAdmin
-      .from("transcripts")
-      .upsert({
-        student_id: submission.student_id,
-        school_id: assignment?.school_id ?? null,
-        course_id: assignment?.course_id ?? null,
-        assignment_id: submission.assignment_id,
-        submission_id: submission.id,
-        grade,
-        feedback,
-        graded_at,
-      }, {
-        onConflict: "submission_id",
-      });
-
-    if (transcriptError) throw transcriptError;
-
-    // Send notification to student
-    const assignmentTitle = assignment?.title ?? "assignment";
-    const { error: notifError } = await supabaseAdmin
-      .from("notifications")
-      .insert({
-        user_id: submission.student_id,
-        type: "grade",
-        title: "Assignment Graded",
-        message: `Your ${assignmentTitle} has been graded. Grade: ${grade}`,
-        data: {
-          submission_id: id,
-          assignment_id: submission.assignment_id,
-          grade,
-        },
-        read: false,
-        created_at: new Date().toISOString(),
-      });
-
-    if (notifError) {
-      console.error("Failed to send notification:", notifError.message);
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error });
     }
 
-    res.json({ submission: updatedSubmission });
+    res.json({ submission: result.submission });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // GET /grading/transcript/:student_id
-router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { student_id } = req.params;
     const userId = req.user?.id;
@@ -190,8 +188,7 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
           .single();
 
         if (studentProfileError || !studentProfile) {
-          res.status(404).json({ error: "Student not found" });
-          return;
+          return res.status(404).json({ error: "Student not found" });
         }
 
         const { data: callerProfile, error: callerProfileError } = await supabaseAdmin
@@ -201,18 +198,16 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
           .single();
 
         if (callerProfileError || !callerProfile) {
-          res.status(403).json({ error: "Access denied" });
-          return;
+          return res.status(403).json({ error: "Access denied" });
         }
 
         if (studentProfile.school_id !== callerProfile.school_id) {
-          res.status(403).json({ error: "Access denied: different school" });
-          return;
+          return res.status(403).json({ error: "Access denied: different school" });
         }
       } else if (userRole === "teacher") {
         // Teacher must be the teacher of at least one course the student is enrolled in
         const { data: sharedCourses, error: sharedCoursesError } = await supabaseAdmin
-          .from("enrollments")
+          .from("course_enrollments")
           .select(`
             course_id,
             courses:course_id (
@@ -228,14 +223,22 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
         );
 
         if (!teachesStudent) {
-          res.status(403).json({ error: "Access denied: you do not teach this student" });
-          return;
+          return res.status(403).json({ error: "Access denied: you do not teach this student" });
         }
       } else {
-        res.status(403).json({ error: "Access denied" });
-        return;
+        return res.status(403).json({ error: "Access denied" });
       }
     }
+
+    const { data: studentProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("id", student_id)
+      .single();
+
+    const studentName =
+      [studentProfile?.first_name, studentProfile?.last_name].filter(Boolean).join(" ") ||
+      "Student";
 
     const { data: transcripts, error } = await supabaseAdmin
       .from("transcripts")
@@ -251,17 +254,20 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
         assignments:assignment_id (
           id,
           title,
-          max_grade,
+          points_possible,
           due_date
         ),
         courses:course_id (
           id,
-          name,
-          code
+          title,
+          code,
+          term,
+          teacher_id
         ),
         submissions:submission_id (
           id,
-          submitted_at
+          submitted_at,
+          status
         )
       `)
       .eq("student_id", student_id)
@@ -269,67 +275,93 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
 
     if (error) throw error;
 
-    // Organize by course and calculate GPA
+    // Look up teacher names for any courses involved
+    const teacherIds = Array.from(
+      new Set(
+        (transcripts || [])
+          .map((t: any) => t.courses?.teacher_id)
+          .filter((id: unknown): id is string => !!id)
+      )
+    );
+    const teacherMap = new Map<string, string>();
+    if (teacherIds.length > 0) {
+      const { data: teacherProfiles } = await supabaseAdmin
+        .from("profiles")
+        .select("id, first_name, last_name")
+        .in("id", teacherIds);
+      for (const p of teacherProfiles ?? []) {
+        teacherMap.set(p.id, [p.first_name, p.last_name].filter(Boolean).join(" ") || "Teacher");
+      }
+    }
+
+    // Organize by course
     const courseMap: Record<string, any> = {};
 
     for (const t of transcripts || []) {
       const course: any = (t as any).courses;
       const assignment: any = (t as any).assignments;
+      const submission: any = (t as any).submissions;
       const courseId = t.course_id ?? "unknown";
 
       if (!courseMap[courseId]) {
         courseMap[courseId] = {
-          course_id: courseId,
-          course_name: course?.name ?? null,
-          course_code: course?.code ?? null,
+          id: courseId,
+          title: course?.title ?? "Unknown Course",
+          code: course?.code ?? null,
+          term: course?.term ?? null,
+          teacherName: course?.teacher_id ? teacherMap.get(course.teacher_id) ?? null : null,
           assignments: [],
-          total_grade: 0,
-          graded_count: 0,
-          course_average: null,
+          courseAverage: null,
         };
       }
 
-      const numGrade = parseFloat(t.grade);
-      if (!isNaN(numGrade)) {
-        courseMap[courseId].total_grade += numGrade;
-        courseMap[courseId].graded_count += 1;
-      }
-
       courseMap[courseId].assignments.push({
-        transcript_id: t.id,
-        assignment_id: t.assignment_id,
-        assignment_title: assignment?.title ?? null,
-        max_grade: assignment?.max_grade ?? null,
-        due_date: assignment?.due_date ?? null,
-        grade: t.grade,
-        feedback: t.feedback,
-        graded_at: t.graded_at,
-        submission_id: t.submission_id,
-        submitted_at: (t as any).submissions?.submitted_at ?? null,
+        id: t.assignment_id ?? t.id,
+        title: assignment?.title ?? "Assignment",
+        grade: t.grade != null ? parseFloat(t.grade) : null,
+        pointsPossible: assignment?.points_possible ?? null,
+        submittedAt: submission?.submitted_at ?? null,
+        status: submission?.status ?? (t.grade != null ? "graded" : "pending"),
       });
     }
 
-    // Calculate course averages and GPA
-    let totalAverage = 0;
-    let courseCount = 0;
+    // Per-course grade — the shared engine, so this matches the gradebook
+    // and every other grade display exactly, including quiz scores and
+    // (where a course has set one) an attendance weighting.
+    const courses = await Promise.all(
+      Object.values(courseMap).map(async (c: any) => {
+        const breakdown = await computeCourseGrade(c.id, student_id as string);
+        c.courseAverage = breakdown.overallPercent;
+        c.academicPercent = breakdown.academicPercent;
+        c.attendancePercent = breakdown.attendancePercent;
+        c.attendanceWeightPercent = breakdown.attendanceWeightPercent;
+        c.letterGrade = percentToLetterGrade(breakdown.overallPercent);
+        return c;
+      })
+    );
 
-    const courses = Object.values(courseMap).map((c: any) => {
-      if (c.graded_count > 0) {
-        c.course_average = parseFloat((c.total_grade / c.graded_count).toFixed(2));
-        totalAverage += c.course_average;
-        courseCount += 1;
-      }
-      delete c.total_grade;
-      delete c.graded_count;
-      return c;
-    });
-
-    const gpa = courseCount > 0 ? parseFloat((totalAverage / courseCount).toFixed(2)) : null;
+    const gradedCourses = courses.filter((c: any) => c.courseAverage !== null);
+    const overallPercent =
+      gradedCourses.length > 0
+        ? Math.round(
+            (gradedCourses.reduce((sum: number, c: any) => sum + c.courseAverage, 0) / gradedCourses.length) * 10
+          ) / 10
+        : null;
+    const gpa =
+      gradedCourses.length > 0
+        ? Math.round(
+            (gradedCourses.reduce((sum: number, c: any) => sum + (percentToGpaPoints(c.courseAverage) ?? 0), 0) /
+              gradedCourses.length) *
+              100
+          ) / 100
+        : null;
 
     res.json({
-      student_id,
-      gpa,
+      studentName,
+      studentId: student_id,
       courses,
+      overallPercent,
+      gpa,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -337,19 +369,23 @@ router.get("/transcript/:student_id", requireAuth, async (req: AuthenticatedRequ
 });
 
 // GET /grading/gradebook?course_id=X
-router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { course_id } = req.query;
 
     if (!course_id) {
-      res.status(400).json({ error: "course_id is required" });
-      return;
+      return res.status(400).json({ error: "course_id is required" });
+    }
+
+    const access = await assertCourseTeacherOrAdmin(req, course_id as string);
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
     }
 
     // Get all assignments for the course
     const { data: assignments, error: assignmentsError } = await supabaseAdmin
       .from("assignments")
-      .select("id, title, max_grade, due_date")
+      .select("id, title, points_possible, due_date")
       .eq("course_id", course_id as string)
       .order("due_date", { ascending: true });
 
@@ -357,12 +393,13 @@ router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res): Pr
 
     // Get all enrollments for the course with student profiles
     const { data: enrollments, error: enrollmentsError } = await supabaseAdmin
-      .from("enrollments")
+      .from("course_enrollments")
       .select(`
         student_id,
         profiles:student_id (
           id,
-          full_name,
+          first_name,
+          last_name,
           email
         )
       `)
@@ -373,8 +410,7 @@ router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res): Pr
     const studentIds = (enrollments || []).map((e: any) => e.student_id);
 
     if (studentIds.length === 0) {
-      res.json({ course_id, assignments, students: [] });
-      return;
+      return res.json({ course_id, assignments, students: [] });
     }
 
     // Get all submissions for these students and assignments in the course
@@ -394,44 +430,39 @@ router.get("/gradebook", requireAuth, async (req: AuthenticatedRequest, res): Pr
       submissionMap[`${s.student_id}:${s.assignment_id}`] = s;
     }
 
-    // Build gradebook rows
-    const students = (enrollments || []).map((enrollment: any) => {
-      const profile = enrollment.profiles;
-      const studentId = enrollment.student_id;
+    // Build gradebook rows — course_average uses the shared grading engine
+    // (percentage-of-points, blending quizzes and any attendance weight
+    // the course has set), not a plain mean of raw grade values.
+    const students = await Promise.all(
+      (enrollments || []).map(async (enrollment: any) => {
+        const profile = enrollment.profiles;
+        const studentId = enrollment.student_id;
 
-      const grades: any[] = (assignments || []).map((assignment: any) => {
-        const sub = submissionMap[`${studentId}:${assignment.id}`] ?? null;
+        const grades: any[] = (assignments || []).map((assignment: any) => {
+          const sub = submissionMap[`${studentId}:${assignment.id}`] ?? null;
+          return {
+            assignment_id: assignment.id,
+            assignment_title: assignment.title,
+            points_possible: assignment.points_possible,
+            submission_id: sub?.id ?? null,
+            submitted_at: sub?.submitted_at ?? null,
+            grade: sub?.grade ?? null,
+            feedback: sub?.feedback ?? null,
+            graded_at: sub?.graded_at ?? null,
+          };
+        });
+
+        const breakdown = await computeCourseGrade(course_id as string, studentId);
+
         return {
-          assignment_id: assignment.id,
-          assignment_title: assignment.title,
-          max_grade: assignment.max_grade,
-          submission_id: sub?.id ?? null,
-          submitted_at: sub?.submitted_at ?? null,
-          grade: sub?.grade ?? null,
-          feedback: sub?.feedback ?? null,
-          graded_at: sub?.graded_at ?? null,
+          student_id: studentId,
+          student_name: profile ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || null : null,
+          student_email: profile?.email ?? null,
+          course_average: breakdown.overallPercent,
+          grades,
         };
-      });
-
-      // Calculate course average for this student
-      const gradedItems = grades.filter((g) => g.grade !== null && !isNaN(parseFloat(g.grade)));
-      const courseAverage =
-        gradedItems.length > 0
-          ? parseFloat(
-              (
-                gradedItems.reduce((sum, g) => sum + parseFloat(g.grade), 0) / gradedItems.length
-              ).toFixed(2)
-            )
-          : null;
-
-      return {
-        student_id: studentId,
-        student_name: profile?.full_name ?? null,
-        student_email: profile?.email ?? null,
-        course_average: courseAverage,
-        grades,
-      };
-    });
+      })
+    );
 
     res.json({
       course_id,
@@ -459,9 +490,9 @@ router.post("/transcripts/release", requireAuth, async (req: AuthenticatedReques
   if (students && students.length > 0) {
     const notifications = students.map((s: { id: string }) => ({
       user_id: s.id,
-      type: "transcript_available",
       title: `Transcript Available${semester ? ` - ${semester}` : ""}`,
-      message: message || "Your transcript for the semester is now available. Use your platform email and unique ID to access it.",
+      body: message || "Your transcript for the semester is now available.",
+      link: "/dashboard/student/transcript",
       is_read: false,
     }));
     await supabaseAdmin.from("notifications").insert(notifications);
@@ -503,6 +534,36 @@ router.post("/transcripts/verify", async (req, res): Promise<void> => {
     },
     transcript: transcript ?? [],
   });
+});
+
+// ─── GET /grades/recent — the caller's own most recently graded work ────────
+router.get("/grades/recent", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const limit = Math.min(20, Math.max(1, parseInt(String(req.query.limit ?? "5"), 10) || 5));
+
+  const { data, error } = await supabaseAdmin
+    .from("submissions")
+    .select("id, grade, graded_at, assignments:assignment_id ( title, points_possible, courses:course_id ( title ) )")
+    .eq("student_id", req.userId ?? "")
+    .eq("status", "graded")
+    .not("grade", "is", null)
+    .order("graded_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  res.json(
+    (data ?? []).map((s: any) => ({
+      id: s.id,
+      assignmentTitle: s.assignments?.title ?? "Assignment",
+      courseTitle: s.assignments?.courses?.title ?? null,
+      score: s.grade != null ? Number(s.grade) : null,
+      maxScore: s.assignments?.points_possible ?? 100,
+      gradedAt: s.graded_at,
+    }))
+  );
 });
 
 export default router;

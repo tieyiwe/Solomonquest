@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { StudentLayout } from "@/components/layout/StudentLayout";
+import { supabase } from "@/lib/supabase";
 import { RequiredVideoPlayer } from "@/components/video/RequiredVideoPlayer";
 import {
   useListPendingAssignments,
@@ -42,31 +43,82 @@ import {
   Upload,
   Send,
 } from "lucide-react";
-import { format, isPast, isToday, isWithinInterval, addDays } from "date-fns";
+import { format, isPast, isToday, isWithinInterval, addDays, isValid } from "date-fns";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/common/States";
+import PageHeader from "@/components/layout/PageHeader";
 
 type DuePriority = "overdue" | "today" | "soon" | "future" | "none";
+
+/** Late-work fields the API adds for students (dueDate is already the
+ *  student's effective due date — their extension, if they have one). */
+interface LateInfo {
+  extendedDueDate?: string | null;
+  originalDueDate?: string | null;
+  penaltyWaived?: boolean;
+  allowLateSubmissions?: boolean;
+  latePenaltyPerDay?: number;
+  latePenaltyMax?: number;
+  lateCutoffAt?: string | null;
+  submittedLate?: boolean;
+  daysLate?: number;
+  rawGrade?: number | null;
+  latePenaltyPercent?: number;
+}
+
+function lateInfo(a: unknown): LateInfo {
+  return (a ?? {}) as LateInfo;
+}
+
+/** The cutoff that applies to this student (an extension past it wins). */
+function effectiveCutoff(info: LateInfo): string | null {
+  if (!info.lateCutoffAt) return null;
+  if (info.extendedDueDate && new Date(info.extendedDueDate) > new Date(info.lateCutoffAt)) return info.extendedDueDate;
+  return info.lateCutoffAt;
+}
+
+/** Why the student can no longer submit, or null. */
+function submissionClosedReason(a: { dueDate?: string | null }, info: LateInfo): string | null {
+  const now = Date.now();
+  const cutoff = effectiveCutoff(info);
+  if (cutoff && now > new Date(cutoff).getTime()) return "Submissions closed — the cutoff has passed.";
+  if (info.allowLateSubmissions === false && a.dueDate && now > new Date(a.dueDate).getTime()) {
+    return "This assignment doesn't accept late work.";
+  }
+  return null;
+}
+
+/** "Late work loses 10% per day (max 50%)" — null when there's no penalty. */
+function latePolicyText(info: LateInfo): string | null {
+  if (info.allowLateSubmissions === false) return "Late work is not accepted.";
+  if (!info.latePenaltyPerDay) return null;
+  if (info.penaltyWaived) return "Your late penalty is waived.";
+  const cap = info.latePenaltyMax != null && info.latePenaltyMax < 100 ? ` (max ${info.latePenaltyMax}%)` : "";
+  return `Late work loses ${info.latePenaltyPerDay}% per day${cap}.`;
+}
 
 function getDuePriority(dueDate?: string | null): DuePriority {
   if (!dueDate) return "none";
   const date = new Date(dueDate);
+  if (!isValid(date)) return "none";
   if (isPast(date) && !isToday(date)) return "overdue";
   if (isToday(date)) return "today";
   if (isWithinInterval(date, { start: new Date(), end: addDays(new Date(), 7) })) return "soon";
   return "future";
 }
 
-function DueDateBadge({ dueDate }: { dueDate?: string | null }) {
+function DueDateBadge({ dueDate, extended }: { dueDate?: string | null; extended?: boolean }) {
   if (!dueDate) return <span className="text-xs text-muted-foreground">No due date</span>;
   const date = new Date(dueDate);
+  if (!isValid(date)) return <span className="text-xs text-muted-foreground">No due date</span>;
   const priority = getDuePriority(dueDate);
 
   const colorMap: Record<DuePriority, string> = {
     overdue: "text-destructive",
-    today: "text-orange-600 dark:text-orange-400",
-    soon: "text-amber-600 dark:text-amber-400",
+    today: "text-warning ",
+    soon: "text-warning ",
     future: "text-muted-foreground",
     none: "text-muted-foreground",
   };
@@ -82,7 +134,7 @@ function DueDateBadge({ dueDate }: { dueDate?: string | null }) {
   return (
     <span className={cn("inline-flex items-center gap-1 text-xs font-medium", colorMap[priority])}>
       <Calendar className="h-3 w-3" />
-      {labels[priority]}
+      {extended ? (priority === "overdue" ? "Overdue (extended): " : "Extended to ") : labels[priority]}
       {format(date, "MMM d, yyyy h:mm a")}
     </span>
   );
@@ -99,6 +151,36 @@ function SubmitDialog({
   const submitAssignment = useSubmitAssignment();
   const [fileUrl, setFileUrl] = useState("");
   const [comment, setComment] = useState("");
+  // An actual uploaded file (POST /assignments/:id/submissions/upload) —
+  // before this the only option was pasting a link.
+  const [attached, setAttached] = useState<{ fileUrl: string; fileName: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error("Files must be under 25 MB");
+      return;
+    }
+    setUploading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/assignments/${assignment.id}/submissions/upload`, {
+        method: "POST",
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        body: form,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Upload failed");
+      setAttached({ fileUrl: body.fileUrl, fileName: body.fileName ?? file.name });
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
   const [videoWatched, setVideoWatched] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -107,6 +189,27 @@ function SubmitDialog({
   const videoUrl = (assignment as any).videoUrl as string | undefined;
   const canSubmit = !isVideoType || !requireFullWatch || videoWatched;
 
+  // The server is the source of truth for "watched in full" (it refuses
+  // submissions otherwise), so a student who finished the video earlier
+  // isn't made to rewatch it after a reload.
+  useEffect(() => {
+    if (!isVideoType || !requireFullWatch) return;
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data: { session } }) =>
+      fetch(`/api/assignments/${assignment.id}/watch-progress`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((p) => {
+          if (!cancelled && p?.completed === true) setVideoWatched(true);
+        })
+        .catch(() => {})
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [assignment.id, isVideoType, requireFullWatch]);
+
   const handleSubmit = () => {
     submitAssignment.mutate(
       {
@@ -114,8 +217,9 @@ function SubmitDialog({
         data: {
           content: [fileUrl.trim() ? `File: ${fileUrl.trim()}` : "", comment.trim()]
             .filter(Boolean)
-            .join("\n\n") || "Video watched",
-        },
+            .join("\n\n") || (attached ? attached.fileName : "Video watched"),
+          ...(attached ? { fileUrl: attached.fileUrl, fileName: attached.fileName } : {}),
+        } as { content: string },
       },
       {
         onSuccess: () => {
@@ -131,17 +235,20 @@ function SubmitDialog({
   };
 
   const priority = getDuePriority(assignment.dueDate);
+  const info = lateInfo(assignment);
+  const closedReason = submissionClosedReason(assignment, info);
+  const policyText = latePolicyText(info);
 
   if (submitted) {
     return (
       <DialogContent className="max-w-md">
         <div className="flex flex-col items-center justify-center py-10 text-center gap-4">
-          <div className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center">
-            <CheckCircle2 className="h-10 w-10 text-green-500" />
+          <div className="h-20 w-20 rounded-full bg-success/10 flex items-center justify-center">
+            <CheckCircle2 className="h-10 w-10 text-success" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-gray-900">Submitted! 🎉</h3>
-            <p className="text-gray-500 mt-1 text-sm">
+            <h3 className="text-xl font-bold text-foreground">Submitted! 🎉</h3>
+            <p className="text-muted-foreground mt-1 text-sm">
               Your work for <strong>{assignment.title}</strong> has been sent to your teacher.
               You'll be notified when it's graded.
             </p>
@@ -155,8 +262,8 @@ function SubmitDialog({
     <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <div className="flex items-start gap-3">
-          <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${isVideoType ? "bg-blue-100" : "bg-primary/10"}`}>
-            {isVideoType ? <Video className="h-5 w-5 text-blue-600" /> : <FileText className="h-5 w-5 text-primary" />}
+          <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${isVideoType ? "bg-primary/10" : "bg-primary/10"}`}>
+            {isVideoType ? <Video className="h-5 w-5 text-primary" /> : <FileText className="h-5 w-5 text-primary" />}
           </div>
           <div>
             <DialogTitle className="leading-tight">{assignment.title}</DialogTitle>
@@ -168,23 +275,41 @@ function SubmitDialog({
       </DialogHeader>
 
       {/* Due date banner */}
-      {assignment.dueDate && (
+      {assignment.dueDate && isValid(new Date(assignment.dueDate)) && (
         <div
           className={cn(
             "flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-lg",
             priority === "overdue"
               ? "bg-destructive/10 text-destructive"
               : priority === "today"
-              ? "bg-orange-50 text-orange-700"
+              ? "bg-warning/10 text-warning"
               : "bg-muted/50 text-muted-foreground"
           )}
         >
           <Clock className="h-4 w-4 shrink-0" />
-          {priority === "overdue" ? "⚠️ Overdue since " : "Due: "}
+          {priority === "overdue" ? "⚠️ Overdue since " : info.extendedDueDate ? "Extended to: " : "Due: "}
           {format(new Date(assignment.dueDate), "EEEE, MMMM d, yyyy 'at' h:mm a")}
           {assignment.pointsPossible != null && (
             <span className="ml-auto font-semibold">{assignment.pointsPossible} pts</span>
           )}
+        </div>
+      )}
+
+      {(policyText || info.extendedDueDate || closedReason) && (
+        <div className="text-xs rounded-lg border px-3 py-2 space-y-0.5" data-testid="late-policy-note">
+          {info.extendedDueDate && info.originalDueDate && (
+            <p>
+              You have an extension (class due date was{" "}
+              {format(new Date(info.originalDueDate), "MMM d, h:mm a")}).
+            </p>
+          )}
+          {policyText && <p className="text-muted-foreground">{policyText}</p>}
+          {effectiveCutoff(info) && !closedReason && (
+            <p className="text-muted-foreground">
+              No submissions after {format(new Date(effectiveCutoff(info)!), "MMM d, yyyy h:mm a")}.
+            </p>
+          )}
+          {closedReason && <p className="font-semibold text-destructive">{closedReason}</p>}
         </div>
       )}
 
@@ -203,17 +328,18 @@ function SubmitDialog({
       {/* Video player for video assignments */}
       {isVideoType && videoUrl && (
         <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-            <Video className="h-4 w-4 text-blue-500" />
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground/80">
+            <Video className="h-4 w-4 text-primary" />
             Watch the video
             {requireFullWatch && (
-              <span className="flex items-center gap-1 text-xs text-orange-600 font-normal ml-auto">
+              <span className="flex items-center gap-1 text-xs text-warning font-normal ml-auto">
                 <Lock className="h-3 w-3" /> Must watch in full to submit
               </span>
             )}
           </div>
           <RequiredVideoPlayer
             src={videoUrl}
+            assignmentId={assignment.id}
             onComplete={() => setVideoWatched(true)}
           />
           {requireFullWatch && !videoWatched && (
@@ -222,7 +348,7 @@ function SubmitDialog({
             </p>
           )}
           {videoWatched && (
-            <div className="flex items-center gap-2 text-xs text-green-600 font-semibold bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 text-xs text-success font-semibold bg-success/10 border border-success/30 rounded-lg px-3 py-2">
               <CheckCircle2 className="h-4 w-4" />
               Video fully watched — you may now submit.
             </div>
@@ -234,9 +360,37 @@ function SubmitDialog({
       {(!isVideoType || !requireFullWatch || videoWatched) && (
         <div className="space-y-4">
           <div className="space-y-1.5">
+            <Label htmlFor="submission_file" className="flex items-center gap-1.5">
+              <Upload className="h-3.5 w-3.5" />
+              Upload a file
+              <span className="text-muted-foreground font-normal text-xs">(optional, max 25 MB)</span>
+            </Label>
+            {attached ? (
+              <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+                <span className="truncate">{attached.fileName}</span>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setAttached(null)}>
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <Input
+                id="submission_file"
+                type="file"
+                disabled={uploading}
+                onChange={(e) => handleFile(e.target.files?.[0])}
+              />
+            )}
+            {uploading && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
             <Label htmlFor="file_url" className="flex items-center gap-1.5">
               <Upload className="h-3.5 w-3.5" />
-              File / Document URL
+              Or paste a link
               {!isVideoType && <span className="text-muted-foreground font-normal text-xs">(optional)</span>}
             </Label>
             <Input
@@ -273,7 +427,7 @@ function SubmitDialog({
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={submitAssignment.isPending || !canSubmit}
+          disabled={submitAssignment.isPending || !canSubmit || uploading || !!closedReason}
           className="gap-2"
         >
           {submitAssignment.isPending ? (
@@ -288,7 +442,7 @@ function SubmitDialog({
   );
 }
 
-interface EnrichedAssignment extends Assignment {
+interface EnrichedAssignment extends Assignment, LateInfo {
   submissionStatus?: "submitted" | "graded" | null;
   grade?: number | null;
   hasSubmitted?: boolean;
@@ -307,11 +461,13 @@ function AssignmentRow({
     priority === "overdue"
       ? "border-destructive/40 bg-destructive/5"
       : priority === "today"
-      ? "border-orange-300 dark:border-orange-700 bg-orange-50/50 dark:bg-orange-900/10"
+      ? "border-warning/30 bg-warning/10 "
       : "";
 
   const submitted = assignment.hasSubmitted || assignment.submissionStatus;
   const graded = assignment.submissionStatus === "graded" || assignment.grade != null;
+  const closedReason = submitted ? null : submissionClosedReason(assignment, assignment);
+  const penalty = assignment.latePenaltyPercent ?? 0;
 
   return (
     <Card className={cn("hover:border-primary/40 transition-colors", borderClass)}>
@@ -320,17 +476,17 @@ function AssignmentRow({
           className={cn(
             "h-10 w-10 rounded-lg flex items-center justify-center shrink-0",
             submitted
-              ? "bg-green-100 dark:bg-green-900/30"
+              ? "bg-success/10 "
               : priority === "overdue"
               ? "bg-destructive/10"
               : priority === "today"
-              ? "bg-orange-100 dark:bg-orange-900/30"
+              ? "bg-warning/10 "
               : "bg-primary/10"
           )}
         >
           {submitted ? (
             <CheckCircle2
-              className={cn("h-5 w-5", graded ? "text-purple-600" : "text-green-600 dark:text-green-400")}
+              className={cn("h-5 w-5", graded ? "text-chart-5" : "text-success ")}
             />
           ) : (
             <CheckSquare
@@ -339,7 +495,7 @@ function AssignmentRow({
                 priority === "overdue"
                   ? "text-destructive"
                   : priority === "today"
-                  ? "text-orange-600 dark:text-orange-400"
+                  ? "text-warning "
                   : "text-primary"
               )}
             />
@@ -368,14 +524,22 @@ function AssignmentRow({
           )}
 
           <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
-            <DueDateBadge dueDate={assignment.dueDate} />
+            <DueDateBadge dueDate={assignment.dueDate} extended={!!assignment.extendedDueDate} />
 
             {submitted ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {assignment.submittedLate && (
+                  <Badge variant="outline" className="text-xs border-warning/50 text-warning" data-testid="late-badge">
+                    Late{penalty > 0 ? ` — ${penalty}% penalty` : assignment.penaltyWaived ? " — penalty waived" : ""}
+                  </Badge>
+                )}
                 {graded && assignment.grade != null ? (
-                  <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                  <span className="text-xs font-semibold text-chart-5 flex items-center gap-1">
                     <Star className="h-3 w-3" />
                     Grade: {assignment.grade}/{assignment.pointsPossible ?? "?"}
+                    {penalty > 0 && assignment.rawGrade != null && (
+                      <span className="font-normal text-muted-foreground">(raw {assignment.rawGrade})</span>
+                    )}
                   </span>
                 ) : null}
                 <Badge
@@ -383,20 +547,22 @@ function AssignmentRow({
                   className={cn(
                     "text-xs",
                     graded
-                      ? "border-purple-300 text-purple-600 dark:text-purple-400"
-                      : "border-green-300 text-green-600 dark:text-green-400"
+                      ? "border-chart-5/30 text-chart-5 "
+                      : "border-success/30 text-success "
                   )}
                 >
                   {graded ? "Graded" : "Submitted"} ✓
                 </Badge>
               </div>
+            ) : closedReason ? (
+              <span className="text-xs font-medium text-destructive">{closedReason}</span>
             ) : (
               <Button
                 size="sm"
                 onClick={onSubmit}
                 variant={priority === "overdue" ? "destructive" : "default"}
               >
-                Submit Work
+                {priority === "overdue" ? "Submit Late" : "Submit Work"}
                 <ArrowRight className="ml-1.5 h-3 w-3" />
               </Button>
             )}
@@ -427,7 +593,7 @@ function CourseAssignmentsList({ courseId, courseName }: { courseId: string; cou
   if (!assignments || assignments.length === 0) {
     return (
       <div className="text-center py-4 border border-dashed rounded-lg">
-        <p className="text-sm text-muted-foreground">No assignments yet.</p>
+        <EmptyState compact icon={FileText} title="No assignments yet" description="When your teachers post work, it will show up here." />
       </div>
     );
   }
@@ -480,19 +646,18 @@ export default function StudentAssignments() {
     <StudentLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/student">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
         </Link>
       </div>
       <div className="space-y-6 max-w-5xl mx-auto">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">My Assignments</h1>
-          <p className="text-muted-foreground mt-0.5">
-            View and submit your coursework across all enrolled courses.
-          </p>
-        </div>
+        <PageHeader
+          icon={FileText}
+          title="My Assignments"
+          description="View and submit your coursework across all enrolled courses."
+        />
 
         {/* Summary Stats */}
         <div className="grid grid-cols-3 gap-4">
@@ -502,9 +667,9 @@ export default function StudentAssignments() {
               <p className="text-xs text-muted-foreground mt-0.5">Overdue</p>
             </CardContent>
           </Card>
-          <Card className="border-orange-200 bg-orange-50/50 dark:border-orange-900/30 dark:bg-orange-900/5">
+          <Card className="border-warning/30 bg-warning/10  ">
             <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+              <p className="text-2xl font-bold text-warning ">
                 {upcomingAssignments.length}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">Due This Week</p>
@@ -547,7 +712,7 @@ export default function StudentAssignments() {
 
             {upcomingAssignments.length > 0 && (
               <section>
-                <h2 className="text-sm font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                <h2 className="text-sm font-semibold text-warning uppercase tracking-wide mb-3 flex items-center gap-1.5">
                   <Clock className="h-4 w-4" />
                   Due This Week
                 </h2>
@@ -591,7 +756,7 @@ export default function StudentAssignments() {
         ) : (
           <Card className="border-dashed bg-muted/20">
             <CardContent className="flex flex-col items-center justify-center p-16 text-center">
-              <CheckCircle2 className="h-14 w-14 text-green-500/60 mb-4" />
+              <CheckCircle2 className="h-14 w-14 text-success mb-4" />
               <h3 className="text-xl font-semibold text-foreground mb-1">All Caught Up!</h3>
               <p className="text-muted-foreground max-w-sm">
                 You have no pending assignments right now.

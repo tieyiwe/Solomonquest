@@ -4,6 +4,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import stripeWebhookRouter from "./routes/stripe-webhook";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -31,6 +32,15 @@ app.use(
 );
 
 const apiLimiter = rateLimit({ windowMs: 1 * 60 * 1000, max: 300 });
+// The public transcript-verify endpoint (email + unique_student_id, no auth)
+// is otherwise an enumeration surface — unique_student_id formats tend to be
+// low-entropy/sequential, so a generous per-minute limit still blocks brute
+// forcing a student's transcript given a known school email.
+const transcriptVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Too many verification attempts, please try again later" },
+});
 
 app.use(
   pinoHttp({
@@ -52,9 +62,15 @@ app.use(
   }),
 );
 
+// Mounted before express.json(): Stripe webhook signature verification
+// needs the raw request body, not the parsed-and-restringified JSON every
+// other route gets below.
+app.use("/api", stripeWebhookRouter);
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+app.use("/api/transcripts/verify", transcriptVerifyLimiter);
 app.use("/api", apiLimiter);
 app.use("/api", router);
 
