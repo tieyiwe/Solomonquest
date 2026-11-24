@@ -378,10 +378,10 @@ export function Router() {
         <Route path="/verify/:code" component={VerifyCertificatePage} />
         <Route path="/verify" component={VerifyCertificatePage} />
 
-        {/* Help Center */}
-        <Route path="/help">
-          <ProtectedRoute><HelpPage /></ProtectedRoute>
-        </Route>
+        {/* Help Center — public, so signed-out visitors get getting-started guides;
+            HelpPage picks guides (and the layout) from the viewer's role. */}
+        <Route path="/help" component={HelpPage} />
+        <Route path="/help/:slug" component={HelpPage} />
 
         {/* School public homepage at the platform root, e.g. solomonquest.com/lincoln-academy.
             Placed last (before the 404 fallback) so it only matches when no more specific

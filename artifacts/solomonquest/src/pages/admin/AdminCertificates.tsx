@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import PageHeader from "@/components/layout/PageHeader";
+import { HelpLink } from "@/help/components/HelpLink";
 import { EmptyState, LoadingRows } from "@/components/common/States";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -701,6 +702,7 @@ export default function AdminCertificates() {
       <PageHeader
         icon={Award}
         title="Certificates"
+        actions={<HelpLink slug="admin-certificate-settings" label="How certificates work" />}
         description="Design your school's certificate and issue it to students who complete their courses."
       />
       {isLoading ? (

@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { QuizBankTools } from "@/components/quiz/QuizBankTools";
+import { HelpLink } from "@/help/components/HelpLink";
 
 async function apiFetch(url: string, options: RequestInit = {}) {
   const { data } = await supabase.auth.getSession();
@@ -899,7 +900,10 @@ export default function TeacherQuizBuilder() {
               Dashboard
             </Link>
           </Button>
-          <h1 className="text-2xl font-bold tracking-tight">Quiz Builder</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">Quiz Builder</h1>
+            <HelpLink slug="teacher-quiz-builder" label="How to build a quiz" />
+          </div>
           <p className="text-muted-foreground mt-1">
             Create and manage quizzes for your courses.
           </p>

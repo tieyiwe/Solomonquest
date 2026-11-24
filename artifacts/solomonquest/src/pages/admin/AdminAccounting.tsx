@@ -45,6 +45,7 @@ import {
   Receipt,
 } from "lucide-react";
 import { EmptyState } from "@/components/common/States";
+import { HelpLink } from "@/help/components/HelpLink";
 
 async function apiFetch(path: string, options: RequestInit = {}) {
   const {
@@ -274,7 +275,8 @@ export default function AdminAccounting() {
             </h1>
             <p className="text-muted-foreground text-sm">Revenue, expenses, and student balances in one place.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <HelpLink slug="admin-accounting" label="How accounting works" />
             <Button variant="outline" size="sm" onClick={() => apiDownload("/api/accounting/export/payments", "tuition-payments.csv")}>
               <Download className="h-4 w-4 mr-1.5" />
               Export payments

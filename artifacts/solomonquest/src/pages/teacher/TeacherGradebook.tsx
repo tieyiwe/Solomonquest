@@ -55,6 +55,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/common/States";
+import { HelpLink } from "@/help/components/HelpLink";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -745,7 +746,10 @@ export default function TeacherGradebook() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Gradebook</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight">Gradebook</h1>
+              <HelpLink slug="teacher-gradebook-rubrics" label="How grading and rubrics work" />
+            </div>
             <p className="text-muted-foreground mt-1">
               View and manage student grades across all your courses.
             </p>
