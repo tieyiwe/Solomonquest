@@ -16,6 +16,7 @@ import {
   Users,
   Layers,
   Megaphone,
+  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,6 +45,7 @@ interface NotificationPrefs {
   newResources: boolean;
   applicationStatusUpdates: boolean;
   announcements: boolean;
+  tuition: boolean;
 }
 
 const defaultPrefs: NotificationPrefs = {
@@ -56,6 +58,7 @@ const defaultPrefs: NotificationPrefs = {
   newResources: true,
   applicationStatusUpdates: true,
   announcements: true,
+  tuition: true,
 };
 
 // The API stores prefs under the same keys lib/notifications.ts checks
@@ -73,6 +76,7 @@ const API_KEY: Record<keyof NotificationPrefs, string> = {
   newResources: "resources",
   applicationStatusUpdates: "applications",
   announcements: "announcements",
+  tuition: "tuition",
 };
 
 function fromApi(stored: Record<string, unknown> | null | undefined): NotificationPrefs {
@@ -256,6 +260,12 @@ export default function NotificationPreferences() {
       label: "Applications",
       description: "Updates on the status of your applications.",
       icon: <Layers className="h-4 w-4" />,
+    },
+    {
+      id: "tuition",
+      label: "Tuition & balances",
+      description: "Balance reminders and payment receipts from your school (parents: for your children).",
+      icon: <Wallet className="h-4 w-4" />,
     },
   ];
 

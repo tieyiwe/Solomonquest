@@ -2,6 +2,10 @@ import { Router, type IRouter } from "express";
 import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { requireSchoolFeature } from "../lib/featureFlags";
+import { tuitionRevenueForRange, ledgerEntriesInRange, profileNames } from "../lib/tuitionLedger";
+import { buildBalanceRows } from "../lib/tuitionBalances";
+import { sendReminders } from "../lib/tuitionReminders";
+import { METHOD_LABEL, toCsvCell, type PaymentMethod } from "../lib/tuitionLedgerCore";
 
 const router: IRouter = Router();
 
@@ -221,7 +225,14 @@ router.get("/accounting/summary", requireAuth, async (req: AuthenticatedRequest,
     return;
   }
 
-  const revenueCents = (paidInstallmentsRes.data ?? []).reduce((sum, r) => sum + ((r as Record<string, unknown>).amount_cents as number), 0);
+  // Tuition revenue comes from the ledger (payments minus refunds, by the
+  // date received, voids excluded). Before tuition-ledger.sql is run, fall
+  // back to the paid installments queried above.
+  const ledgerRevenue = await tuitionRevenueForRange(schoolId, from, to).catch(() => null);
+  const revenueRows: { amount_cents: number; paid_at: string }[] = ledgerRevenue
+    ? ledgerRevenue.rows.map((r) => ({ amount_cents: r.amountCents, paid_at: r.date }))
+    : ((paidInstallmentsRes.data ?? []) as Record<string, unknown>[]).map((r) => ({ amount_cents: r.amount_cents as number, paid_at: r.paid_at as string }));
+  const revenueCents = revenueRows.reduce((sum, r) => sum + r.amount_cents, 0);
   const expensesCents = (expensesRes.data ?? []).reduce((sum, r) => sum + (r.amount_cents as number), 0);
 
   const expensesByCategory = new Map<string, number>();
@@ -232,11 +243,10 @@ router.get("/accounting/summary", requireAuth, async (req: AuthenticatedRequest,
 
   // Monthly breakdown for a simple trend chart.
   const monthly = new Map<string, { revenueCents: number; expensesCents: number }>();
-  for (const r of paidInstallmentsRes.data ?? []) {
-    const paidAt = (r as Record<string, unknown>).paid_at as string;
-    const key = paidAt.slice(0, 7);
+  for (const r of revenueRows) {
+    const key = r.paid_at.slice(0, 7);
     const entry = monthly.get(key) ?? { revenueCents: 0, expensesCents: 0 };
-    entry.revenueCents += (r as Record<string, unknown>).amount_cents as number;
+    entry.revenueCents += r.amount_cents;
     monthly.set(key, entry);
   }
   for (const e of expensesRes.data ?? []) {
@@ -252,6 +262,11 @@ router.get("/accounting/summary", requireAuth, async (req: AuthenticatedRequest,
     revenueCents,
     expensesCents,
     netCents: revenueCents - expensesCents,
+    // Tuition revenue breakdown: revenueCents = tuitionCollectedCents - refundsCents.
+    tuitionCollectedCents: ledgerRevenue ? ledgerRevenue.grossCents : revenueCents,
+    refundsCents: ledgerRevenue ? ledgerRevenue.refundsCents : 0,
+    discountsCents: ledgerRevenue ? ledgerRevenue.discountsCents : 0,
+    revenueSource: ledgerRevenue ? "ledger" : "installments",
     expensesByCategory: Array.from(expensesByCategory.entries()).map(([category, amountCents]) => ({ category, amountCents })),
     monthly: Array.from(monthly.entries())
       .map(([month, v]) => ({ month, ...v, netCents: v.revenueCents - v.expensesCents }))
@@ -260,112 +275,29 @@ router.get("/accounting/summary", requireAuth, async (req: AuthenticatedRequest,
 });
 
 // ─── STUDENT PAYMENT STATUS ─────────────────────────────────────────────────
-// Aggregates every student's tuition_payments into a single balance view so
-// admins can filter who's paid in full vs who still owes, without manually
-// cross-referencing installments per payment.
+// Every student's balance, computed from their tuition plans plus the
+// tuition ledger (lib/tuitionBalances.ts). Returns the same fields as before
+// (totalOwedCents, totalPaidCents, balanceCents, paymentStatus, ...) plus the
+// ledger ones; GET /accounting/balances adds filters, counts and facets.
 router.get("/accounting/students", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (!requireAccountingAccess(req, res)) return;
-  const schoolId = req.schoolId ?? "";
   const { status } = req.query as { status?: "paid" | "partial" | "owing" };
-
-  const { data: payments, error } = await supabaseAdmin
-    .from("tuition_payments")
-    .select("id, student_id, amount_cents, status, created_at, course_id, program_id")
-    .eq("school_id", schoolId);
-
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  try {
+    const { rows } = await buildBalanceRows(req.schoolId ?? "", {});
+    res.json(status ? rows.filter((r) => r.paymentStatus === status) : rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to load balances" });
   }
-
-  const paymentIds = (payments ?? []).map((p) => p.id as string);
-  const { data: installments } = paymentIds.length
-    ? await supabaseAdmin
-        .from("tuition_installments")
-        .select("payment_id, amount_cents, status, due_date, paid_at")
-        .in("payment_id", paymentIds)
-        // nextDueByPayment below takes the FIRST unpaid row it sees per
-        // payment, so rows must arrive in due-date order — unordered, the
-        // "next due" shown to admins could be a later installment.
-        .order("due_date", { ascending: true })
-    : { data: [] as Record<string, unknown>[] };
-
-  const paidByPayment = new Map<string, number>();
-  const lastPaidAtByPayment = new Map<string, string>();
-  const nextDueByPayment = new Map<string, string>();
-  for (const i of installments ?? []) {
-    const pid = i.payment_id as string;
-    if (i.status === "paid") {
-      paidByPayment.set(pid, (paidByPayment.get(pid) ?? 0) + (i.amount_cents as number));
-      const paidAt = i.paid_at as string | null;
-      if (paidAt && (!lastPaidAtByPayment.has(pid) || paidAt > lastPaidAtByPayment.get(pid)!)) {
-        lastPaidAtByPayment.set(pid, paidAt);
-      }
-    } else if (!nextDueByPayment.has(pid)) {
-      nextDueByPayment.set(pid, i.due_date as string);
-    }
-  }
-
-  type StudentAgg = {
-    studentId: string;
-    totalOwedCents: number;
-    totalPaidCents: number;
-    lastPaymentAt: string | null;
-    nextDueDate: string | null;
-    paymentCount: number;
-  };
-  const byStudent = new Map<string, StudentAgg>();
-  for (const p of payments ?? []) {
-    const sid = p.student_id as string;
-    const agg = byStudent.get(sid) ?? { studentId: sid, totalOwedCents: 0, totalPaidCents: 0, lastPaymentAt: null, nextDueDate: null, paymentCount: 0 };
-    agg.totalOwedCents += p.amount_cents as number;
-    agg.totalPaidCents += paidByPayment.get(p.id as string) ?? 0;
-    agg.paymentCount += 1;
-    const lastPaid = lastPaidAtByPayment.get(p.id as string);
-    if (lastPaid && (!agg.lastPaymentAt || lastPaid > agg.lastPaymentAt)) agg.lastPaymentAt = lastPaid;
-    const nextDue = nextDueByPayment.get(p.id as string);
-    if (nextDue && (!agg.nextDueDate || nextDue < agg.nextDueDate)) agg.nextDueDate = nextDue;
-    byStudent.set(sid, agg);
-  }
-
-  const studentIds = Array.from(byStudent.keys());
-  const { data: profiles } = studentIds.length
-    ? await supabaseAdmin.from("profiles").select("id, first_name, last_name, email").in("id", studentIds)
-    : { data: [] as Record<string, unknown>[] };
-  const profileById = new Map((profiles ?? []).map((p) => [p.id, p]));
-
-  let rows = Array.from(byStudent.values()).map((agg) => {
-    const profile = profileById.get(agg.studentId) as Record<string, unknown> | undefined;
-    const balanceCents = agg.totalOwedCents - agg.totalPaidCents;
-    const paymentStatus: "paid" | "partial" | "owing" = balanceCents <= 0 ? "paid" : agg.totalPaidCents > 0 ? "partial" : "owing";
-    return {
-      studentId: agg.studentId,
-      studentName: profile ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "Unknown" : "Unknown",
-      studentEmail: (profile?.email as string) ?? null,
-      totalOwedCents: agg.totalOwedCents,
-      totalPaidCents: agg.totalPaidCents,
-      balanceCents,
-      paymentStatus,
-      lastPaymentAt: agg.lastPaymentAt,
-      nextDueDate: agg.nextDueDate,
-      paymentCount: agg.paymentCount,
-    };
-  });
-
-  if (status) rows = rows.filter((r) => r.paymentStatus === status);
-  rows.sort((a, b) => b.balanceCents - a.balanceCents);
-
-  res.json(rows);
 });
 
 // ─── SEND PAYMENT REMINDER ───────────────────────────────────────────────────
-// Inserts directly into the existing reminders table (same one used by
-// admin/teacher reminders) with send_at = now, so it's an immediate
-// balance-due nudge rather than a scheduled future one.
+// One student's balance reminder: the same message, channels, preferences
+// and 24h throttle as the bulk POST /accounting/reminders/send
+// (lib/tuitionReminders.ts). Body: { note?, notifyParents?, override? }.
 router.post("/accounting/students/:studentId/remind", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (!requireAccountingAccess(req, res)) return;
   const studentId = Array.isArray(req.params.studentId) ? req.params.studentId[0] : req.params.studentId;
-  const { message } = req.body as { message?: string };
+  const body = (req.body ?? {}) as { message?: string; note?: string; notifyParents?: boolean; override?: boolean };
 
   const { data: student } = await supabaseAdmin.from("profiles").select("id, school_id").eq("id", studentId).maybeSingle();
   if (!student || student.school_id !== req.schoolId) {
@@ -373,47 +305,27 @@ router.post("/accounting/students/:studentId/remind", requireAuth, async (req: A
     return;
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("reminders")
-    .insert({
-      school_id: req.schoolId,
-      created_by: req.userId,
-      target_user_id: studentId,
-      target_role: null,
-      course_id: null,
-      message: message?.trim() || "You have an outstanding tuition balance. Please log in to view and complete your payment.",
-      send_at: new Date().toISOString(),
-      type: "admin_to_teacher",
-    })
-    .select()
-    .single();
-
-  if (error || !data) {
-    res.status(400).json({ error: error?.message ?? "Failed to send reminder" });
-    return;
+  try {
+    const summary = await sendReminders({
+      schoolId: req.schoolId as string,
+      sentBy: req.userId ?? null,
+      studentIds: [studentId],
+      note: body.note ?? body.message,
+      notifyParents: body.notifyParents === true,
+      override: body.override === true,
+    });
+    if (summary.skippedNoBalance) {
+      res.status(400).json({ error: "This student has no outstanding balance.", ...summary });
+      return;
+    }
+    if (summary.skippedRecent) {
+      res.status(409).json({ error: "This student was reminded in the last 24 hours. Send again anyway to override.", code: "throttled", ...summary });
+      return;
+    }
+    res.status(summary.sent ? 201 : 502).json({ ...summary, sentAt: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to send reminder" });
   }
-
-  // A reminders row alone never actually reaches the student: the calendar
-  // feed only shows non-admins reminders matched on target_role + an
-  // enrolled course_id, and this one has neither. Raise a real notification
-  // so the nudge lands in the student's bell, which is what this button
-  // promises.
-  const { error: notifyError } = await supabaseAdmin.from("notifications").insert({
-    user_id: studentId,
-    type: "tuition_reminder",
-    title: "Tuition balance due",
-    body: data.message as string,
-    is_read: false,
-    metadata: {},
-  });
-  if (notifyError) {
-    // The reminder itself was recorded; a failed bell notification should
-    // not turn the whole request into an error.
-    // eslint-disable-next-line no-console
-    console.error("[accounting] Failed to create tuition reminder notification:", notifyError.message);
-  }
-
-  res.status(201).json({ id: data.id, sentAt: data.send_at });
 });
 
 // ─── CSV EXPORTS ─────────────────────────────────────────────────────────────
@@ -430,9 +342,41 @@ function toCsv(rows: (string | number | null)[][]): string {
     .join("\n");
 }
 
+// Every ledger entry (payments, discounts, waivers, adjustments, refunds,
+// including voided ones, marked as such), optionally within ?from=&to=, so
+// the file reconciles with the P&L. Before tuition-ledger.sql is run it falls
+// back to the old one-row-per-plan export below.
 router.get("/accounting/export/payments", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   if (!requireAccountingAccess(req, res)) return;
   const schoolId = req.schoolId ?? "";
+  const q = req.query as { from?: string; to?: string };
+
+  const ledger = await ledgerEntriesInRange(schoolId, q.from || "1900-01-01", q.to || "2999-12-31").catch(() => null);
+  if (ledger) {
+    const names = await profileNames([...ledger.map((e) => e.student_id), ...ledger.map((e) => e.recorded_by ?? "")]);
+    const ids = Array.from(new Set(ledger.map((e) => e.student_id)));
+    const { data: emails } = ids.length
+      ? await supabaseAdmin.from("profiles").select("id, email").in("id", ids)
+      : { data: [] as Record<string, unknown>[] };
+    const emailById = new Map((emails ?? []).map((p) => [p.id, p.email as string]));
+    const out: (string | number | null)[][] = [[
+      "Date Received", "Receipt", "Student Name", "Student Email", "Type", "Label", "Method", "Reference", "Currency",
+      "Amount", "Signed Amount", "Status", "Void Reason", "Note", "Recorded By", "Recorded At", "Source", "Entry ID", "Plan ID", "Installment ID",
+    ]];
+    for (const e of ledger) {
+      const signed = e.kind === "refund" ? -Math.abs(e.amount_cents) : e.kind === "adjustment" ? e.amount_cents : Math.abs(e.amount_cents);
+      out.push([
+        e.paid_on, e.receipt_number ?? "", names.get(e.student_id) ?? "Unknown", emailById.get(e.student_id) ?? "", e.kind, e.label ?? "",
+        e.method ? METHOD_LABEL[e.method as PaymentMethod] ?? e.method : "", e.reference ?? "", (e.currency || "usd").toUpperCase(),
+        (Math.abs(e.amount_cents) / 100).toFixed(2), (signed / 100).toFixed(2), e.voided_at ? "void" : "active", e.void_reason ?? "", e.note ?? "",
+        e.recorded_by ? names.get(e.recorded_by) ?? "" : "", e.recorded_at, e.source, e.id, e.payment_id ?? "", e.installment_id ?? "",
+      ]);
+    }
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="tuition-ledger-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(out.map((r) => r.map(toCsvCell).join(",")).join("\n"));
+    return;
+  }
 
   const { data: payments, error } = await supabaseAdmin
     .from("tuition_payments")

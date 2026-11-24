@@ -4,6 +4,7 @@ import type Stripe from "stripe";
 import { supabaseAdmin } from "../lib/supabase";
 import { getStripe, getStripeWebhookSecret, isStripeConfigured } from "../lib/stripe";
 import { logger } from "../lib/logger";
+import { recordInstallmentPayment } from "../lib/tuitionLedgerHooks";
 
 const router: IRouter = Router();
 
@@ -124,6 +125,29 @@ router.post(
               updated_at: new Date().toISOString(),
             })
             .eq("id", paymentId);
+
+          // Ledger row for the money received (idempotent on the Stripe
+          // reference, so a retried webhook never records it twice).
+          const { data: paymentRow } = await supabaseAdmin
+            .from("tuition_payments")
+            .select("student_id, currency")
+            .eq("id", paymentId)
+            .maybeSingle();
+          if (paymentRow && schoolId) {
+            await recordInstallmentPayment({
+              schoolId,
+              studentId: paymentRow.student_id as string,
+              paymentId,
+              installmentId,
+              currency: (session.currency as string | null) ?? (paymentRow.currency as string),
+              amountCents: typeof session.amount_total === "number" ? session.amount_total : (installment.amount_cents as number),
+              source: "stripe",
+              method: "online",
+              reference:
+                (typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id) ?? session.id,
+              note: "Paid online (Stripe Checkout)",
+            });
+          }
 
           logger.info({ paymentId, installmentId }, "Stripe tuition payment recorded");
         } else {

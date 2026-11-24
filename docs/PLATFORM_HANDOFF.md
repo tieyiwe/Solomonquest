@@ -128,6 +128,7 @@ individually, don't assume a whole file requires auth.
 | `calendar.ts`, `reminders.ts`, `notifications.ts` | Scheduling + the notification/reminder delivery pipeline |
 | `announcements.ts` | School-wide announcements |
 | `tuition.ts`, `stripe-connect.ts`, `stripe-webhook.ts`, `accounting.ts` | Payments: tuition plans/payments/installments, per-school Stripe Connect onboarding, webhook handling, expense tracking + P&L |
+| `tuition-ledger.ts` (+ `lib/tuitionLedger*.ts`, `lib/tuitionBalances.ts`, `lib/tuitionReminders.ts`, `lib/tuitionEmails.ts`) | Tuition ledger (`tuition-ledger.sql`): record payments/discounts/waivers/refunds, void, receipts, computed balances, payment instructions, balance reminders. Balances are never stored: plans + non-voided ledger rows, computed in `lib/tuitionLedgerCore.ts` (pure, unit-testable). Any code that takes tuition money must call `recordLedgerEntry()` |
 | `agent.ts` | AI assistant (tool-calling, rate limiting, model routing) |
 | `analytics.ts`, `dashboard.ts`, `activityLog.ts` | Reporting |
 | `form-builder.ts` | Custom form fields for admissions |

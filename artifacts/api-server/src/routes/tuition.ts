@@ -3,6 +3,7 @@ import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { getStripe, isStripeConfigured } from "../lib/stripe";
 import { requireSchoolFeature } from "../lib/featureFlags";
+import { recordInstallmentPayment, remainingForInstallment } from "../lib/tuitionLedgerHooks";
 
 const router: IRouter = Router();
 
@@ -385,6 +386,21 @@ router.post(
       return;
     }
 
+    // Balances are computed from the tuition ledger, so the amount this
+    // marks as received must be in it too (what was still owed on the
+    // installment). Staff use this as "Mark paid" for offline money.
+    await recordInstallmentPayment({
+      schoolId: payment.school_id as string,
+      studentId: payment.student_id as string,
+      paymentId: payment.id as string,
+      installmentId: nextUnpaid.id as string,
+      currency: payment.currency as string,
+      source: isSchoolStaff && !isOwnPayment ? "manual" : "simulated",
+      method: "other",
+      note: isSchoolStaff && !isOwnPayment ? "Marked paid from the Tuition page" : "Test payment (simulated, no money moved)",
+      recordedBy: req.userId ?? null,
+    });
+
     const { data: refreshedInstallments } = await supabaseAdmin
       .from("tuition_installments")
       .select("*")
@@ -467,6 +483,19 @@ router.post(
       return;
     }
 
+    // Charge what's still owed on the installment: an admin may already have
+    // recorded part of it (cash, bank transfer) in the ledger.
+    const amountDue = await remainingForInstallment(
+      payment.school_id as string,
+      payment.student_id as string,
+      nextUnpaid.id as string,
+      nextUnpaid.amount_cents as number
+    );
+    if (amountDue <= 0) {
+      res.status(400).json({ error: "This installment is already covered." });
+      return;
+    }
+
     const appUrl = process.env.APP_URL ?? "";
     // Checkout starts either from the school's public apply page
     // (SchoolApply) or from the student's own Tuition page
@@ -493,7 +522,7 @@ router.post(
                       ? `Tuition installment ${nextUnpaid.installment_number} of ${payment.installment_count}`
                       : "Tuition payment",
                 },
-                unit_amount: nextUnpaid.amount_cents as number,
+                unit_amount: amountDue,
               },
               quantity: 1,
             },

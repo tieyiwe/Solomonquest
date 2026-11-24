@@ -40,7 +40,7 @@ const ACCENT = '#84602a';
 // forum topic title could inject links/markup into emails sent under the
 // platform's From address (phishing). Each exported sender escapes its
 // inputs AFTER building the plain-text subject line.
-function escapeHtml(value: unknown): string {
+export function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -49,7 +49,7 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-function baseLayout(
+export function baseLayout(
   title: string,
   body: string,
   options?: { confetti?: boolean; headerTitle?: string; headerLogoUrl?: string }
@@ -627,4 +627,14 @@ export async function sendGenericNotificationEmail({
   `;
 
   await send(to, title, baseLayout(title, body));
+}
+
+// ─── Strict send (reports failure) ───────────────────────────────────────────
+// `send` above swallows errors so a failed email never breaks a request.
+// Bulk senders that report "sent / failed" counts back to an admin (tuition
+// reminders, receipts) need to know, so this variant throws instead.
+export async function sendEmailStrict(to: string, subject: string, html: string, text?: string): Promise<void> {
+  const t = getTransporter();
+  if (!t) throw new Error('SMTP is not configured');
+  await t.sendMail({ from: FROM, to, subject, html, ...(text ? { text } : {}) });
 }

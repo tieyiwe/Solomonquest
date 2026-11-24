@@ -85,6 +85,8 @@ router.put("/users/me/notification-prefs", requireAuth, async (req: Authenticate
   if (resources !== undefined) notification_prefs.resources = resources;
   if (applications !== undefined) notification_prefs.applications = applications;
   if (announcements !== undefined) notification_prefs.announcements = announcements;
+  // Tuition balance reminders and receipts (missing = on).
+  if (typeof req.body?.tuition === "boolean") notification_prefs.tuition = req.body.tuition;
 
   const { data, error } = await supabaseAdmin
     .from("profiles")

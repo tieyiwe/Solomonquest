@@ -38,14 +38,14 @@ import {
   DollarSign,
   Plus,
   Download,
-  Bell,
   Trash2,
   Pencil,
-  Search,
   Receipt,
 } from "lucide-react";
 import { EmptyState } from "@/components/common/States";
 import { HelpLink } from "@/help/components/HelpLink";
+import { StudentBalancesTab } from "@/components/accounting/StudentBalancesTab";
+import { PaymentInstructionsCard } from "@/components/accounting/PaymentInstructionsCard";
 
 async function apiFetch(path: string, options: RequestInit = {}) {
   const {
@@ -86,6 +86,9 @@ interface Summary {
   revenueCents: number;
   expensesCents: number;
   netCents: number;
+  tuitionCollectedCents?: number;
+  refundsCents?: number;
+  discountsCents?: number;
   expensesByCategory: { category: string; amountCents: number }[];
   monthly: { month: string; revenueCents: number; expensesCents: number; netCents: number }[];
 }
@@ -100,40 +103,23 @@ interface Expense {
   createdAt: string;
 }
 
-interface StudentBalance {
-  studentId: string;
-  studentName: string;
-  studentEmail: string | null;
-  totalOwedCents: number;
-  totalPaidCents: number;
-  balanceCents: number;
-  paymentStatus: "paid" | "partial" | "owing";
-  lastPaymentAt: string | null;
-  nextDueDate: string | null;
-  paymentCount: number;
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const STATUS_STYLE: Record<StudentBalance["paymentStatus"], string> = {
-  paid: "bg-success/10 text-success border-success/30",
-  partial: "bg-warning/10 text-warning border-warning/30",
-  owing: "bg-destructive/10 text-destructive border-destructive/30",
-};
-const STATUS_LABEL: Record<StudentBalance["paymentStatus"], string> = {
-  paid: "Paid in full",
-  partial: "Partial balance",
-  owing: "Owing",
-};
-
+// Local calendar dates: `new Date(y, m, 1).toISOString()` shifts to the
+// previous day for anyone east of UTC.
 function defaultRange() {
   const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth() - 11, 1).toISOString().slice(0, 10);
-  const to = now.toISOString().slice(0, 10);
-  return { from, to };
+  return { from: ymd(new Date(now.getFullYear(), now.getMonth() - 11, 1)), to: ymd(now) };
 }
+
+const EXPENSE_CATEGORIES = ["payroll", "facilities", "supplies", "software", "marketing", "other"];
 
 export default function AdminAccounting() {
   const [tab, setTab] = useState("overview");
-  const [range] = useState(defaultRange());
+  const [range, setRange] = useState(defaultRange());
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
 
@@ -143,12 +129,6 @@ export default function AdminAccounting() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [expenseForm, setExpenseForm] = useState({ category: "other", description: "", amount: "", date: new Date().toISOString().slice(0, 10) });
   const [savingExpense, setSavingExpense] = useState(false);
-
-  const [students, setStudents] = useState<StudentBalance[]>([]);
-  const [studentsLoading, setStudentsLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "partial" | "owing">("all");
-  const [search, setSearch] = useState("");
-  const [remindingId, setRemindingId] = useState<string | null>(null);
 
   const fetchSummary = useCallback(async () => {
     setSummaryLoading(true);
@@ -163,28 +143,18 @@ export default function AdminAccounting() {
   const fetchExpenses = useCallback(async () => {
     setExpensesLoading(true);
     try {
-      const res = await apiFetch(`/api/accounting/expenses?from=${range.from}&to=${range.to}`);
+      const cat = categoryFilter !== "all" ? `&category=${encodeURIComponent(categoryFilter)}` : "";
+      const res = await apiFetch(`/api/accounting/expenses?from=${range.from}&to=${range.to}${cat}`);
       if (res.ok) setExpenses(await res.json());
     } finally {
       setExpensesLoading(false);
     }
-  }, [range.from, range.to]);
-
-  const fetchStudents = useCallback(async () => {
-    setStudentsLoading(true);
-    try {
-      const res = await apiFetch("/api/accounting/students");
-      if (res.ok) setStudents(await res.json());
-    } finally {
-      setStudentsLoading(false);
-    }
-  }, []);
+  }, [range.from, range.to, categoryFilter]);
 
   useEffect(() => {
     fetchSummary();
     fetchExpenses();
-    fetchStudents();
-  }, [fetchSummary, fetchExpenses, fetchStudents]);
+  }, [fetchSummary, fetchExpenses]);
 
   function openNewExpense() {
     setEditingExpense(null);
@@ -240,30 +210,6 @@ export default function AdminAccounting() {
     fetchSummary();
   }
 
-  async function sendReminder(studentId: string) {
-    setRemindingId(studentId);
-    try {
-      const res = await apiFetch(`/api/accounting/students/${studentId}/remind`, { method: "POST", body: JSON.stringify({}) });
-      if (!res.ok) {
-        toast.error("Failed to send reminder");
-        return;
-      }
-      toast.success("Reminder sent");
-    } finally {
-      setRemindingId(null);
-    }
-  }
-
-  const filteredStudents = students
-    .filter((s) => (statusFilter === "all" ? true : s.paymentStatus === statusFilter))
-    .filter((s) => (search.trim() ? (s.studentName + s.studentEmail).toLowerCase().includes(search.toLowerCase()) : true));
-
-  const counts = {
-    paid: students.filter((s) => s.paymentStatus === "paid").length,
-    partial: students.filter((s) => s.paymentStatus === "partial").length,
-    owing: students.filter((s) => s.paymentStatus === "owing").length,
-  };
-
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -273,13 +219,13 @@ export default function AdminAccounting() {
               <Wallet className="h-6 w-6 text-primary" />
               Accounting
             </h1>
-            <p className="text-muted-foreground text-sm">Revenue, expenses, and student balances in one place.</p>
+            <p className="text-muted-foreground text-sm">Tuition received, expenses, student balances and reminders in one place.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <HelpLink slug="admin-accounting" label="How accounting works" />
-            <Button variant="outline" size="sm" onClick={() => apiDownload("/api/accounting/export/payments", "tuition-payments.csv")}>
+            <Button variant="outline" size="sm" onClick={() => apiDownload(`/api/accounting/export/payments?from=${range.from}&to=${range.to}`, "tuition-ledger.csv")}>
               <Download className="h-4 w-4 mr-1.5" />
-              Export payments
+              Export payments (ledger)
             </Button>
             <Button variant="outline" size="sm" onClick={() => apiDownload(`/api/accounting/export/expenses?from=${range.from}&to=${range.to}`, "expenses.csv")}>
               <Download className="h-4 w-4 mr-1.5" />
@@ -289,11 +235,39 @@ export default function AdminAccounting() {
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="overview">Overview (P&amp;L)</TabsTrigger>
-            <TabsTrigger value="expenses">Expenses</TabsTrigger>
-            <TabsTrigger value="students">Student Balances</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto -mx-1 px-1">
+            <TabsList>
+              <TabsTrigger value="overview">Overview (P&amp;L)</TabsTrigger>
+              <TabsTrigger value="students">Student Balances</TabsTrigger>
+              <TabsTrigger value="expenses">Expenses</TabsTrigger>
+              <TabsTrigger value="settings">Payment settings</TabsTrigger>
+            </TabsList>
+          </div>
+
+          {(tab === "overview" || tab === "expenses") && (
+            <div className="flex flex-wrap items-end gap-3 mt-4" data-testid="date-range">
+              <div>
+                <Label htmlFor="acc-from">From</Label>
+                <Input id="acc-from" type="date" value={range.from} max={range.to} onChange={(e) => e.target.value && setRange((r) => ({ ...r, from: e.target.value }))} className="w-[160px]" />
+              </div>
+              <div>
+                <Label htmlFor="acc-to">To</Label>
+                <Input id="acc-to" type="date" value={range.to} min={range.from} onChange={(e) => e.target.value && setRange((r) => ({ ...r, to: e.target.value }))} className="w-[160px]" />
+              </div>
+              {tab === "expenses" && (
+                <div>
+                  <Label htmlFor="acc-cat">Category</Label>
+                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                    <SelectTrigger id="acc-cat" className="w-[160px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All categories</SelectItem>
+                      {EXPENSE_CATEGORIES.map((c) => <SelectItem key={c} value={c} className="capitalize">{c[0].toUpperCase() + c.slice(1)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
 
           <TabsContent value="overview" className="space-y-4 mt-4">
             {summaryLoading ? (
@@ -308,9 +282,17 @@ export default function AdminAccounting() {
                   <Card>
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
-                        <TrendingUp className="h-4 w-4 text-success" /> Revenue
+                        <TrendingUp className="h-4 w-4 text-success" /> Tuition revenue
                       </div>
-                      <div className="text-2xl font-bold text-success tabular-nums">{money(summary.revenueCents)}</div>
+                      <div className="text-2xl font-bold text-success tabular-nums" data-testid="pl-revenue">{money(summary.revenueCents)}</div>
+                      {(summary.refundsCents ?? 0) > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {money(summary.tuitionCollectedCents ?? summary.revenueCents)} collected − {money(summary.refundsCents ?? 0)} refunded
+                        </p>
+                      )}
+                      {(summary.discountsCents ?? 0) > 0 && (
+                        <p className="text-xs text-muted-foreground">{money(summary.discountsCents ?? 0)} in discounts and waivers (not revenue)</p>
+                      )}
                     </CardContent>
                   </Card>
                   <Card>
@@ -397,6 +379,7 @@ export default function AdminAccounting() {
                 ) : expenses.length === 0 ? (
                   <EmptyState compact icon={Receipt} title="No expenses in this range" description="Add an expense to see it in your P&L." />
                 ) : (
+                  <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -430,82 +413,18 @@ export default function AdminAccounting() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="students" className="space-y-4 mt-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search students..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
-              </div>
-              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All students ({students.length})</SelectItem>
-                  <SelectItem value="paid">Paid in full ({counts.paid})</SelectItem>
-                  <SelectItem value="partial">Partial balance ({counts.partial})</SelectItem>
-                  <SelectItem value="owing">Owing ({counts.owing})</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <TabsContent value="students" className="mt-4">
+            <StudentBalancesTab onDataChanged={fetchSummary} onOpenSettings={() => setTab("settings")} />
+          </TabsContent>
 
-            <Card>
-              <CardContent className="pt-6">
-                {studentsLoading ? (
-                  <Skeleton className="h-40" />
-                ) : filteredStudents.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">No students match this filter.</p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Student</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Owed</TableHead>
-                        <TableHead className="text-right">Paid</TableHead>
-                        <TableHead className="text-right">Balance</TableHead>
-                        <TableHead>Last payment</TableHead>
-                        <TableHead>Next due</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredStudents.map((s) => (
-                        <TableRow key={s.studentId}>
-                          <TableCell>
-                            <div className="font-medium">{s.studentName}</div>
-                            <div className="text-xs text-muted-foreground">{s.studentEmail}</div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={STATUS_STYLE[s.paymentStatus]}>
-                              {STATUS_LABEL[s.paymentStatus]}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">{money(s.totalOwedCents)}</TableCell>
-                          <TableCell className="text-success text-right tabular-nums">{money(s.totalPaidCents)}</TableCell>
-                          <TableCell className={`text-right tabular-nums ${s.balanceCents > 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}>{money(s.balanceCents)}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{s.lastPaymentAt ? new Date(s.lastPaymentAt).toLocaleDateString() : "—"}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{s.nextDueDate ?? "—"}</TableCell>
-                          <TableCell className="text-right">
-                            {s.balanceCents > 0 && (
-                              <Button variant="outline" size="sm" disabled={remindingId === s.studentId} onClick={() => sendReminder(s.studentId)}>
-                                <Bell className="h-3.5 w-3.5 mr-1.5" />
-                                {remindingId === s.studentId ? "Sending..." : "Remind"}
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+          <TabsContent value="settings" className="mt-4 max-w-2xl">
+            <PaymentInstructionsCard />
           </TabsContent>
         </Tabs>
       </div>

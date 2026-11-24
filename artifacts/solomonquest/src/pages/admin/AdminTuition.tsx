@@ -20,6 +20,7 @@ import { CheckCircle2, DollarSign, CreditCard, ExternalLink, Loader2, Receipt } 
 import { EmptyState } from "@/components/common/States";
 import PageHeader from "@/components/layout/PageHeader";
 import { HelpLink } from "@/help/components/HelpLink";
+import { RecordPaymentDialog } from "@/components/accounting/RecordPaymentDialog";
 
 async function apiFetch(path: string, options: RequestInit = {}) {
   const {
@@ -89,7 +90,7 @@ export default function AdminTuition() {
   const schoolId = (user?.schoolId ?? (user as any)?.school_id) || "";
   const [plans, setPlans] = useState<TuitionPlan[] | null>(null);
   const [payments, setPayments] = useState<TuitionPayment[] | null>(null);
-  const [markingId, setMarkingId] = useState<string | null>(null);
+  const [recordFor, setRecordFor] = useState<TuitionPayment | null>(null);
   const [connectStatus, setConnectStatus] = useState<ConnectStatus | null>(null);
   const [connectLoading, setConnectLoading] = useState(false);
 
@@ -154,23 +155,6 @@ export default function AdminTuition() {
     }
   };
 
-  const handleMarkPaid = async (paymentId: string) => {
-    setMarkingId(paymentId);
-    try {
-      const res = await apiFetch(`/api/tuition-payments/${paymentId}/simulate-pay`, { method: "POST" });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to record payment");
-      }
-      toast.success("Payment recorded");
-      fetchAll();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to record payment");
-    } finally {
-      setMarkingId(null);
-    }
-  };
-
   const totalCollected = (payments ?? [])
     .filter((p) => p.status === "paid")
     .reduce((sum, p) => sum + p.amountCents, 0);
@@ -190,7 +174,7 @@ export default function AdminTuition() {
               Track tuition plans and payments across your school.{" "}
               {connectStatus === "connected"
                 ? "Online payments go directly to your school's own Stripe account."
-                : "Connect Stripe below to take online payments, or record payments received outside the platform (cash, check, bank transfer) using \"Mark Paid\"."}
+                : "Connect Stripe below to take online payments, or record money received outside the platform (cash, bank transfer, cheque, mobile money) with \"Record payment\". Balances, receipts and reminders are in Accounting."}
             </>
           }
         />
@@ -345,18 +329,9 @@ export default function AdminTuition() {
                       </TableCell>
                       <TableCell>
                         {payment.status !== "paid" ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={markingId === payment.id}
-                            onClick={() => handleMarkPaid(payment.id)}
-                          >
+                          <Button size="sm" variant="outline" onClick={() => setRecordFor(payment)}>
                             <DollarSign className="h-3.5 w-3.5 mr-1" />
-                            {markingId === payment.id
-                              ? "Recording…"
-                              : payment.status === "partial"
-                              ? "Mark Next Installment Paid"
-                              : "Mark Paid"}
+                            Record payment
                           </Button>
                         ) : (
                           <span className="text-xs text-success flex items-center gap-1">
@@ -372,6 +347,14 @@ export default function AdminTuition() {
           </CardContent>
         </Card>
       </div>
+      <RecordPaymentDialog
+        open={!!recordFor}
+        onOpenChange={(o) => !o && setRecordFor(null)}
+        studentId={recordFor?.studentId ?? null}
+        studentName={recordFor?.studentName}
+        initialPaymentId={recordFor?.id ?? null}
+        onRecorded={() => fetchAll()}
+      />
     </AdminLayout>
   );
 }
