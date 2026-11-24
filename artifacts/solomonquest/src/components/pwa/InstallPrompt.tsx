@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Download, X } from "lucide-react";
+import { X } from "lucide-react";
+import { BrandTile } from "@/components/brand/BrandMark";
 
 // Re-shown a dismissal expires after this long — long enough not to nag,
 // short enough that someone who dismissed it in a hurry still gets asked
@@ -85,7 +86,7 @@ export function InstallPrompt() {
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-sm">
       <div className="flex items-center gap-3 rounded-xl border bg-card shadow-lg p-3 pl-4">
-        <Download className="h-5 w-5 text-primary shrink-0" />
+        <BrandTile className="h-9 w-9" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium leading-tight">Install SolomonQuest</p>
           <p className="text-xs text-muted-foreground leading-tight">Quick access from your home screen.</p>

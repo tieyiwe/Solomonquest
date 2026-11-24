@@ -5,6 +5,7 @@ import MobileNav from "./MobileNav";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 
+import { BrandTile } from "@/components/brand/BrandMark";
 interface AppShellProps {
   children: ReactNode;
   title?: string;
@@ -24,9 +25,12 @@ export default function AppShell({ children, title, sidebar }: AppShellProps) {
       {/* Mobile header — only visible on mobile */}
       <header className="md:hidden fixed top-0 left-0 right-0 z-40 bg-background border-b border-border h-14 flex items-center px-4 gap-3">
         <Link href="/">
-          <a className="flex flex-col leading-tight mr-auto">
+          <a className="flex items-center gap-2 mr-auto">
+            <BrandTile className="h-7 w-7" />
+            <span className="flex flex-col leading-tight">
             <span className="text-base font-bold text-primary">SolomonQuest</span>
             <span className="text-[7.5px] text-muted-foreground tracking-[0.2em] uppercase">Powered by TIBLOGICS</span>
+            </span>
           </a>
         </Link>
 

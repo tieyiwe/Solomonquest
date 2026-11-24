@@ -72,7 +72,18 @@ function baseLayout(
     options?.headerLogoUrl && /^https?:\/\//i.test(options.headerLogoUrl)
       ? escapeHtml(options.headerLogoUrl)
       : undefined;
-  const headerContent = headerLogoUrl
+  // Platform emails (no school branding) use the SolomonQuest wordmark image,
+  // served by the web app at /email-header-logo.png. Only when APP_URL is set,
+  // so a missing or wrong domain can't produce a broken image; the alt text
+  // keeps the name readable when a mail client blocks images.
+  const appUrl = (process.env.APP_URL ?? process.env.FRONTEND_URL ?? "").replace(/\/+$/, "");
+  const platformLogo =
+    !headerLogoUrl && !options?.headerTitle && /^https?:\/\//i.test(appUrl)
+      ? `<img src="${escapeHtml(`${appUrl}/email-header-logo.png`)}" alt="SolomonQuest" width="224" height="40" style="width:224px;height:40px;display:inline-block;border:0;" />`
+      : null;
+  const headerContent = platformLogo
+    ? platformLogo
+    : headerLogoUrl
     ? `<table cellpadding="0" cellspacing="0"><tr>
         <td style="padding-right:12px;vertical-align:middle;">
           <img src="${headerLogoUrl}" alt="${headerTitle}" height="36" style="height:36px;max-width:120px;display:block;object-fit:contain;" />

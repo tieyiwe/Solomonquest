@@ -5,10 +5,11 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { GraduationCap, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { TourOverlay, useTour } from "@/components/tour/TourOverlay";
 import { HelpCenter, HelpButton } from "@/components/help/HelpCenter";
 
+import { BrandTile } from "@/components/brand/BrandMark";
 interface ParentLayoutProps {
   children: React.ReactNode;
 }
@@ -26,9 +27,7 @@ export function ParentLayout({ children }: ParentLayoutProps) {
     <div className="min-h-screen bg-background flex flex-col">
       <header className="h-16 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 flex items-center justify-between gap-3 px-4 md:px-6 sticky top-0 z-20">
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-brand flex items-center justify-center shrink-0 shadow-sm" aria-hidden="true">
-            <GraduationCap className="h-4 w-4 text-gold" />
-          </div>
+          <BrandTile className="h-8 w-8" />
           <Link href="/dashboard/parent">
             <span className="text-base font-bold text-foreground tracking-tight">SolomonQuest</span>
           </Link>

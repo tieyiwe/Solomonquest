@@ -23,7 +23,6 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
-  GraduationCap,
   FolderOpen,
   X,
   BarChart2,
@@ -37,8 +36,9 @@ import {
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useGetMySchool, useGetMyCourses } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
-import { brandMark, navIconActive, navIconIdle, navItemActive, navItemBase, navItemIdle, navSectionLabel } from "@/components/layout/navStyles";
+import { navIconActive, navIconIdle, navItemActive, navItemBase, navItemIdle, navSectionLabel } from "@/components/layout/navStyles";
 
+import { BrandTile } from "@/components/brand/BrandMark";
 interface TeacherLayoutProps {
   children: React.ReactNode;
 }
@@ -90,9 +90,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="px-4 border-b border-sidebar-border flex items-center gap-2.5 h-16">
-        <div className={brandMark} aria-hidden="true">
-          <GraduationCap className="h-4 w-4" />
-        </div>
+        <BrandTile className="h-8 w-8" />
         <Link href="/" className="min-w-0">
           <span className="block text-sm font-semibold text-sidebar-accent-foreground tracking-tight truncate">
             {school?.name || "SolomonQuest"}

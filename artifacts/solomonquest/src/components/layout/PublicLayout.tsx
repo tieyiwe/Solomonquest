@@ -2,6 +2,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 
+import { BrandSymbol, BrandTile } from "@/components/brand/BrandMark";
 export function PublicLayout({ children, showFeatured = false }: { children: React.ReactNode; showFeatured?: boolean }) {
   const { user, isLoading } = useAuth();
   const [_, setLocation] = useLocation();
@@ -26,7 +27,7 @@ export function PublicLayout({ children, showFeatured = false }: { children: Rea
       <header className="border-b border-border/70 bg-background/90 backdrop-blur-md supports-[backdrop-filter]:bg-background/75 sticky top-0 z-30 pt-[env(safe-area-inset-top,0px)]">
         <div className="container mx-auto max-w-6xl px-5 sm:px-6 h-16 md:h-[72px] flex items-center justify-between gap-3">
           <Link href="/" className="flex items-center gap-3 min-w-0 rounded-md">
-            <span className="h-9 w-9 rounded-full bg-brand text-gold ring-1 ring-gold/40 flex items-center justify-center font-serif font-semibold text-lg shrink-0 shadow-sm" aria-hidden="true">S</span>
+            <BrandTile className="h-9 w-9" rounded="rounded-xl" />
             <span className="flex flex-col leading-none min-w-0">
               <span className="font-serif text-xl sm:text-[1.4rem] font-semibold text-foreground tracking-tight truncate">SolomonQuest</span>
               <span className="hidden sm:block mt-1 text-[7.5px] text-muted-foreground tracking-[0.25em] uppercase">Powered by TIBLOGICS</span>
@@ -79,7 +80,7 @@ export function PublicLayout({ children, showFeatured = false }: { children: Rea
       <footer className={`bg-[hsl(224_50%_5%)] text-[hsl(40_20%_88%)] mt-auto ${showFeatured ? "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))] sm:pb-0" : ""}`}>
         <div className="container mx-auto max-w-6xl px-5 sm:px-6 py-14 grid gap-10 md:grid-cols-3">
           <div className="space-y-3">
-            <p className="font-serif text-2xl font-semibold text-[hsl(40_30%_97%)]">SolomonQuest</p>
+            <p className="flex items-center gap-2.5 font-serif text-2xl font-semibold text-[hsl(40_30%_97%)]"><BrandSymbol className="h-9 w-9 text-[hsl(40_30%_97%)]" />SolomonQuest</p>
             <p className="text-sm text-[hsl(40_20%_88%/0.7)] max-w-xs leading-relaxed">A refined learning platform for schools that take formation seriously.</p>
           </div>
           {showFeatured ? (
