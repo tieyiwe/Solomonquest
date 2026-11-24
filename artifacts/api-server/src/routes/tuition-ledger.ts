@@ -35,6 +35,7 @@ import {
 import { buildBalanceRows, buildReceipt, statusCounts } from "../lib/tuitionBalances";
 import { MAX_REMINDER_BATCH, previewReminders, sendReminders } from "../lib/tuitionReminders";
 import { receiptEmailHtml } from "../lib/tuitionEmails";
+import { sendPaymentConfirmation } from "../lib/paymentConfirmation";
 
 /**
  * Tuition ledger routes: recording payments/discounts/refunds, voiding,
@@ -339,6 +340,8 @@ router.post(
         source: "manual",
         recordedBy: req.userId ?? null,
       });
+      // Email + in-app receipt to the student for every payment, partial included.
+      if (kind === "payment") void sendPaymentConfirmation(entry);
 
       const after = await loadStudentLedger(schoolId, studentId);
       const before = computeStatement(after.items, after.entries.filter((e) => e.id !== entry.id).map(toLite));

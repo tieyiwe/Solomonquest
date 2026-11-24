@@ -1,5 +1,6 @@
 import { logger } from "./logger";
 import { loadStudentLedger, recordLedgerEntry, LedgerUnavailableError } from "./tuitionLedger";
+import { sendPaymentConfirmation } from "./paymentConfirmation";
 
 /**
  * Small hooks the existing tuition paths (simulate-pay, Stripe checkout and
@@ -51,7 +52,7 @@ export async function recordInstallmentPayment(input: {
       amount = l.statement.items.find((x) => x.item.id === input.installmentId)?.remainingCents ?? 0;
     }
     if (!amount || amount <= 0) return;
-    await recordLedgerEntry({
+    const entry = await recordLedgerEntry({
       schoolId: input.schoolId,
       studentId: input.studentId,
       kind: "payment",
@@ -65,6 +66,8 @@ export async function recordInstallmentPayment(input: {
       source: input.source,
       recordedBy: input.recordedBy ?? null,
     });
+    // Stripe / test payments get the same email + in-app receipt as manual ones.
+    void sendPaymentConfirmation(entry);
   } catch (err) {
     if (err instanceof LedgerUnavailableError) return;
     logger.error({ err, installmentId: input.installmentId }, "tuition ledger: failed to record installment payment");

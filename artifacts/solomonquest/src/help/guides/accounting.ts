@@ -130,7 +130,7 @@ export const accountingGuides: Guide[] = [
   {
     slug: "admin-print-receipt",
     title: "Print or email a receipt",
-    summary: "Every recorded payment gets a numbered, school-branded receipt you can print or email.",
+    summary: "Every recorded payment gets a numbered, school-branded receipt. The student is emailed it automatically; you can print it or resend it.",
     roles: AS,
     category: "finance",
     format: "animated",
@@ -152,7 +152,7 @@ export const accountingGuides: Guide[] = [
       { title: "Open the receipt", text: "Right after recording a payment, tap View receipt in the confirmation. Later, open the student's ledger and tap Receipt.", target: "receipt" },
       { title: "What's on it", text: "Receipt number, student, amount, method, reference, date and the balance remaining at that moment.", target: "rem" },
       { title: "Print", text: "Tap Print, or save it as a PDF from the print dialog.", target: "print" },
-      { title: "Email it", text: "Tap Email receipt to student. Tick Also email parents/guardians to copy them.", target: "email", set: { par: { on: true }, sent: { open: true } }, tip: "A voided payment's receipt is stamped VOID." },
+      { title: "Email it", text: "The student already got this receipt by email when the payment was recorded. Tap Email receipt to student to resend it, and tick Also email parents/guardians to copy them.", target: "email", set: { par: { on: true }, sent: { open: true } }, tip: "A voided payment's receipt is stamped VOID." },
     ],
     related: ["admin-record-payment", "student-balance-and-receipts"],
   },

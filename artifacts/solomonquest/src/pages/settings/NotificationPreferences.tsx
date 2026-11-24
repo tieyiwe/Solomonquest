@@ -280,7 +280,7 @@ export default function NotificationPreferences() {
     {
       id: "tuition",
       label: "Tuition & balances",
-      description: "Balance reminders and payment receipts from your school (parents: for your children).",
+      description: "Balance reminders from your school (parents: for your children). Payment receipts are always sent.",
       icon: <Wallet className="h-4 w-4" />,
     },
   ];
