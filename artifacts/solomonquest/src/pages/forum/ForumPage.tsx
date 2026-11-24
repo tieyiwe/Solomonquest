@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -175,17 +176,8 @@ function Avatar({
   url?: string | null;
   size?: "sm" | "md";
 }) {
-  const dim = size === "sm" ? "w-7 h-7 text-[10px]" : "w-9 h-9 text-xs";
-  if (url) {
-    return (
-      <img
-        src={url}
-        alt={name}
-        className={cn("rounded-full object-cover shrink-0 border border-border", dim)}
-      />
-    );
-  }
-  return (
+  const dim = size === "sm" ? "w-7 h-7 text-[11px]" : "w-9 h-9 text-xs";
+  const initials = (
     <div
       className={cn(
         "rounded-full bg-primary/10 text-primary font-semibold flex items-center justify-center shrink-0 select-none",
@@ -194,6 +186,15 @@ function Avatar({
     >
       {getInitials(name)}
     </div>
+  );
+  // A dead avatar URL shows the initials instead of a broken-image icon.
+  return (
+    <SafeImage
+      src={url || undefined}
+      alt=""
+      className={cn("rounded-full object-cover shrink-0 border border-border", dim)}
+      fallback={initials}
+    />
   );
 }
 
@@ -230,8 +231,8 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
 
       {/* Cover image thumbnail */}
       {topic.coverImage && (
-        <div className="hidden sm:block shrink-0 w-20 h-14 rounded-md overflow-hidden border border-border self-center">
-          <img src={topic.coverImage} alt="" className="w-full h-full object-cover" />
+        <div className="hidden sm:has-[img]:block shrink-0 w-20 h-14 rounded-md overflow-hidden border border-border bg-muted self-center">
+          <SafeImage src={topic.coverImage} alt="" loading="lazy" className="w-full h-full object-cover" />
         </div>
       )}
 
@@ -239,8 +240,8 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
       <div className="flex-1 min-w-0 flex flex-col gap-1.5">
         {/* Cover image on mobile */}
         {topic.coverImage && (
-          <div className="sm:hidden w-full h-28 rounded-md overflow-hidden border border-border mb-1">
-            <img src={topic.coverImage} alt="" className="w-full h-full object-cover" />
+          <div className="hidden has-[img]:block sm:has-[img]:hidden w-full h-28 rounded-md overflow-hidden border border-border bg-muted mb-1">
+            <SafeImage src={topic.coverImage} alt="" loading="lazy" className="w-full h-full object-cover" />
           </div>
         )}
         {/* Title row */}
@@ -257,22 +258,22 @@ function TopicCard({ topic, onClick }: { topic: ForumTopic; onClick: () => void 
           </div>
           <div className="flex shrink-0 items-center gap-1.5 mt-0.5">
             {topic.is_pinned && (
-              <Badge variant="outline" className="text-warning border-warning/30 text-[10px] px-1.5 py-0">
+              <Badge variant="outline" className="text-warning border-warning/30 text-[11px] px-1.5 py-0">
                 Pinned
               </Badge>
             )}
             {topic.course_id ? (
-              <Badge className="bg-primary/10 text-primary hover:bg-primary/20 text-[10px] px-1.5 py-0 border-0">
+              <Badge className="bg-primary/10 text-primary hover:bg-primary/20 text-[11px] px-1.5 py-0 border-0">
                 <BookOpen size={10} className="mr-1" />
                 {topic.course_name ?? "Course"}
               </Badge>
             ) : topic.program_id ? (
-              <Badge className="bg-primary/10 text-primary text-[10px] px-1.5 py-0 border-0">
+              <Badge className="bg-primary/10 text-primary text-[11px] px-1.5 py-0 border-0">
                 <BookOpen size={10} className="mr-1" />
                 {topic.program_name ?? "Program"}
               </Badge>
             ) : (
-              <Badge className="bg-success/10 text-success text-[10px] px-1.5 py-0 border-0 hover:bg-success/20">
+              <Badge className="bg-success/10 text-success text-[11px] px-1.5 py-0 border-0 hover:bg-success/20">
                 <School size={10} className="mr-1" />
                 School-wide
               </Badge>
@@ -554,7 +555,7 @@ function FilterPill({
     <button
       onClick={onClick}
       className={cn(
-        "px-3 py-1 rounded-full text-sm font-medium transition-all whitespace-nowrap",
+        "shrink-0 px-3 py-2 sm:py-1 rounded-full text-sm font-medium transition-all whitespace-nowrap max-w-[16rem] truncate",
         active
           ? "bg-primary text-primary-foreground shadow-sm"
           : "text-muted-foreground hover:bg-muted hover:text-foreground"

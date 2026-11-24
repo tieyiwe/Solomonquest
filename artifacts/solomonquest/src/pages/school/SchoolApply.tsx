@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { useParams, Link, useLocation } from "wouter";
 import { useGetSchoolBySlug, useListCourses } from "@workspace/api-client-react";
 import { PublicLayout } from "@/components/layout/PublicLayout";
@@ -533,11 +534,14 @@ export default function SchoolApply() {
 
         <div className="text-center mb-8">
           {school.logoUrl ? (
-            <div className="mx-auto h-16 w-16 rounded-full overflow-hidden border-2 border-muted mb-3">
-              <img
+            <div className="mx-auto h-16 w-16 rounded-full overflow-hidden border-2 border-muted mb-3 bg-primary/10 flex items-center justify-center">
+              <SafeImage
                 src={school.logoUrl}
                 alt={school.name}
+                width={64}
+                height={64}
                 className="h-full w-full object-cover"
+                fallback={<span className="text-2xl font-bold text-primary">{school.name.charAt(0)}</span>}
               />
             </div>
           ) : (

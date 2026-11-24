@@ -68,7 +68,7 @@ export function ProfileMenu() {
               <p className="text-sm font-semibold text-foreground truncate">{fullName}</p>
               <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
               {user?.role && (
-                <span className="inline-block mt-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary capitalize">
+                <span className="inline-block mt-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary capitalize">
                   {roleLabel(user.role)}
                 </span>
               )}

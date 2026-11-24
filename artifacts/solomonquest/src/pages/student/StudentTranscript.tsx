@@ -1,4 +1,5 @@
 import { useAuth } from "@/contexts/AuthContext";
+import { SafeImage } from "@/components/common/SafeImage";
 import { supabase } from "@/lib/supabase";
 import { StudentLayout } from "@/components/layout/StudentLayout";
 import { useQuery } from "@tanstack/react-query";
@@ -292,17 +293,18 @@ export function TranscriptDocument({ studentId: studentIdProp, bare }: StudentTr
       {/* Official letterhead — shown on screen too, styled like a real document header */}
       <div className="rounded-xl border-2 border-primary/15 bg-gradient-to-b from-primary/5 to-transparent px-6 py-5 print:border-b-2 print:border-black print:rounded-none print:bg-white print:px-0 print:pb-4">
         <div className="flex items-center gap-4">
-          {school?.logoUrl ? (
-            <img
-              src={school.logoUrl}
-              alt={school.name ?? "School logo"}
-              className="h-14 w-14 rounded-lg object-cover border shrink-0 print:h-12 print:w-12"
-            />
-          ) : (
-            <div className="h-14 w-14 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 print:h-12 print:w-12">
-              <GraduationCap className="h-7 w-7 text-primary" />
-            </div>
-          )}
+          <SafeImage
+            src={school?.logoUrl || undefined}
+            alt={school?.name ?? "School logo"}
+            width={56}
+            height={56}
+            className="h-14 w-14 rounded-lg object-cover border shrink-0 print:h-12 print:w-12"
+            fallback={
+              <div className="h-14 w-14 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 print:h-12 print:w-12">
+                <GraduationCap className="h-7 w-7 text-primary" />
+              </div>
+            }
+          />
           <div className="min-w-0">
             <p className="text-lg font-bold tracking-tight leading-tight truncate">
               {school?.name ?? "SolomonQuest School"}
@@ -447,7 +449,7 @@ export function TranscriptDocument({ studentId: studentIdProp, bare }: StudentTr
     <StudentLayout>
       <div className="px-6 pt-4 pb-0 print:hidden">
         <Link href="/dashboard/student">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>

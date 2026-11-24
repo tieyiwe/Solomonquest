@@ -227,8 +227,9 @@ export function AgentWidget() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-20 md:bottom-6 right-4 md:right-24 z-40 h-14 w-14 rounded-full bg-brand text-white shadow-lg flex flex-col items-center justify-center gap-0.5 hover:scale-105 hover:shadow-xl transition-all duration-200"
+          className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] md:bottom-6 right-4 md:right-24 z-40 h-14 w-14 rounded-full bg-brand text-white shadow-lg flex flex-col items-center justify-center gap-0.5 hover:scale-105 hover:shadow-xl transition-all duration-200"
           title={`Chat with ${agentName}`}
+          aria-label={`Chat with ${agentName}`}
         >
           <Sparkles className="h-4 w-4" />
           <span className="text-[9px] font-semibold leading-none">Sol</span>
@@ -237,7 +238,7 @@ export function AgentWidget() {
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-24 z-50 w-full md:w-96 h-[85vh] md:h-[600px] bg-card md:rounded-2xl shadow-2xl border border-black/5 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-24 z-50 w-full md:w-96 h-[85dvh] md:h-[600px] pb-[env(safe-area-inset-bottom,0px)] md:pb-0 bg-card md:rounded-2xl shadow-2xl border border-black/5 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
           <div className="relative flex items-center justify-between px-4 py-3.5 shrink-0 bg-brand text-white overflow-hidden">
             <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_20%_-20%,white,transparent_60%)]" />
             <div className="relative flex items-center gap-2.5">
@@ -246,10 +247,10 @@ export function AgentWidget() {
               </div>
               <div>
                 <p className="font-semibold text-sm leading-tight">{agentName}</p>
-                <p className="text-[10px] text-white/70 leading-tight">AI Assistant</p>
+                <p className="text-[11px] text-white/70 leading-tight">AI Assistant</p>
               </div>
             </div>
-            <button onClick={() => setOpen(false)} className="relative opacity-80 hover:opacity-100 transition-opacity">
+            <button onClick={() => setOpen(false)} aria-label="Close assistant" className="relative -mr-2 p-2.5 rounded-full opacity-80 hover:opacity-100 hover:bg-white/10 transition-opacity">
               <X className="h-4 w-4" />
             </button>
           </div>

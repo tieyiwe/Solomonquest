@@ -263,7 +263,7 @@ function EnrollmentsChart({ data, loading }: { data: EnrollmentPoint[]; loading:
                 title={`${d.month}: ${d.count} enrollments`}
               />
               {/* Tooltip */}
-              <span className="absolute -top-7 left-1/2 -translate-x-1/2 hidden group-hover:block bg-foreground text-background text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-10">
+              <span className="absolute -top-7 left-1/2 -translate-x-1/2 hidden group-hover:block bg-foreground text-background text-[11px] px-1.5 py-0.5 rounded whitespace-nowrap z-10">
                 {d.count}
               </span>
             </div>
@@ -272,7 +272,7 @@ function EnrollmentsChart({ data, loading }: { data: EnrollmentPoint[]; loading:
       </div>
       <div className="flex gap-1.5">
         {data.map((d) => (
-          <div key={d.month} className="flex-1 text-center text-[9px] text-muted-foreground">
+          <div key={d.month} className="flex-1 text-center text-[11px] text-muted-foreground">
             {d.month.slice(5)}
           </div>
         ))}
@@ -436,7 +436,7 @@ export default function AdminAnalytics() {
         <main className="flex-1 overflow-y-auto">
           <div className="px-6 pt-4 pb-0">
             <Link href="/dashboard/admin">
-              <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
                 <ArrowLeft className="h-4 w-4" />
                 Back to Dashboard
               </button>

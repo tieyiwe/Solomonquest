@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { SafeImage, sizedImageUrl } from "@/components/common/SafeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -773,11 +774,12 @@ export default function AdminSchoolBranding() {
                   <Label className="text-sm font-medium text-foreground/80 mb-2 block">School Logo</Label>
                   <div className="flex items-center gap-4">
                     <div className="w-24 h-24 border-2 border-dashed border-border rounded-lg flex items-center justify-center bg-muted/50 overflow-hidden shrink-0">
-                      {branding.logo_url ? (
-                        <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" />
-                      ) : (
-                        <School className="w-10 h-10 text-muted-foreground/60" />
-                      )}
+                      <SafeImage
+                        src={branding.logo_url || undefined}
+                        alt="Logo"
+                        className="w-full h-full object-contain"
+                        fallback={<School className="w-10 h-10 text-muted-foreground/60" />}
+                      />
                     </div>
                     <div className="flex-1 space-y-2">
                       <LogoUploadButton
@@ -788,7 +790,7 @@ export default function AdminSchoolBranding() {
                         <button
                           type="button"
                           onClick={() => update("logo_url", "")}
-                          className="text-xs text-destructive hover:text-destructive"
+                          className="py-2 sm:py-0 text-xs text-destructive hover:text-destructive"
                         >
                           Remove logo
                         </button>
@@ -838,11 +840,13 @@ export default function AdminSchoolBranding() {
                     {branding.banner_slides.map((slide, idx) => (
                       <div key={slide.id} className="flex items-center gap-3 p-3 border border-border rounded-lg bg-muted/50">
                         <div className="w-10 h-10 rounded overflow-hidden bg-muted shrink-0">
-                          {slide.image_url ? (
-                            <img src={slide.image_url} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">IMG</div>
-                          )}
+                          <SafeImage
+                            src={slide.image_url || undefined}
+                            alt=""
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                            fallback={<div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">IMG</div>}
+                          />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">{slide.title || "Untitled Slide"}</p>
@@ -874,7 +878,7 @@ export default function AdminSchoolBranding() {
                           onChange={(e) => setNewSlide((p) => ({ ...p, image_url: e.target.value }))}
                         />
                         {newSlide.image_url && (
-                          <img src={newSlide.image_url} alt="" className="mt-2 h-20 rounded object-cover w-full" />
+                          <SafeImage src={newSlide.image_url} alt="" className="mt-2 h-20 rounded object-cover w-full" />
                         )}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
@@ -1324,11 +1328,12 @@ export default function AdminSchoolBranding() {
           {/* Mini nav */}
           <div className="px-4 py-3 flex items-center justify-between" style={{ backgroundColor: branding.primary_color }}>
             <div className="flex items-center gap-2">
-              {branding.logo_url ? (
-                <img src={branding.logo_url} alt="Logo" className="w-7 h-7 object-contain rounded" />
-              ) : (
-                <School className="w-6 h-6 text-white" />
-              )}
+              <SafeImage
+                src={branding.logo_url || undefined}
+                alt="Logo"
+                className="w-7 h-7 object-contain rounded"
+                fallback={<School className="w-6 h-6 text-white" />}
+              />
               <span className="text-white text-sm font-bold" style={{ fontFamily: branding.heading_font }}>
                 {branding.school_name || "School Name"}
               </span>
@@ -1344,7 +1349,7 @@ export default function AdminSchoolBranding() {
           <div
             className="relative h-48 flex items-center justify-center text-white overflow-hidden"
             style={{
-              backgroundImage: firstSlide?.image_url ? `url(${firstSlide.image_url})` : undefined,
+              backgroundImage: firstSlide?.image_url ? `url(${sizedImageUrl(firstSlide.image_url, 480)})` : undefined,
               backgroundColor: firstSlide?.image_url ? undefined : branding.primary_color,
               backgroundSize: "cover",
               backgroundPosition: "center",
@@ -1457,11 +1462,12 @@ export default function AdminSchoolBranding() {
                         className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
                         style={{ backgroundColor: branding.primary_color }}
                       >
-                        {t.avatar_url ? (
-                          <img src={t.avatar_url} alt="" className="w-full h-full object-cover rounded-full" />
-                        ) : (
-                          (t.name?.[0] || "?")
-                        )}
+                        <SafeImage
+                          src={t.avatar_url || undefined}
+                          alt=""
+                          className="w-full h-full object-cover rounded-full"
+                          fallback={t.name?.[0] || "?"}
+                        />
                       </div>
                       <div>
                         <p className="text-xs font-semibold text-gray-800">{t.name || "Name"}</p>

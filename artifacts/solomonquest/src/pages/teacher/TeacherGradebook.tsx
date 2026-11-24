@@ -648,7 +648,7 @@ function CourseGradebook({ courseId, courseTitle }: { courseId: string; courseTi
                                   <span className={cn("text-xs", gradeColor(pct))}>{pct}%</span>
                                 )}
                                 {sub!.latePenaltyPercent > 0 && (
-                                  <span className="text-[10px] font-medium text-warning" title={`Raw score ${sub!.rawGrade ?? "?"} before late penalty`}>
+                                  <span className="text-[11px] font-medium text-warning" title={`Raw score ${sub!.rawGrade ?? "?"} before late penalty`}>
                                     Late −{sub!.latePenaltyPercent}%
                                   </span>
                                 )}
@@ -735,7 +735,7 @@ export default function TeacherGradebook() {
     <TeacherLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/teacher">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>

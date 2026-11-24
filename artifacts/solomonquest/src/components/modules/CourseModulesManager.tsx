@@ -199,19 +199,19 @@ export function CourseModulesManager({ courseId }: { courseId: string }) {
                       />
                       <Label htmlFor={`pub-${mod.id}`} className="text-xs">Published</Label>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Move module up" disabled={busy || mIdx === 0} onClick={() => moveModule(mIdx, -1)}>
+                    <Button variant="ghost" size="icon" className="h-10 w-10 sm:h-8 sm:w-8" aria-label="Move module up" disabled={busy || mIdx === 0} onClick={() => moveModule(mIdx, -1)}>
                       <ArrowUp className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Move module down" disabled={busy || mIdx === modules.length - 1} onClick={() => moveModule(mIdx, 1)}>
+                    <Button variant="ghost" size="icon" className="h-10 w-10 sm:h-8 sm:w-8" aria-label="Move module down" disabled={busy || mIdx === modules.length - 1} onClick={() => moveModule(mIdx, 1)}>
                       <ArrowDown className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit module" onClick={() => setModuleDialog({ open: true, module: mod })}>
+                    <Button variant="ghost" size="icon" className="h-10 w-10 sm:h-8 sm:w-8" aria-label="Edit module" onClick={() => setModuleDialog({ open: true, module: mod })}>
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      className="h-10 w-10 sm:h-8 sm:w-8 text-destructive hover:text-destructive"
                       aria-label="Delete module"
                       onClick={() =>
                         setConfirm({
@@ -366,9 +366,9 @@ function ManagerItemRow({
                   · <Video className="h-3 w-3" /> video{item.requireVideoWatch ? " (must watch)" : ""}
                 </span>
               )}
-              {!item.isPublished && <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">Draft</Badge>}
+              {!item.isPublished && <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">Draft</Badge>}
               {item.isSequential && (
-                <Badge variant="outline" className="h-4 gap-0.5 px-1.5 text-[10px]">
+                <Badge variant="outline" className="h-5 gap-0.5 px-1.5 text-[11px]">
                   <ListOrdered className="h-2.5 w-2.5" /> Sequential
                 </Badge>
               )}
@@ -386,18 +386,18 @@ function ManagerItemRow({
             <Switch checked={item.isSequential} disabled={busy || index === 0} onCheckedChange={onToggleSequential} aria-label="Sequential" />
             Sequential
           </label>
-          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Move up" disabled={busy || index === 0} onClick={() => onMove(-1)}>
+          <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-7 sm:w-7" aria-label="Move up" disabled={busy || index === 0} onClick={() => onMove(-1)}>
             <ArrowUp className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Move down" disabled={busy || index === count - 1} onClick={() => onMove(1)}>
+          <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-7 sm:w-7" aria-label="Move down" disabled={busy || index === count - 1} onClick={() => onMove(1)}>
             <ArrowDown className="h-3.5 w-3.5" />
           </Button>
           {item.itemType === "lesson" && (
-            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Edit lesson" onClick={onEdit}>
+            <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-7 sm:w-7" aria-label="Edit lesson" onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
           )}
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" aria-label="Remove" onClick={onRemove}>
+          <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-7 sm:w-7 text-destructive hover:text-destructive" aria-label="Remove" onClick={onRemove}>
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -680,7 +680,7 @@ function LessonForm({
                     <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate">{a.name}</span>
                     <span className="text-xs text-muted-foreground">{formatSize(a.size)}</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" aria-label={`Remove ${a.name}`} onClick={() => setAttachments((list) => list.filter((_, j) => j !== i))}>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-6 sm:w-6" aria-label={`Remove ${a.name}`} onClick={() => setAttachments((list) => list.filter((_, j) => j !== i))}>
                       <X className="h-3.5 w-3.5" />
                     </Button>
                   </li>

@@ -28,7 +28,7 @@ export default function AdminCourseModules() {
           {isLoading ? (
             <Skeleton className="h-8 w-64" />
           ) : (
-            <h1 className="font-serif text-3xl font-semibold tracking-tight">{course?.title ?? "Course"}</h1>
+            <h1 className="font-serif text-2xl sm:text-3xl font-semibold tracking-tight break-words">{course?.title ?? "Course"}</h1>
           )}
           <p className="text-sm text-muted-foreground">Modules, lessons and student progress</p>
         </div>

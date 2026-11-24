@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { dashboardPathForRole } from "@/lib/roleHome";
@@ -395,7 +396,7 @@ function SidebarChannel({
         <span className="flex-1 min-w-0 text-left">
           <span className={`block truncate ${hasUnread ? "font-bold" : ""}`}>{ch.name}</span>
           {role && (
-            <span className="block truncate text-[10px] font-normal uppercase tracking-wide text-sidebar-foreground/55">
+            <span className="block truncate text-[11px] font-normal uppercase tracking-wide text-sidebar-foreground/55">
               {role}
             </span>
           )}
@@ -572,7 +573,7 @@ function PeopleSearch({
                   ) : null}
                 </div>
                 {p.role && (
-                  <span className="text-[10px] text-sidebar-foreground/55 capitalize shrink-0">
+                  <span className="text-[11px] text-sidebar-foreground/55 capitalize shrink-0">
                     {p.role.replace("_", " ")}
                   </span>
                 )}
@@ -899,7 +900,7 @@ function ThreadComposer({
   return (
     <div className="mt-1">
       <button
-        className={`flex items-center gap-1.5 text-xs font-medium transition-opacity ${
+        className={`flex items-center gap-1.5 min-h-8 sm:min-h-0 text-xs font-medium transition-opacity ${
           replyCount > 0
             ? "text-primary hover:text-primary"
             : "text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100"
@@ -929,7 +930,7 @@ function ThreadComposer({
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs font-semibold">{r.sender?.name}</span>
-                  <span className="text-[10px] text-muted-foreground">{formatTs(r.created_at)}</span>
+                  <span className="text-[11px] text-muted-foreground">{formatTs(r.created_at)}</span>
                 </div>
                 {r.attachmentUrl ? (
                   <AttachmentBubble msg={r} />
@@ -1059,14 +1060,14 @@ function ReactionBar({
         <button
           key={r.emoji}
           onClick={() => onReact(r.emoji)}
-          className={`text-xs rounded-full px-1.5 py-0.5 border flex items-center gap-1 transition-colors ${
+          className={`text-xs rounded-full px-2 py-1.5 sm:px-1.5 sm:py-0.5 border flex items-center gap-1 transition-colors ${
             r.userIds.includes(currentUserId)
               ? "bg-primary/15 border-primary/40"
               : "bg-muted/60 border-transparent hover:bg-muted"
           }`}
         >
           <span>{r.emoji}</span>
-          <span className="text-[10px] text-muted-foreground">{r.count}</span>
+          <span className="text-[11px] text-muted-foreground">{r.count}</span>
         </button>
       ))}
       <div className="relative">
@@ -1299,10 +1300,12 @@ function AttachmentBubble({ msg }: { msg: ChatMessage }) {
   if (isImage) {
     return (
       <a href={msg.attachmentUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="block mt-1">
-        <img
-          src={msg.attachmentUrl ?? ""}
+        <SafeImage
+          src={msg.attachmentUrl ?? undefined}
           alt={msg.attachmentName ?? "Image attachment"}
-          className="max-w-xs max-h-64 rounded-lg border object-cover hover:opacity-90 transition-opacity"
+          loading="lazy"
+          className="max-w-full sm:max-w-xs max-h-64 rounded-lg border object-cover hover:opacity-90 transition-opacity"
+          fallback={<span className="text-sm text-primary underline">{msg.attachmentName ?? "Image attachment"}</span>}
         />
       </a>
     );
@@ -1345,7 +1348,7 @@ function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex-shrink-0 p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          className="flex-shrink-0 p-2.5 sm:p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           title="Add emoji"
         >
           <Smile className="w-4 h-4" />
@@ -1438,7 +1441,7 @@ function MessageInput({
               onChange={handleFilePicked}
             />
             <button
-              className="flex-shrink-0 p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
+              className="flex-shrink-0 p-2.5 sm:p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled}
               title="Attach a file"
@@ -1459,7 +1462,7 @@ function MessageInput({
         />
         <EmojiPicker onPick={handleEmojiPick} />
         <button
-          className="flex-shrink-0 p-1.5 rounded-md text-primary disabled:opacity-30 hover:bg-primary/10 transition-colors"
+          className="flex-shrink-0 p-2.5 sm:p-1.5 rounded-md text-primary disabled:opacity-30 hover:bg-primary/10 transition-colors"
           disabled={!text.trim() || disabled}
           onClick={handleSend}
           title="Send"
@@ -1468,7 +1471,7 @@ function MessageInput({
         </button>
       </div>
       {!compact && (
-        <p className="text-[10px] text-muted-foreground mt-1">
+        <p className="hidden sm:block text-[11px] text-muted-foreground mt-1">
           Enter to send &middot; Shift+Enter for new line
         </p>
       )}

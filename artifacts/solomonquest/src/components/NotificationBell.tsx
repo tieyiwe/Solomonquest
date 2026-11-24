@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Bell } from "lucide-react";
@@ -438,17 +439,18 @@ export function NotificationBell() {
                           ].join(" ")}
                         >
                           {/* Sender avatar */}
-                          {msg.sender_avatar ? (
-                            <img
-                              src={msg.sender_avatar}
-                              alt={msg.sender_name}
-                              className="w-9 h-9 rounded-full object-cover flex-shrink-0"
-                            />
-                          ) : (
+                          <SafeImage
+                            src={msg.sender_avatar ?? undefined}
+                            alt=""
+                            width={36}
+                            height={36}
+                            className="w-9 h-9 rounded-full object-cover flex-shrink-0"
+                            fallback={
                             <div className="w-9 h-9 rounded-full bg-warning/10 flex items-center justify-center flex-shrink-0 text-warning font-semibold text-sm uppercase">
                               {msg.sender_name?.[0] ?? "?"}
                             </div>
-                          )}
+                            }
+                          />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">
                               {msg.sender_name}

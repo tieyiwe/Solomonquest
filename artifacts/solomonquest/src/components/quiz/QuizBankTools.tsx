@@ -156,9 +156,9 @@ function AddFromBankDialog({
                   <div className="min-w-0 flex-1">
                     <div className="text-sm">{q.question || <span className="italic text-muted-foreground">(no text)</span>}</div>
                     <div className="mt-1 flex flex-wrap gap-1">
-                      <Badge variant="outline" className="text-[10px]">{TYPE_LABELS[q.type] ?? q.type}</Badge>
-                      <Badge variant="outline" className="text-[10px]">{q.points} pt{q.points === 1 ? "" : "s"}</Badge>
-                      {q.tags.map((t) => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
+                      <Badge variant="outline" className="text-[11px]">{TYPE_LABELS[q.type] ?? q.type}</Badge>
+                      <Badge variant="outline" className="text-[11px]">{q.points} pt{q.points === 1 ? "" : "s"}</Badge>
+                      {q.tags.map((t) => <Badge key={t} variant="secondary" className="text-[11px]">{t}</Badge>)}
                     </div>
                   </div>
                 </label>
@@ -266,7 +266,7 @@ export function QuizBankTools({
                   {(draws.data ?? []).map((d) => (
                     <li key={d.id} className="flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-sm">
                       <span className="flex-1 min-w-0 truncate">
-                        <strong>{d.count}</strong> from <strong>{d.bankName}</strong>{d.tag ? <> tagged <Badge variant="secondary" className="ml-0.5 text-[10px]">{d.tag}</Badge></> : null}
+                        <strong>{d.count}</strong> from <strong>{d.bankName}</strong>{d.tag ? <> tagged <Badge variant="secondary" className="ml-0.5 text-[11px]">{d.tag}</Badge></> : null}
                       </span>
                       <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Remove draw" onClick={() => removeDraw(d.id)}>
                         <Trash2 className="h-3.5 w-3.5" />

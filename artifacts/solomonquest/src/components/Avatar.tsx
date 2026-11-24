@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export interface AvatarProps {
   user?: {
@@ -59,9 +59,12 @@ function hashName(name: string): number {
 
 export default function Avatar({ user, size = "md", className = "", onClick }: AvatarProps) {
   const px = SIZE_PX[size];
+  // A dead avatar URL falls back to initials instead of a broken-image icon.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  useEffect(() => setFailedUrl(null), [user?.avatar_url]);
 
   const content = useMemo(() => {
-    const url = user?.avatar_url;
+    const url = user?.avatar_url && user.avatar_url !== failedUrl ? user.avatar_url : undefined;
 
     if (url?.startsWith("default:")) {
       const idx = parseInt(url.slice(8), 10);
@@ -83,6 +86,9 @@ export default function Avatar({ user, size = "md", className = "", onClick }: A
         <img
           src={url}
           alt={`${user?.first_name ?? ""} ${user?.last_name ?? ""}`.trim() || "Avatar"}
+          width={px}
+          height={px}
+          onError={() => setFailedUrl(url)}
           className="rounded-full object-cover"
           style={{ width: px, height: px, flexShrink: 0 }}
         />
@@ -104,7 +110,7 @@ export default function Avatar({ user, size = "md", className = "", onClick }: A
         {initials}
       </div>
     );
-  }, [user, size, px]);
+  }, [user, size, px, failedUrl]);
 
   if (onClick) {
     return (

@@ -101,15 +101,16 @@ export function NotesWidget() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-40 md:bottom-6 right-4 md:right-40 z-40 h-12 w-12 rounded-full bg-gold text-gold-foreground shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
+          className="fixed bottom-[calc(10rem+env(safe-area-inset-bottom,0px))] md:bottom-6 right-4 md:right-40 z-40 h-12 w-12 rounded-full bg-gold text-gold-foreground shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
           title="Notes"
+          aria-label="Notes"
         >
           <StickyNoteIcon className="h-5 w-5" />
         </button>
       )}
 
       {open && (
-        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-40 z-50 w-full md:w-96 h-[85vh] md:h-[600px] bg-card md:rounded-xl shadow-2xl border flex flex-col overflow-hidden">
+        <div className="fixed bottom-0 right-0 md:bottom-6 md:right-40 z-50 w-full md:w-96 h-[85dvh] md:h-[600px] pb-[env(safe-area-inset-bottom,0px)] md:pb-0 bg-card md:rounded-xl shadow-2xl border flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b bg-warning text-warning-foreground shrink-0">
             <div className="flex items-center gap-2">
               <StickyNoteIcon className="h-4 w-4" />
@@ -119,13 +120,13 @@ export function NotesWidget() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 text-warning hover:bg-warning/15 hover:text-warning"
+                className="h-9 sm:h-7 text-warning hover:bg-warning/15 hover:text-warning"
                 onClick={createNote}
               >
                 <Plus className="h-3.5 w-3.5 mr-1" />
                 New
               </Button>
-              <button onClick={() => setOpen(false)} className="opacity-80 hover:opacity-100 p-1">
+              <button onClick={() => setOpen(false)} aria-label="Close notes" className="-mr-1 opacity-80 hover:opacity-100 p-2.5 sm:p-1">
                 <X className="h-4 w-4" />
               </button>
             </div>

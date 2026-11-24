@@ -247,7 +247,7 @@ export default function TeacherResources() {
     <TeacherLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/teacher">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
@@ -498,7 +498,7 @@ export default function TeacherResources() {
                               <Button aria-label="Open in new tab"
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                className="h-9 w-9 sm:h-7 sm:w-7 text-muted-foreground hover:text-foreground"
                                 onClick={() => window.open(resource.url, "_blank")}
                               >
                                 <ExternalLink className="h-3.5 w-3.5" />
@@ -506,7 +506,7 @@ export default function TeacherResources() {
                               <Button aria-label="Delete"
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                className="h-9 w-9 sm:h-7 sm:w-7 text-muted-foreground hover:text-destructive"
                                 onClick={() => removeResource(resource)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />

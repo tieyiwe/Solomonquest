@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { Link, useLocation, useParams } from "wouter";
 import { BadgeCheck, Loader2, Search, ShieldAlert, ShieldX } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -106,7 +107,7 @@ export default function VerifyCertificatePage() {
               </div>
             </div>
             <div className="px-6 py-6 text-center" style={{ borderTop: `3px solid ${accent}` }}>
-              {r.logoUrl && <img src={r.logoUrl} alt="" className="mx-auto mb-3 max-h-16 max-w-[180px] object-contain" />}
+              <SafeImage src={r.logoUrl ?? undefined} alt="" height={64} className="mx-auto mb-3 h-16 w-auto max-w-[180px] object-contain" />
               <div className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground">{r.schoolName}</div>
               <div className="mt-2 font-serif text-2xl font-semibold text-foreground">{r.title}</div>
               <div className="mt-4 text-xs uppercase tracking-[0.2em] text-muted-foreground">Awarded to</div>

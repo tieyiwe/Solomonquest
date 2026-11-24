@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { sizedImageUrl } from "@/components/common/SafeImage";
 
 export interface HeroSlide {
   id: string;
@@ -98,7 +99,7 @@ export function HeroSlideshow({ slides }: { slides: HeroSlide[] }) {
               <div
                 aria-hidden="true"
                 className={`absolute inset-0 bg-cover bg-center opacity-35 ${active && !reducedMotion ? "hero-kenburns" : ""}`}
-                style={{ backgroundImage: `url(${slide.image})` }}
+                style={{ backgroundImage: `url(${sizedImageUrl(slide.image)})` }}
               />
             )}
             {/* Legibility + atmosphere: deep fade from the left, warm glow top-right, fine grain. */}

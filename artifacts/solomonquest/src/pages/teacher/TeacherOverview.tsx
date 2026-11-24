@@ -340,13 +340,13 @@ export default function TeacherOverview() {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h1 className="text-base font-semibold text-foreground hidden md:block">
               Teacher Dashboard
             </h1>
             <h1 className="text-base font-semibold text-foreground md:hidden">SolomonQuest</h1>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-full">
+          <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-full">
             <Calendar className="h-3.5 w-3.5" />
             {format(new Date(), "MMM d, yyyy")}
           </div>

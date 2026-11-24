@@ -23,10 +23,14 @@ Avatar.displayName = AvatarPrimitive.Root.displayName
 const AvatarImage = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Image>,
   React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Image>
->(({ className, ...props }, ref) => (
+>(({ className, alt = "", ...props }, ref) => (
+  // Decorative by default: the person's name is always printed next to it.
+  // Radix only shows the image once it has loaded, so a broken URL falls
+  // back to AvatarFallback (initials) instead of a broken-image icon.
   <AvatarPrimitive.Image
     ref={ref}
-    className={cn("aspect-square h-full w-full", className)}
+    alt={alt}
+    className={cn("aspect-square h-full w-full object-cover", className)}
     {...props}
   />
 ))

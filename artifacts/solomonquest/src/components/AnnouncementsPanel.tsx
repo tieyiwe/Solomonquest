@@ -164,11 +164,11 @@ export function AnnouncementsPanel({
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {a.postedByName ?? "Staff"} · {ago(a.createdAt)}
-                      {!courseId && a.courseId && <Badge variant="outline" className="ml-2 text-[10px] py-0">Course</Badge>}
+                      {!courseId && a.courseId && <Badge variant="outline" className="ml-2 text-[11px] py-0">Course</Badge>}
                     </p>
                   </div>
                   {canPost && (isAdmin || a.postedBy === user?.id) && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => remove(a.id)} aria-label="Delete announcement">
+                    <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-7 sm:w-7 shrink-0" onClick={() => remove(a.id)} aria-label="Delete announcement">
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   )}

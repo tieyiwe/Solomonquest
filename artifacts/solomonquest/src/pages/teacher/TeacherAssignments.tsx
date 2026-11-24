@@ -247,13 +247,13 @@ function SubmissionsPanel({
                         {sub.status}
                       </Badge>
                       {(sub as any).submittedLate && (
-                        <Badge variant="outline" className="text-[10px] border-warning/50 text-warning">
+                        <Badge variant="outline" className="text-[11px] border-warning/50 text-warning">
                           Late {(sub as any).daysLate ? `${(sub as any).daysLate}d` : ""}
                           {(sub as any).latePenaltyPercent > 0 ? ` · −${(sub as any).latePenaltyPercent}%` : ""}
                         </Badge>
                       )}
                       {(sub as any).extension && (
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[11px] text-muted-foreground">
                           Ext. to {format(new Date((sub as any).extension.extendedDueAt), "MMM d")}
                           {(sub as any).extension.waivePenalty ? " (waived)" : ""}
                         </span>
@@ -282,7 +282,7 @@ function SubmissionsPanel({
                       </span>
                     </div>
                     {(sub as any).latePenaltyPercent > 0 && sub.grade != null && (
-                      <p className="text-[10px] text-warning mt-0.5">Counts as {sub.grade}</p>
+                      <p className="text-[11px] text-warning mt-0.5">Counts as {sub.grade}</p>
                     )}
                   </TableCell>
                 </TableRow>
@@ -552,7 +552,7 @@ function AssignmentFormDialog({
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="due_date">Due Date</Label>
               <Input
@@ -910,7 +910,7 @@ export default function TeacherAssignments() {
     <TeacherLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href="/dashboard/teacher">
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>

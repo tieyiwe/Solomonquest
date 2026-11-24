@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { SafeImage, sizedImageUrl } from "@/components/common/SafeImage";
 import { Link, useParams } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -319,7 +320,7 @@ function HeroCarousel({
           <div key={i} style={getSlideStyle(i)}>
             <div
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(${slide.image_url})` }}
+              style={{ backgroundImage: `url(${sizedImageUrl(slide.image_url)})` }}
             />
             <div
               className="absolute inset-0"
@@ -328,9 +329,9 @@ function HeroCarousel({
                 opacity: overlayOpacity,
               }}
             />
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10">
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-14 md:px-6 z-10">
               <h1
-                className="text-4xl md:text-6xl font-bold text-white mb-4 drop-shadow-xl"
+                className="text-3xl sm:text-4xl md:text-6xl font-bold text-white mb-4 drop-shadow-xl text-balance break-words"
                 style={{
                   fontFamily: headingFont,
                   textShadow: "0 2px 12px rgba(0,0,0,0.6)",
@@ -374,17 +375,23 @@ function HeroCarousel({
           </button>
 
           {/* Dots */}
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex gap-2">
+          <div className="absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] sm:bottom-4 left-1/2 -translate-x-1/2 z-20 flex">
             {slides.map((_, i) => (
               <button
                 key={i}
                 onClick={() => goTo(i, i > current ? "right" : "left")}
-                className="w-2.5 h-2.5 rounded-full transition-all"
-                style={{
-                  background: i === current ? "#ffffff" : "rgba(255,255,255,0.45)",
-                  transform: i === current ? "scale(1.3)" : "scale(1)",
-                }}
-              />
+                aria-label={`Show slide ${i + 1}`}
+                aria-current={i === current ? "true" : undefined}
+                className="h-10 w-7 flex items-center justify-center"
+              >
+                <span
+                  className="block w-2.5 h-2.5 rounded-full transition-all"
+                  style={{
+                    background: i === current ? "#ffffff" : "rgba(255,255,255,0.45)",
+                    transform: i === current ? "scale(1.3)" : "scale(1)",
+                  }}
+                />
+              </button>
             ))}
           </div>
         </>
@@ -568,16 +575,19 @@ export default function SchoolPublicPage() {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
-            {logoUrl ? (
-              <img src={logoUrl} alt={school.name} className="h-9 w-auto object-contain" />
-            ) : (
-              <span
-                className="text-xl font-bold"
-                style={{ fontFamily: headingFont, color: primaryColor }}
-              >
-                {school.name}
-              </span>
-            )}
+            <SafeImage
+              src={logoUrl || undefined}
+              alt={school.name}
+              className="h-9 w-auto max-w-[60vw] object-contain"
+              fallback={
+                <span
+                  className="text-xl font-bold truncate max-w-[60vw]"
+                  style={{ fontFamily: headingFont, color: primaryColor }}
+                >
+                  {school.name}
+                </span>
+              }
+            />
           </div>
 
           {/* Desktop nav links */}
@@ -694,15 +704,13 @@ export default function SchoolPublicPage() {
             background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
           }}
         >
-          {logoUrl && (
-            <img
-              src={logoUrl}
-              alt={school.name}
-              className="h-20 w-auto mb-6 object-contain drop-shadow-xl"
-            />
-          )}
+          <SafeImage
+            src={logoUrl || undefined}
+            alt={school.name}
+            className="h-20 w-auto max-w-full mb-6 object-contain drop-shadow-xl"
+          />
           <h1
-            className="text-5xl md:text-7xl font-bold mb-4 drop-shadow-xl"
+            className="text-4xl sm:text-5xl md:text-7xl font-bold mb-4 drop-shadow-xl text-balance break-words"
             style={{ fontFamily: headingFont, textShadow: "0 2px 16px rgba(0,0,0,0.35)" }}
           >
             {school.name}
@@ -903,10 +911,21 @@ export default function SchoolPublicPage() {
                     <p className="text-gray-700 text-sm leading-relaxed mb-5">{t.quote}</p>
                     <div className="flex items-center gap-3">
                       {t.avatar_url ? (
-                        <img
+                        <SafeImage
                           src={t.avatar_url}
-                          alt={t.name}
-                          className="w-10 h-10 rounded-full object-cover"
+                          alt=""
+                          loading="lazy"
+                          width={40}
+                          height={40}
+                          className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                          fallback={
+                            <div
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+                              style={{ background: primaryColor }}
+                            >
+                              {initials}
+                            </div>
+                          }
                         />
                       ) : (
                         <div
@@ -963,13 +982,17 @@ export default function SchoolPublicPage() {
       <footer className="bg-gray-900 text-gray-300 py-12">
         <div className="max-w-6xl mx-auto px-4 flex flex-col items-center gap-6">
           <div className="flex flex-col items-center gap-2">
-            {logoUrl ? (
-              <img src={logoUrl} alt={school.name} className="h-10 w-auto object-contain brightness-0 invert opacity-80" />
-            ) : (
-              <span className="text-xl font-bold text-white" style={{ fontFamily: headingFont }}>
-                {school.name}
-              </span>
-            )}
+            <SafeImage
+              src={logoUrl || undefined}
+              alt={school.name}
+              loading="lazy"
+              className="h-10 w-auto max-w-[70vw] object-contain brightness-0 invert opacity-80"
+              fallback={
+                <span className="text-xl font-bold text-white text-center" style={{ fontFamily: headingFont }}>
+                  {school.name}
+                </span>
+              }
+            />
             {tagline && (
               <p className="text-gray-400 text-sm text-center max-w-sm">{tagline}</p>
             )}

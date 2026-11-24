@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { createPortal } from "react-dom";
 import { X, Search, ChevronLeft, ChevronRight, HelpCircle, AlertCircle, CheckCircle2, PlayCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -252,10 +253,11 @@ export function HelpCenter({ role, onClose, onStartTour }: HelpCenterProps) {
               {/* Screenshot */}
               {currentArticle.image && (
                 <div className="help-screenshot-glow rounded-xl border border-border overflow-hidden">
-                  <img
+                  <SafeImage
                     src={currentArticle.image}
                     alt={currentArticle.imageAlt ?? currentArticle.title}
-                    className="w-full block"
+                    loading="lazy"
+                    className="w-full h-auto block"
                   />
                 </div>
               )}
@@ -335,7 +337,7 @@ function ArticleRow({ article, onClick }: { article: HelpArticle & { categoryTit
         <p className="text-sm font-semibold text-foreground truncate">{article.title}</p>
         <p className="text-xs text-muted-foreground truncate mt-0.5">{article.summary}</p>
         {article.categoryTitle && (
-          <p className="text-[10px] text-primary/70 mt-0.5">{article.categoryTitle}</p>
+          <p className="text-[11px] text-primary/70 mt-0.5">{article.categoryTitle}</p>
         )}
       </div>
       <ChevronRight className="h-4 w-4 text-muted-foreground/60 shrink-0" />
@@ -354,7 +356,7 @@ export function HelpButton({ onClick }: HelpButtonProps) {
     <button
       onClick={onClick}
       aria-label="Open Help Center"
-      className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-6 left-4 md:left-6 z-[9990] h-10 w-10 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center"
+      className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-6 left-4 md:left-6 z-40 h-10 w-10 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center"
     >
       <HelpCircle className="h-4 w-4" />
     </button>

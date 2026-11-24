@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -204,7 +205,7 @@ function SettingsTab({ settings }: { settings: CertificateSettings }) {
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-3">
             <div className="flex h-16 w-28 items-center justify-center rounded-md border bg-muted/40">
-              {draft.logoUrl ? <img src={draft.logoUrl} alt="Certificate logo" className="max-h-14 max-w-24 object-contain" /> : <span className="text-xs text-muted-foreground">No logo</span>}
+              <SafeImage src={draft.logoUrl ?? undefined} alt="Certificate logo" className="max-h-14 max-w-24 object-contain" fallback={<span className="text-xs text-muted-foreground">No logo</span>} />
             </div>
             <div className="flex flex-wrap gap-2">
               <ImagePickButton
@@ -240,7 +241,7 @@ function SettingsTab({ settings }: { settings: CertificateSettings }) {
                     key={p}
                     type="button"
                     onClick={() => insertPlaceholder(p)}
-                    className="rounded-full border border-border bg-muted/50 px-2.5 py-1 font-mono text-[11px] text-foreground hover:border-gold hover:bg-gold/10"
+                    className="rounded-full border border-border bg-muted/50 px-2.5 py-2 sm:py-1 font-mono text-[11px] text-foreground hover:border-gold hover:bg-gold/10"
                   >
                     {p}
                   </button>
@@ -264,7 +265,7 @@ function SettingsTab({ settings }: { settings: CertificateSettings }) {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Signatory {i + 1}</span>
                   <Button
-                    type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label={`Remove signatory ${i + 1}`}
+                    type="button" variant="ghost" size="icon" className="h-9 w-9 sm:h-7 sm:w-7" aria-label={`Remove signatory ${i + 1}`}
                     onClick={() => set("signatories", draft.signatories.filter((_, j) => j !== i))}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -283,7 +284,7 @@ function SettingsTab({ settings }: { settings: CertificateSettings }) {
                 <div className="flex flex-wrap items-center gap-2">
                   {s.signatureUrl && (
                     <div className="flex h-10 w-28 items-center justify-center rounded border bg-white">
-                      <img src={s.signatureUrl} alt="Signature" className="max-h-9 max-w-26 object-contain" />
+                      <SafeImage src={s.signatureUrl} alt="Signature" loading="lazy" className="max-h-9 max-w-26 object-contain" fallback={<span className="text-xs text-muted-foreground">Unavailable</span>} />
                     </div>
                   )}
                   <ImagePickButton

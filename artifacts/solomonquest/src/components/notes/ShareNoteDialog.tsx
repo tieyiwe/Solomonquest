@@ -159,7 +159,7 @@ export function ShareNoteDialog({
                 <div key={s.userId} className="flex items-center justify-between text-sm">
                   <span>
                     {s.firstName} {s.lastName}
-                    <Badge variant="outline" className="ml-2 text-[10px] capitalize">
+                    <Badge variant="outline" className="ml-2 text-[11px] capitalize">
                       {s.permission}
                     </Badge>
                   </span>

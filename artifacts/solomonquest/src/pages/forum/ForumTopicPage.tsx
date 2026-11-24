@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -178,20 +179,11 @@ function Avatar({
 }) {
   const dim =
     size === "sm"
-      ? "w-7 h-7 text-[10px]"
+      ? "w-7 h-7 text-[11px]"
       : size === "lg"
       ? "w-11 h-11 text-sm"
       : "w-9 h-9 text-xs";
-  if (url) {
-    return (
-      <img
-        src={url}
-        alt={name}
-        className={cn("rounded-full object-cover shrink-0 border border-border", dim)}
-      />
-    );
-  }
-  return (
+  const initials = (
     <div
       className={cn(
         "rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center shrink-0 select-none",
@@ -200,6 +192,15 @@ function Avatar({
     >
       {getInitials(name)}
     </div>
+  );
+  // A dead avatar URL shows the initials instead of a broken-image icon.
+  return (
+    <SafeImage
+      src={url || undefined}
+      alt=""
+      className={cn("rounded-full object-cover shrink-0 border border-border", dim)}
+      fallback={initials}
+    />
   );
 }
 
@@ -234,7 +235,7 @@ function ReactionBar({
             disabled={disabled}
             title={label}
             className={cn(
-              "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all",
+              "inline-flex items-center gap-1 px-2.5 py-1 min-h-9 sm:min-h-0 rounded-full text-xs font-medium border transition-all",
               "hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               active
                 ? "bg-primary/10 border-primary/40 text-primary"
@@ -621,7 +622,7 @@ export default function ForumTopicPage() {
       {/* ── Back navigation ── */}
       <button
         onClick={() => setLocation("/forum")}
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors group"
+        className="inline-flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors group"
       >
         <ArrowLeft
           size={15}
@@ -662,8 +663,8 @@ export default function ForumTopicPage() {
 
           {/* Cover image */}
           {topic.coverImage && (
-            <div className="w-full rounded-lg overflow-hidden border border-border max-h-64">
-              <img src={topic.coverImage} alt="Topic cover" className="w-full h-full object-cover" />
+            <div className="hidden has-[img]:block w-full h-44 sm:h-64 rounded-lg overflow-hidden border border-border bg-muted">
+              <SafeImage src={topic.coverImage} alt="" className="w-full h-full object-cover" />
             </div>
           )}
 
@@ -796,8 +797,8 @@ export default function ForumTopicPage() {
                 }
               }}
             />
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
+            <div className="flex items-center justify-end sm:justify-between">
+              <p className="hidden sm:block text-xs text-muted-foreground">
                 <kbd className="px-1 py-0.5 rounded border text-[10px] font-mono">Ctrl</kbd>
                 {" + "}
                 <kbd className="px-1 py-0.5 rounded border text-[10px] font-mono">Enter</kbd>

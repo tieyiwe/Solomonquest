@@ -171,7 +171,7 @@ export function ExtensionsPanel({
                     due {format(new Date(ext.extendedDueAt), "MMM d, yyyy h:mm a")}
                   </span>
                   {ext.waivePenalty && (
-                    <Badge variant="outline" className="text-[10px] border-success/40 text-success">
+                    <Badge variant="outline" className="text-[11px] border-success/40 text-success">
                       Penalty waived
                     </Badge>
                   )}

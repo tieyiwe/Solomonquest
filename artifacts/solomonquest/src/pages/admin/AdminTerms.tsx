@@ -295,7 +295,7 @@ export default function AdminTerms() {
     <RoleLayout>
       <div className="px-6 pt-4 pb-0">
         <Link href={dashboardPathForRole(user?.role)}>
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button className="flex items-center gap-1.5 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>

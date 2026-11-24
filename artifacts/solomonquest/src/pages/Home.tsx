@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { SafeImage, sizedImageUrl } from "@/components/common/SafeImage";
 import { Link } from "wouter";
 import { useListSchools } from "@workspace/api-client-react";
 import { PublicLayout } from "@/components/layout/PublicLayout";
@@ -319,7 +320,7 @@ export default function Home() {
                         className={`h-40 relative ${school.primaryColor || banner ? "" : "bg-brand"}`}
                         style={{
                           backgroundColor: school.primaryColor ?? undefined,
-                          backgroundImage: banner ? `url(${banner})` : undefined,
+                          backgroundImage: banner ? `url(${sizedImageUrl(banner, 400)})` : undefined,
                           backgroundSize: "cover",
                           backgroundPosition: "center",
                         }}
@@ -331,8 +332,16 @@ export default function Home() {
                           </span>
                         )}
                         {school.logoUrl ? (
-                          <div className="absolute -bottom-7 left-6 h-14 w-14 rounded-full border-4 border-card bg-background overflow-hidden shadow-md">
-                            <img src={school.logoUrl} alt="" className="w-full h-full object-cover" />
+                          <div className="absolute -bottom-7 left-6 h-14 w-14 rounded-full border-4 border-card bg-primary text-primary-foreground overflow-hidden shadow-md flex items-center justify-center font-serif text-xl font-semibold">
+                            <SafeImage
+                              src={school.logoUrl}
+                              alt=""
+                              loading="lazy"
+                              width={48}
+                              height={48}
+                              className="w-full h-full object-cover bg-background"
+                              fallback={school.name.charAt(0)}
+                            />
                           </div>
                         ) : (
                           <div className="absolute -bottom-7 left-6 h-14 w-14 rounded-full border-4 border-card bg-primary text-primary-foreground shadow-md flex items-center justify-center font-serif text-xl font-semibold">

@@ -416,6 +416,8 @@ export default function StudentOverview() {
               variant="ghost"
               size="icon"
               className="relative"
+              aria-label={pendingAssignments > 0 ? `${pendingAssignments} pending assignment${pendingAssignments > 1 ? "s" : ""}` : "Pending assignments"}
+              aria-expanded={notifOpen}
               onClick={(e) => {
                 e.stopPropagation();
                 setNotifOpen((o) => !o);
@@ -431,13 +433,14 @@ export default function StudentOverview() {
 
             {notifOpen && (
               <div
-                className="absolute right-0 top-10 w-72 bg-card rounded-xl shadow-lg border z-50 overflow-hidden"
+                className="absolute right-0 top-11 w-72 max-w-[calc(100vw-2rem)] bg-card rounded-xl shadow-lg border z-50 overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="px-4 py-3 border-b flex items-center justify-between">
                   <p className="text-sm font-semibold text-foreground">Notifications</p>
                   <button
-                    className="text-muted-foreground hover:text-foreground"
+                    className="-m-2 p-2 text-muted-foreground hover:text-foreground"
+                    aria-label="Close"
                     onClick={() => setNotifOpen(false)}
                   >
                     <X className="h-4 w-4" />

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { SafeImage } from "@/components/common/SafeImage";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -112,9 +113,8 @@ function SignatoryBlock({ s, color }: { s: CertificateSignatory; color: string }
   return (
     <div className="flex w-[250px] flex-col items-center text-center">
       <div className="flex h-[64px] w-full items-end justify-center">
-        {s.signatureUrl ? (
-          <img src={s.signatureUrl} alt="" className="max-h-[60px] max-w-[220px] object-contain" />
-        ) : null}
+        {/* Eager on purpose: lazy images may be missing from the printed copy. */}
+        <SafeImage src={s.signatureUrl ?? undefined} alt="" className="max-h-[60px] max-w-[220px] object-contain" />
       </div>
       <div className="mt-1 h-px w-full" style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />
       <div className="mt-2 text-[19px] font-semibold" style={{ color: NAVY, fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
@@ -165,16 +165,19 @@ export function CertificateCanvas({ data }: { data: CertificateData }) {
       <div className="absolute inset-[64px] flex flex-col items-center text-center">
         {/* Header */}
         <div className="flex h-[88px] items-center justify-center">
-          {data.logoUrl ? (
-            <img src={data.logoUrl} alt="" className="max-h-[84px] max-w-[260px] object-contain" />
-          ) : (
-            <div
-              className="flex h-[72px] w-[72px] items-center justify-center rounded-full text-[26px] font-bold"
-              style={{ background: NAVY, color: accent, fontFamily: serif, boxShadow: `0 0 0 3px ${PAPER}, 0 0 0 4px ${accent}` }}
-            >
-              {initials(data.schoolName) || "S"}
-            </div>
-          )}
+          <SafeImage
+            src={data.logoUrl ?? undefined}
+            alt=""
+            className="max-h-[84px] max-w-[260px] object-contain"
+            fallback={
+              <div
+                className="flex h-[72px] w-[72px] items-center justify-center rounded-full text-[26px] font-bold"
+                style={{ background: NAVY, color: accent, fontFamily: serif, boxShadow: `0 0 0 3px ${PAPER}, 0 0 0 4px ${accent}` }}
+              >
+                {initials(data.schoolName) || "S"}
+              </div>
+            }
+          />
         </div>
         <div className="mt-2 text-[13px] font-semibold uppercase tracking-[0.34em]" style={{ color: INK }}>
           {data.schoolName}
@@ -193,7 +196,11 @@ export function CertificateCanvas({ data }: { data: CertificateData }) {
         <div className="mt-5 text-[13px] uppercase tracking-[0.28em]" style={{ color: INK }}>
           This certificate is proudly presented to
         </div>
-        <div className="mt-2 max-w-[880px] truncate px-4 text-[64px] font-medium italic leading-[1.1]" style={{ fontFamily: serif, color: NAVY }}>
+        {/* Long names shrink to fit on one line rather than being cut off with "…". */}
+        <div
+          className="mt-2 max-w-[880px] truncate px-4 font-medium italic leading-[1.1]"
+          style={{ fontFamily: serif, color: NAVY, fontSize: Math.max(34, Math.min(64, Math.floor((64 * 30) / Math.max(1, data.studentName.length)))) }}
+        >
           {data.studentName}
         </div>
         <div className="mt-1 h-[2px] w-[520px]" style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }} />
