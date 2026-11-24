@@ -270,7 +270,15 @@ select * from (values
     and exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='student_applications' and column_name='congrats_email_status')
     and exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='tuition_plans' and column_name='pricing_note'))
+      where table_schema='public' and table_name='tuition_plans' and column_name='pricing_note')),
+
+  ('question-bank-order.sql: question_bank_questions.position',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='question_bank_questions' and column_name='position')),
+
+  ('video-duration.sql: assignments.video_duration_seconds',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='assignments' and column_name='video_duration_seconds'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

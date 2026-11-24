@@ -34,6 +34,8 @@ export interface BankQuestion {
   correctAnswer: unknown;
   points: number;
   tags: string[];
+  /** 0-based order within the bank (null until question-bank-order.sql has run). */
+  position?: number | null;
 }
 
 interface DrawRule {

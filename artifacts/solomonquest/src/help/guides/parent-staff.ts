@@ -113,11 +113,11 @@ export const staffGuides: Guide[] = [
     where: "Your dashboard",
     keywords: ["staff", "role", "what can i do", "dashboard"],
     steps: [
-      { title: "Your dashboard", text: "Staff use the portal dashboard to see courses, announcements and upcoming events." },
-      { title: "Terms & Scheduling", text: "You can open Terms & Scheduling in the sidebar to check term dates and which classes run when." },
-      { title: "Reviewing work", text: "If your school routes submissions to staff first, you'll be notified when student work is waiting for you." },
-      { title: "Community", text: "Join the Forum and Chat to support students and teachers.", tip: "What you can see (e.g. student contact info) is set by your school admin under Role Permissions." },
+      { title: "Your dashboard", text: "You land on Overview. It shows the courses you've been added to, announcements and what's coming up." },
+      { title: "Your sidebar", text: "Overview, Calendar, Assignments, Quizzes, Forum, Transcript, Chat, Tuition, Certificates and Help Center, plus Terms & Scheduling for staff. Your courses are listed under My Courses." },
+      { title: "Terms & Scheduling", text: "Open Terms & Scheduling at the bottom of the sidebar to add or edit terms and see which classes run in each." },
+      { title: "Community", text: "Use the Forum, Chat and Messages to support students and teachers. The gold Notes button and the navy assistant button sit at the bottom right.", tip: "What you can see (e.g. student contact info) is set by your school admin under Role Permissions." },
     ],
-    related: ["admin-terms", "forum", "chat"],
+    related: ["admin-terms", "forum", "chat", "notes"],
   },
 ];

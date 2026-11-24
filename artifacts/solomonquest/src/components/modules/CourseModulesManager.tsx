@@ -8,6 +8,7 @@ import {
   ClipboardList,
   FileQuestion,
   FileText,
+  ImagePlus,
   Layers,
   Link2,
   ListOrdered,
@@ -44,7 +45,7 @@ import {
 import { EmptyState, LoadingRows } from "@/components/common/States";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { SafeMarkdown } from "./SafeMarkdown";
+import { SafeMarkdown, safeImageSrc } from "./SafeMarkdown";
 import { parseVideoUrl } from "./LessonVideo";
 import {
   modulesApi,
@@ -518,6 +519,61 @@ function formatSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// ─── Lesson images ──────────────────────────────────────────────────────────
+
+const LESSON_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const LESSON_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const LESSON_IMAGE_MAX_SIDE = 1600;
+const LESSON_IMAGE_QUALITY = 0.82;
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+/**
+ * Shrinks a large lesson image in the browser before it is uploaded: at most
+ * 1600px on the long side, re-encoded at quality 0.82 (JPEG stays JPEG; PNG
+ * and WebP become WebP so transparency survives). GIFs are left alone so
+ * animations keep working, and the original is kept whenever re-encoding
+ * would not make it smaller.
+ */
+async function shrinkLessonImage(file: File): Promise<Blob> {
+  if (file.type === "image/gif") return file;
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return file;
+  }
+  try {
+    const long = Math.max(bitmap.width, bitmap.height);
+    const scale = long > LESSON_IMAGE_MAX_SIDE ? LESSON_IMAGE_MAX_SIDE / long : 1;
+    if (scale === 1 && file.size <= 1024 * 1024) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const type = file.type === "image/jpeg" ? "image/jpeg" : "image/webp";
+    const out = await canvasToBlob(canvas, type, LESSON_IMAGE_QUALITY);
+    if (!out || !LESSON_IMAGE_TYPES.includes(out.type)) return file;
+    return scale < 1 || out.size < file.size ? out : file;
+  } finally {
+    bitmap.close();
+  }
+}
+
+const EXT_FOR_TYPE: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
+
+/** Alt text and URL made safe to sit inside ![alt](url). */
+function imageMarkdown(alt: string, url: string): string {
+  const cleanAlt = alt.replace(/[[\]\r\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+  const cleanUrl = url.trim().replace(/\s/g, "%20").replace(/\(/g, "%28").replace(/\)/g, "%29");
+  return `![${cleanAlt}](${cleanUrl})`;
+}
+
 function LessonDialog({
   courseId,
   moduleId,
@@ -573,7 +629,13 @@ function LessonForm({
   const [isSequential, setIsSequential] = useState(lesson?.isSequential ?? false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [urlFormOpen, setUrlFormOpen] = useState(false);
+  const [imageUrl, setImageUrl] = useState("");
+  const [imageAlt, setImageAlt] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const imageRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const parsed = videoUrl.trim() ? parseVideoUrl(videoUrl.trim()) : null;
   const isDirectFile = parsed?.kind === "file";
 
@@ -598,6 +660,66 @@ function LessonForm({
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
+  };
+
+  /** Puts an image on its own line at the cursor (or the end of the text). */
+  const insertAtCursor = (snippet: string) => {
+    const el = bodyRef.current;
+    const start = el ? el.selectionStart : body.length;
+    const end = el ? el.selectionEnd : body.length;
+    const before = body.slice(0, start);
+    const after = body.slice(end);
+    const lead = before && !before.endsWith("\n") ? "\n\n" : before.endsWith("\n") && !before.endsWith("\n\n") ? "\n" : "";
+    const trail = after.startsWith("\n\n") ? "" : after.startsWith("\n") ? "\n" : "\n\n";
+    const next = before + lead + snippet + trail + after;
+    setBody(next);
+    const caret = (before + lead + snippet + trail).length;
+    requestAnimationFrame(() => {
+      if (!bodyRef.current) return;
+      bodyRef.current.focus();
+      bodyRef.current.setSelectionRange(caret, caret);
+    });
+  };
+
+  const uploadImage = async (files: FileList | null) => {
+    const file = files?.[0];
+    if (imageRef.current) imageRef.current.value = "";
+    if (!file) return;
+    if (!LESSON_IMAGE_TYPES.includes(file.type)) {
+      toast.error("Images must be PNG, JPG, WebP or GIF");
+      return;
+    }
+    if (file.size > LESSON_IMAGE_MAX_BYTES) {
+      toast.error("Images can be at most 5 MB");
+      return;
+    }
+    setImageUploading(true);
+    try {
+      const blob = await shrinkLessonImage(file);
+      const type = blob.type || file.type;
+      const base = file.name.replace(/\.[^.]+$/, "").replace(/[^\w.\- ]+/g, "_").trim().slice(0, 80) || "image";
+      const path = `courses/${courseId}/lessons/images/${Date.now()}_${base.replace(/\s+/g, "_")}.${EXT_FOR_TYPE[type] ?? "img"}`;
+      const { data, error } = await supabase.storage.from("course-resources").upload(path, blob, { upsert: false, contentType: type });
+      if (error) throw error;
+      const { data: pub } = supabase.storage.from("course-resources").getPublicUrl(data.path);
+      insertAtCursor(imageMarkdown(base.replace(/_/g, " "), pub.publicUrl));
+      toast.success("Image inserted");
+    } catch (e) {
+      toast.error((e as Error).message || "Image upload failed");
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const insertImageUrl = () => {
+    if (!safeImageSrc(imageUrl)) {
+      toast.error("Paste a full image link that starts with https://");
+      return;
+    }
+    insertAtCursor(imageMarkdown(imageAlt, imageUrl));
+    setImageUrl("");
+    setImageAlt("");
+    setUrlFormOpen(false);
   };
 
   const save = async () => {
@@ -637,7 +759,7 @@ function LessonForm({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-serif text-xl">{lesson ? "Edit lesson" : "New lesson"}</DialogTitle>
-          <DialogDescription>Write in plain text or simple markdown (# heading, - list, **bold**, [link](https://…)).</DialogDescription>
+          <DialogDescription>Write in plain text or simple markdown (# heading, - list, **bold**, [link](https://…), ![image](https://…)).</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -649,8 +771,39 @@ function LessonForm({
               <TabsTrigger value="write">Write</TabsTrigger>
               <TabsTrigger value="preview">Preview</TabsTrigger>
             </TabsList>
-            <TabsContent value="write">
-              <Textarea id="lesson-body" aria-label="Lesson content" rows={10} value={body} onChange={(e) => setBody(e.target.value)} className="font-mono text-sm" />
+            <TabsContent value="write" className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={imageRef}
+                  type="file"
+                  accept={LESSON_IMAGE_TYPES.join(",")}
+                  className="hidden"
+                  data-testid="lesson-image-input"
+                  onChange={(e) => uploadImage(e.target.files)}
+                />
+                <Button type="button" variant="outline" size="sm" disabled={imageUploading} onClick={() => imageRef.current?.click()}>
+                  {imageUploading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="mr-2 h-3.5 w-3.5" />}
+                  Insert image
+                </Button>
+                <Button type="button" variant="ghost" size="sm" aria-expanded={urlFormOpen} onClick={() => setUrlFormOpen((o) => !o)}>
+                  <Link2 className="mr-2 h-3.5 w-3.5" /> Image from link
+                </Button>
+                <span className="text-xs text-muted-foreground">PNG, JPG, WebP or GIF, up to 5 MB. Large images are resized.</span>
+              </div>
+              {urlFormOpen && (
+                <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-2 sm:flex-row sm:items-end">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <Label htmlFor="lesson-image-url" className="text-xs">Image link</Label>
+                    <Input id="lesson-image-url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…/picture.png" onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insertImageUrl(); } }} />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <Label htmlFor="lesson-image-alt" className="text-xs">Description (alt text)</Label>
+                    <Input id="lesson-image-alt" value={imageAlt} maxLength={200} onChange={(e) => setImageAlt(e.target.value)} placeholder="What the image shows" onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insertImageUrl(); } }} />
+                  </div>
+                  <Button type="button" size="sm" onClick={insertImageUrl} disabled={!imageUrl.trim()}>Insert</Button>
+                </div>
+              )}
+              <Textarea ref={bodyRef} id="lesson-body" aria-label="Lesson content" rows={10} value={body} onChange={(e) => setBody(e.target.value)} className="font-mono text-sm" />
             </TabsContent>
             <TabsContent value="preview">
               <div className="min-h-[12rem] rounded-md border p-3">
@@ -704,7 +857,7 @@ function LessonForm({
         </div>
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving || uploading}>
+          <Button onClick={save} disabled={saving || uploading || imageUploading}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save lesson
           </Button>
         </DialogFooter>

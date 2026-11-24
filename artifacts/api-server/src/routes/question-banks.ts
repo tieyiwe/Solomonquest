@@ -80,9 +80,28 @@ function mapQuestion(q: Record<string, unknown>) {
     correctAnswer: q.correct_answer ?? null,
     points: Number(q.points ?? 1),
     tags: Array.isArray(q.tags) ? (q.tags as string[]) : [],
+    position: q.position == null ? null : Number(q.position),
     createdAt: q.created_at as string,
     updatedAt: q.updated_at as string,
   };
+}
+
+/** question-bank-order.sql not applied yet: the position column is missing. */
+const missingPosition = (e: { message?: string } | null | undefined) =>
+  !!e && /position/i.test(e.message ?? "") && /does not exist|schema cache|could not find/i.test(e.message ?? "");
+
+/** Next free position in a bank, or null when the position column doesn't exist yet. */
+async function nextPosition(bankId: string): Promise<number | null> {
+  const { data, error } = await supabaseAdmin
+    .from("question_bank_questions")
+    .select("position")
+    .eq("bank_id", bankId)
+    .not("position", "is", null)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return ((data?.position as number | null | undefined) ?? -1) + 1;
 }
 
 function cleanTags(raw: unknown): string[] {
@@ -243,10 +262,16 @@ router.delete("/question-banks/:id", requireAuth, async (req: AuthenticatedReque
 router.get("/question-banks/:id", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
   const a = await bankAccess(one(req.params.id), req);
   if (!a.ok) return deny(res, a);
-  let q = supabaseAdmin.from("question_bank_questions").select("*").eq("bank_id", a.bank.id).order("created_at", { ascending: true });
   const tag = typeof req.query.tag === "string" ? req.query.tag.trim().toLowerCase() : "";
-  if (tag) q = q.contains("tags", [tag]);
-  const { data: questions, error } = await q;
+  const load = (byPosition: boolean) => {
+    let q = supabaseAdmin.from("question_bank_questions").select("*").eq("bank_id", a.bank.id);
+    if (byPosition) q = q.order("position", { ascending: true, nullsFirst: false });
+    q = q.order("created_at", { ascending: true }).order("id", { ascending: true });
+    if (tag) q = q.contains("tags", [tag]);
+    return q;
+  };
+  let { data: questions, error } = await load(true);
+  if (missingPosition(error)) ({ data: questions, error } = await load(false));
   if (error) { res.status(500).json({ error: error.message }); return; }
   let courseTitle: string | null = null;
   if (a.bank.course_id) {
@@ -270,13 +295,50 @@ router.post("/question-banks/:id/questions", requireAuth, async (req: Authentica
   if (!a.canEdit) { res.status(403).json({ error: "You can't edit this bank" }); return; }
   const v = questionFields((req.body ?? {}) as Record<string, unknown>, false);
   if (!v.ok) { res.status(400).json({ error: v.error }); return; }
+  const position = await nextPosition(a.bank.id);
   const { data, error } = await supabaseAdmin
     .from("question_bank_questions")
-    .insert({ ...v.fields, bank_id: a.bank.id, created_by: req.userId ?? null })
+    .insert({ ...v.fields, bank_id: a.bank.id, created_by: req.userId ?? null, ...(position === null ? {} : { position }) })
     .select()
     .single();
   if (error || !data) { res.status(500).json({ error: error?.message ?? "Failed to add question" }); return; }
   res.status(201).json(mapQuestion(data));
+});
+
+// Reorder a bank's questions: { questionIds } lists every question of the
+// bank exactly once, in the new order. Registered before /questions/:qid so
+// "order" is never taken for a question id.
+router.put("/question-banks/:id/questions/order", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
+  const a = await bankAccess(one(req.params.id), req);
+  if (!a.ok) return deny(res, a);
+  if (!a.canEdit) { res.status(403).json({ error: "You can't edit this bank" }); return; }
+  const ids = (req.body ?? {}).questionIds;
+  if (!Array.isArray(ids) || ids.some((x) => typeof x !== "string")) {
+    res.status(400).json({ error: "questionIds must be a list of question ids" });
+    return;
+  }
+  const { data: rows, error: loadErr } = await supabaseAdmin.from("question_bank_questions").select("id").eq("bank_id", a.bank.id);
+  if (loadErr) { res.status(500).json({ error: loadErr.message }); return; }
+  const own = new Set((rows ?? []).map((r) => r.id as string));
+  if (ids.length !== own.size || new Set(ids).size !== ids.length || ids.some((id: string) => !own.has(id))) {
+    res.status(400).json({ error: "questionIds must list every question of this bank exactly once" });
+    return;
+  }
+  const results = await Promise.all(
+    (ids as string[]).map((id, idx) =>
+      supabaseAdmin.from("question_bank_questions").update({ position: idx }).eq("id", id).eq("bank_id", a.bank.id)
+    )
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) {
+    const msg = missingPosition(failed.error)
+      ? "Question order can't be saved yet: run question-bank-order.sql in Supabase"
+      : failed.error.message;
+    res.status(500).json({ error: msg });
+    return;
+  }
+  await supabaseAdmin.from("question_banks").update({ updated_at: new Date().toISOString() }).eq("id", a.bank.id);
+  res.json({ ok: true, questionIds: ids });
 });
 
 router.put("/question-banks/:id/questions/:qid", requireAuth, async (req: AuthenticatedRequest, res): Promise<void> => {
@@ -328,6 +390,7 @@ router.post("/question-banks/:id/import-quiz", requireAuth, async (req: Authenti
   const { data: src, error } = await q;
   if (error) { res.status(500).json({ error: error.message }); return; }
   const extraTags = cleanTags(tags);
+  const start = await nextPosition(a.bank.id);
   const rows = (src ?? [])
     .map((r) => ({
       bank_id: a.bank.id,
@@ -340,7 +403,8 @@ router.post("/question-banks/:id/import-quiz", requireAuth, async (req: Authenti
       source_quiz_question_id: r.id,
       created_by: req.userId ?? null,
     }))
-    .filter((r) => QUESTION_TYPES.has(r.type));
+    .filter((r) => QUESTION_TYPES.has(r.type))
+    .map((r, i) => (start === null ? r : { ...r, position: start + i }));
   if (rows.length === 0) { res.json({ imported: 0 }); return; }
   const { error: insErr } = await supabaseAdmin.from("question_bank_questions").insert(rows);
   if (insErr) { res.status(500).json({ error: insErr.message }); return; }

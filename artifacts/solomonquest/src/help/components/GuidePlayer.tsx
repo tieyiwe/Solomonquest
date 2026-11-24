@@ -54,7 +54,7 @@ export function buildFrames(guide: Guide): Frame[] {
 
 interface Box { x: number; y: number; w: number; h: number }
 
-export function GuidePlayer({ guide, reduced }: { guide: Guide; reduced: boolean }) {
+export function GuidePlayer({ guide, reduced, staffNav = false }: { guide: Guide; reduced: boolean; /** Show the staff version of the student sidebar. */ staffNav?: boolean }) {
   const frames = useMemo(() => buildFrames(guide), [guide]);
   const [i, setI] = useState(0);
   const [playing, setPlaying] = useState(!reduced);
@@ -178,6 +178,7 @@ export function GuidePlayer({ guide, reduced }: { guide: Guide; reduced: boolean
             typing={frame.typing}
             reduced={reduced}
             drawerOpen={drawerOpen}
+            staffNav={staffNav}
           />
           {box && !ringHidden && (
             <div

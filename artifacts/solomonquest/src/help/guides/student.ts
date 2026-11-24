@@ -3,7 +3,12 @@ import {
   area, badge, btn, card, dialog, list, progress, row, screen, small, stats, tabs, text, toast, upload, video,
 } from "../mock";
 
+// Staff use the student portal (StudentLayout) and can open courses,
+// lessons, quizzes, transcript, tuition and certificates like a student.
 const S: Audience[] = ["student", "staff"];
+// The server only lets students hand in work, record video watch progress
+// and open their own progress report, so these guides are students only.
+const STUDENT_ONLY: Audience[] = ["student"];
 
 const courseTabs = (active: number): MockEl => tabs("ctabs", ["Overview", "Modules", "Resources", "Assignments", "Quizzes", "Classmates", "Live"], active);
 
@@ -63,10 +68,10 @@ export const studentGuides: Guide[] = [
         card("m2", "Week 2: Quadratics", [text("Complete the previous module first")], undefined, "muted"),
       ]),
       lesson: screen("student", "Overview", "Graphing basics", [
-        small("back", "Back to modules", "ghost"),
+        small("back", "All modules", "ghost"),
         video("vid", "Lesson video", 0),
         text("Plot points, find intercepts, and sketch your first parabola."),
-        row([btn("complete", "Complete", "gold", "check")], "end"),
+        row([btn("complete", "Mark complete", "gold", "check")], "end"),
         toast("done", "You've completed this lesson."),
       ]),
     },
@@ -76,7 +81,7 @@ export const studentGuides: Guide[] = [
       { title: "Locked modules", text: "Some modules unlock only after you finish an earlier one. The message tells you what to do first.", target: "m2" },
       { title: "Open a lesson", text: "Tap a lesson to read it or watch its video.", target: "les2" },
       { title: "Learn", text: "Work through the lesson content and any attachments.", screen: "lesson", target: "vid", set: { vid: { progress: 100 } } },
-      { title: "Mark it complete", text: "Tap Complete when you're done. Your progress updates and the next item opens.", target: "complete", set: { done: { open: true }, prog: { value: 60 }, les2: {} }, tip: "Changed your mind? Use Mark as not complete." },
+      { title: "Mark it complete", text: "Tap Mark complete when you're done. Your progress updates and the next item opens.", target: "complete", set: { done: { open: true }, prog: { value: 60 }, les2: {} }, tip: "Changed your mind? Use Mark as not complete." },
     ],
     related: ["student-required-video", "student-submit-assignment"],
   },
@@ -84,7 +89,7 @@ export const studentGuides: Guide[] = [
     slug: "student-submit-assignment",
     title: "Submit an assignment",
     summary: "Upload your file, add a note to your teacher and submit.",
-    roles: S,
+    roles: STUDENT_ONLY,
     category: "learning",
     format: "animated",
     path: "/dashboard/student/assignments",
@@ -97,11 +102,11 @@ export const studentGuides: Guide[] = [
           text("Algebra II · Due Fri 5:00 PM · 20 points"),
           row([btn("submit-work", "Submit Work", "primary", "upload")], "end"),
         ]),
-        dialog("dlg", "Submit: Quadratics problem set", [
+        dialog("dlg", "Quadratics problem set", [
           text("Instructions: show your working for each problem."),
-          upload("file", "Upload a file", "PDF, Word, images…"),
+          upload("file", "Upload a file", "Optional, max 25 MB"),
           area("note", "Note to teacher", undefined, "Any notes or context for your teacher..."),
-          row([btn("cancel", "Cancel", "outline"), btn("send", "Submit")], "end"),
+          row([btn("cancel", "Cancel", "outline"), btn("send", "Submit to Teacher", "primary", "send")], "end"),
         ]),
         toast("ok", "Submitted! 🎉"),
       ]),
@@ -109,12 +114,12 @@ export const studentGuides: Guide[] = [
     steps: [
       { title: "Open Assignments", text: "Tap Assignments in the sidebar to see everything due, across all courses.", target: "nav:Assignments" },
       { title: "Choose the assignment", text: "Find it in the list and tap Submit Work.", target: "submit-work" },
-      { title: "Upload your file", text: "Tap Upload a file and choose your work from your device.", target: "file", set: { dlg: { open: true }, file: { file: "problem-set.pdf" } }, tip: "You can also paste a link (e.g. a Google Doc) if your teacher allows it." },
+      { title: "Upload your file", text: "Under Upload a file, choose your work from your device (up to 25 MB).", target: "file", set: { dlg: { open: true }, file: { file: "problem-set.pdf" } }, tip: "You can also use Or paste a link, e.g. for a Google Doc." },
       { title: "Add a note (optional)", text: "Tell your teacher anything they should know.", target: "note", set: { note: { value: "Q4 was tricky!" } } },
-      { title: "Submit", text: "Tap Submit. You'll see a confirmation, and your teacher is notified.", target: "send", set: { dlg: { open: false }, ok: { open: true } } },
+      { title: "Submit", text: "Tap Submit to Teacher. You'll see Submitted!, and your teacher is notified.", target: "send", set: { dlg: { open: false }, ok: { open: true } } },
     ],
     troubleshoot: [
-      { problem: "The Submit button is greyed out", fix: "If the assignment has a required video, watch it to the end first. If it's past a hard cutoff, the assignment will say it's closed." },
+      { problem: "The Submit to Teacher button is greyed out", fix: "If the assignment has a required video, watch it to the end first. If it's past a hard cutoff, the assignment will say it's closed." },
       { problem: "My upload failed", fix: "Check your connection and file size, then try again. Very large videos are better shared as a link." },
     ],
     related: ["student-late-work-and-extensions", "student-required-video"],
@@ -123,7 +128,7 @@ export const studentGuides: Guide[] = [
     slug: "student-late-work-and-extensions",
     title: "Late work and extensions",
     summary: "What happens if you submit after the due date, and how extensions work.",
-    roles: S,
+    roles: STUDENT_ONLY,
     category: "learning",
     format: "steps",
     where: "Assignments → each assignment's late policy note",
@@ -140,26 +145,26 @@ export const studentGuides: Guide[] = [
     slug: "student-required-video",
     title: "Watch a required video",
     summary: "Some assignments need you to watch a video all the way through before you can submit.",
-    roles: S,
+    roles: STUDENT_ONLY,
     category: "learning",
     format: "animated",
     where: "Assignments → Submit Work",
     keywords: ["video", "watch", "must watch", "required", "locked submit"],
     screens: {
       dlg: screen("student", "Assignments", "My Assignments", [
-        card("a", "Watch: Intro to Parabolas", [
-          badge("must", "Must watch in full to submit", "warning"),
+        card("a", "Intro to Parabolas", [
+          row([text("Watch the video", false), badge("must", "Must watch in full to submit", "warning")], "between"),
           video("vid", "Intro to Parabolas", 10),
           text("Watch the entire video to unlock the submit button.", true, "hint"),
-          row([btn("submit", "Submit", "outline")], "end"),
+          row([btn("cancel", "Cancel", "outline"), btn("submit", "Submit to Teacher", "outline", "send")], "end"),
         ]),
       ]),
     },
     steps: [
-      { title: "Look for the badge", text: "Assignments with Must watch in full to submit need the video first.", target: "must" },
+      { title: "Look for the badge", text: "Tap Submit Work on the assignment. If it says Must watch in full to submit, the video comes first.", target: "must" },
       { title: "Play the video", text: "Tap play. You can't skip ahead, but you can pause and come back.", target: "vid", set: { vid: { progress: 65 } } },
-      { title: "Watch to the end", text: "When the video finishes you'll see \"Video fully watched. You may now submit.\"", target: "hint", set: { vid: { progress: 100 }, hint: { text: "Video fully watched — you may now submit." } } },
-      { title: "Submit", text: "The Submit button unlocks. Tap it to finish.", target: "submit", set: { submit: { variant: "primary" } } },
+      { title: "Watch to the end", text: "When the video finishes you'll see \"Video fully watched — you may now submit.\"", target: "hint", set: { vid: { progress: 100 }, hint: { text: "Video fully watched — you may now submit." } } },
+      { title: "Submit", text: "The upload, link and note boxes appear and Submit to Teacher unlocks. Tap it to finish.", target: "submit", set: { submit: { variant: "primary" } }, tip: "Your progress is saved as you watch, so you can stop and come back later." },
     ],
     related: ["student-submit-assignment"],
   },
@@ -333,7 +338,7 @@ export const studentGuides: Guide[] = [
     slug: "student-progress-report",
     title: "Read your progress report",
     summary: "One page with your grades, attendance, missing and late work.",
-    roles: S,
+    roles: STUDENT_ONLY,
     category: "grades",
     format: "steps",
     path: "/reports/students/me",

@@ -68,7 +68,9 @@ export function StudentLayout({ children }: StudentLayoutProps) {
     { href: "/dashboard/student/quizzes", label: "Quizzes", icon: ClipboardList, exact: false },
     { href: "/forum", label: "Forum", icon: MessageSquare, exact: false },
     { href: "/dashboard/student/transcript", label: "Transcript", icon: Scroll, exact: false },
-    { href: "/reports/students/me", label: "Progress report", icon: FileBarChart, exact: false },
+    ...(user?.role !== "staff"
+      ? [{ href: "/reports/students/me", label: "Progress report", icon: FileBarChart, exact: false }]
+      : []),
     { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
     { href: "/dashboard/student/tuition", label: "Tuition", icon: Wallet, exact: false },
     { href: "/dashboard/student/certificates", label: "Certificates", icon: Award, exact: false },

@@ -118,9 +118,9 @@ export const visitorGuides: Guide[] = [
           field("email", "Email", "you@example.com"),
           field("phone", "Phone Number", undefined, "+1 (555) 000-0000"),
           { k: "field", id: "pw", label: "Create Password", placeholder: "••••••••", type: "password" },
-          btn("join", "Join Westbrook Academy", "gold"),
+          btn("join", "Accept Invitation & Create Account", "gold"),
         ]),
-        toast("welcome", "Welcome aboard!"),
+        toast("welcome", "Welcome to Westbrook Academy"),
       ]),
     },
     steps: [
@@ -128,7 +128,7 @@ export const visitorGuides: Guide[] = [
       { title: "Your name", text: "Enter your first and last name.", target: "first", set: { first: { value: "Amara" }, last: { value: "Okafor" } } },
       { title: "Email is filled in", text: "The invite already knows your email, so there's nothing to type.", target: "email" },
       { title: "Choose a password", text: "Pick a password with at least 8 characters.", target: "pw", set: { pw: { value: "mysecret1" } } },
-      { title: "Join", text: "Tap Join. You land on your dashboard, and a short guided tour shows you around.", target: "join", set: { welcome: { open: true } } },
+      { title: "Join", text: "Tap Accept Invitation & Create Account. You land on your dashboard, and a short guided tour shows you around.", target: "join", set: { welcome: { open: true } } },
     ],
     troubleshoot: [
       { problem: "It says Invitation Invalid", fix: "The link was already used or expired. Ask your school administrator for a new invitation." },
@@ -148,8 +148,8 @@ export const visitorGuides: Guide[] = [
     keywords: ["login", "log in", "forgot password", "reset", "locked out"],
     steps: [
       { title: "Open Sign In", text: "Tap Sign In at the top right of any SolomonQuest page." },
-      { title: "Enter your details", text: "Type the email and password you used when you joined, then tap Sign in." },
-      { title: "Forgot your password?", text: "Tap Forgot password?, enter your email address and tap Reset password.", tip: "The email can take a minute. Check your spam folder too." },
+      { title: "Enter your details", text: "Type the email and password you used when you joined, then tap Sign In." },
+      { title: "Forgot your password?", text: "Tap Forgot password?, enter your email address and tap Send reset link.", tip: "The email can take a minute. Check your spam folder too." },
       { title: "Set a new password", text: "Open the link in the email and choose a new password. You're signed in straight away." },
     ],
     troubleshoot: [

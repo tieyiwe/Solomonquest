@@ -258,10 +258,10 @@ export const adminGuides: Guide[] = [
     where: "Sidebar → Terms & Scheduling",
     keywords: ["term", "semester", "trimester", "quarter", "schedule", "dates"],
     steps: [
-      { title: "Open Terms & Scheduling", text: "Tap Terms & Scheduling in the sidebar." },
+      { title: "Open Terms & Scheduling", text: "Tap Terms & Scheduling in the sidebar. Staff find it at the bottom of their sidebar." },
       { title: "New Term", text: "Tap New Term. Give it a name (e.g. Fall 2025, Quarter 1) and a start and end date." },
       { title: "Set the status", text: "Upcoming, Active, Completed or Archived. Only one term is usually Active." },
-      { title: "Schedule classes", text: "When you create or edit a course, choose this term under Scheduling Term. Use View schedule to see every class in the term." },
+      { title: "Schedule classes", text: "Tap View schedule on a term to see every class in it. Admins put a course in a term with Scheduling Term when they create or edit the course." },
     ],
   },
   {
