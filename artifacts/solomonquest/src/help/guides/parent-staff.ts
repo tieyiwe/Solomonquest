@@ -79,6 +79,26 @@ export const parentGuides: Guide[] = [
       { title: "Pick topics", text: "Keep Announcements and Grades on to hear about what matters most.", target: "gr" },
     ],
   },
+  {
+    slug: "parent-progress-digest",
+    title: "Your progress digest",
+    summary: "Your school's regular update on how your children are doing, by email and in the app.",
+    roles: ["parent"],
+    category: "grades",
+    format: "steps",
+    path: "/notifications",
+    where: "Notifications (the bell) and your email",
+    keywords: ["digest", "weekly update", "summary", "progress email", "report", "unsubscribe", "turn off"],
+    steps: [
+      { title: "What it is", text: "Your school can send a short update every week, every two weeks or every month. It tells you how your child is doing: grades, attendance, missing work and what's due next." },
+      { title: "One digest for the family", text: "If you have more than one child at the school, you get one digest with a section for each child." },
+      { title: "Reading the status", text: "Each child is marked On track, Worth a look or Needs attention, with a short reason, so you know what to ask about." },
+      { title: "See everything", text: "Tap View full progress report in the email, or open the notification, to see your child's full report." },
+      { title: "Where to find it", text: "It arrives in your notifications (the bell) and, if you get emails, in your inbox." },
+      { title: "Turn it off", text: "Open your account menu, choose Notification Settings and switch off Progress digest. You can switch it back on any time.", tip: "Turning off Email Notifications stops the email but keeps the digest in the app." },
+    ],
+    related: ["parent-dashboard", "parent-notifications"],
+  },
 ];
 
 export const staffGuides: Guide[] = [

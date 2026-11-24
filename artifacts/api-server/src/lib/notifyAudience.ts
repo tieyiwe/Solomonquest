@@ -20,7 +20,9 @@ import { logger } from "./logger";
  * failures, so the HTTP response never waits on email delivery.
  */
 
-export type AudienceCategory = "announcements" | "grades" | "assignments";
+// "digest" = the parent progress digest (lib/parentDigest.ts uses digestChannels,
+// which follows the same rules: a missing key means on).
+export type AudienceCategory = "announcements" | "grades" | "assignments" | "digest";
 
 export interface AudienceRecipient {
   userId: string;

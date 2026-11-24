@@ -238,7 +238,15 @@ select * from (values
     and exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='schools' and column_name='tagline')
     and exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='schools' and column_name='logo_url'))
+      where table_schema='public' and table_name='schools' and column_name='logo_url')),
+
+  ('parent-digest.sql: school_digest_settings + digest_runs',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='school_digest_settings' and column_name='next_run_at')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='school_digest_settings' and column_name='audience_course_ids')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='digest_runs' and column_name='emails_failed'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

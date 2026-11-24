@@ -576,6 +576,80 @@ export const adminGuides: Guide[] = [
     ],
   },
   {
+    slug: "admin-parent-digest",
+    title: "Send a parent progress digest",
+    summary: "Choose what parents see and when, preview it, then send it or let it go out on a schedule.",
+    roles: AS,
+    category: "communication",
+    format: "animated",
+    path: "/dashboard/admin/parent-digest",
+    where: "Sidebar → Parent digest",
+    keywords: ["digest", "parent", "weekly update", "progress email", "newsletter", "parents email", "report", "schedule"],
+    screens: {
+      s: screen("admin", "Parent digest", "Parent digest", [
+        text("A friendly progress update for parents. You choose what's in it and when it goes out."),
+        cols([
+          card("sched", "Schedule", [
+            toggle("on", "Parent digest is off", false, "Nothing goes out on a schedule yet."),
+            row([select("freq", "How often", "Weekly"), select("dayw", "Day", "Friday")]),
+            row([field("time", "Time", "16:00"), select("tz", "Time zone", "Africa/Lagos")]),
+          ]),
+          card("prev", "Preview", [
+            select("stu", "Student", "Amara Okafor"),
+            tabs("ptabs", ["Email", "In-app"], 0),
+            card("mail", "Here's how Amara and Kofi are doing this week", [
+              row([badge("b1", "✓ On track", "success"), badge("b2", "! Worth a look", "warning")]),
+              list("gl", [
+                { title: "Algebra II", meta: "86% (B)", badge: "Doing well", tone: "success" },
+                { title: "World History", meta: "72% (C)", badge: "Close to target", tone: "warning" },
+              ]),
+            ]),
+          ]),
+        ]),
+        card("inc", "What's included", [
+          row([toggle("i1", "Grades per course", true), toggle("i2", "Attendance", true), toggle("i3", "Missing and late work", true)]),
+          row([toggle("i4", "Due in the next 7 days", true), toggle("i5", "Recent announcements", true)]),
+        ]),
+        card("msg", "Message and audience", [
+          area("note", "Personal message (optional)", undefined, "e.g. Parent evenings are on Thursday."),
+          select("aud", "Who gets it", "All parents"),
+        ]),
+        row([small("test", "Send test to me", "outline", "mail"), btn("now", "Send now", "primary", "send"), btn("save", "Save settings")], "end"),
+        dialog("confirm", "Send the digest now?", [
+          text("This sends a digest to 128 parents covering 141 students. 3 parents have turned the digest off."),
+          row([btn("cancel", "Cancel", "outline"), btn("go", "Send to 128 parents")], "end"),
+        ]),
+        toast("saved", "Saved. Next digest: Fri, Nov 27, 4:00 PM"),
+        toast("tested", "Test digest sent to you"),
+      ]),
+      h: screen("admin", "Parent digest", "Parent digest", [
+        card("hist", "History", [
+          table("htbl", ["Date", "Sent by", "Parents", "Emails sent", "Failed", "Status"], [
+            ["Fri, Nov 27, 4:00 PM", "Scheduled", "128", "121", "0", "Done"],
+            ["Tue, Nov 24, 9:12 AM", "Olu Bello", "128", "120", "1", "Done"],
+          ]),
+        ]),
+      ]),
+    },
+    steps: [
+      { title: "Open Parent digest", text: "Tap Parent digest in the sidebar, under Communication.", target: "nav:Parent digest" },
+      { title: "Pick a schedule", text: "Choose Weekly, Every two weeks or Monthly, then the day, time and your school's time zone. Manual only means it goes out just when you press Send now.", target: "freq", set: { freq: { value: "Weekly" }, dayw: { value: "Friday" } } },
+      { title: "Choose what's in it", text: "Turn sections on or off: grades, attendance, missing work, what's due next week and announcements.", target: "inc" },
+      { title: "Add a message", text: "Write a short note from the school if you like. It shows at the top of every digest.", target: "note", set: { note: { value: "Parent evenings are on Thursday from 5pm." } } },
+      { title: "Choose who gets it", text: "Send to all parents, or only parents of students in certain programs or courses.", target: "aud" },
+      { title: "Preview it", text: "Pick a student to see exactly what their parent gets, as an email and in the app. Parents with several children get one digest with a section for each.", target: "mail" },
+      { title: "Send yourself a test", text: "Tap Send test to me to see the real email in your inbox.", target: "test", set: { tested: { open: true } } },
+      { title: "Turn it on and save", text: "Switch the digest on and tap Save settings. The next send time appears under the schedule.", target: "save", set: { tested: { open: false }, on: { on: true, label: "Parent digest is on" }, saved: { open: true } } },
+      { title: "Or send it now", text: "Send now asks you to confirm and shows how many parents it will reach.", target: "go", set: { saved: { open: false }, confirm: { open: true } }, tip: "Send now works once every 10 minutes, so a double tap can't send twice." },
+      { title: "Check the history", text: "History lists every send: when, who sent it (or Scheduled), how many parents, emails sent and any failures.", screen: "h", target: "htbl:0:1" },
+    ],
+    troubleshoot: [
+      { problem: "Parents say they didn't get the email", fix: "They may have turned off Progress digest or email in their notification settings. It's still in their in-app notifications unless they turned the digest off." },
+      { problem: "A student shows \"no parent linked\"", fix: "Link a parent from Users → Parents → Invite Parent/Guardian. Only linked parents get a digest." },
+    ],
+    related: ["admin-link-parent", "parent-progress-digest"],
+  },
+  {
     slug: "admin-audit-log",
     title: "Check the audit log",
     summary: "See who did what, and when, across your school.",

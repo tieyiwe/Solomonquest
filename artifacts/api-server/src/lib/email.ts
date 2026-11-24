@@ -40,7 +40,7 @@ const ACCENT = '#84602a';
 // forum topic title could inject links/markup into emails sent under the
 // platform's From address (phishing). Each exported sender escapes its
 // inputs AFTER building the plain-text subject line.
-function escapeHtml(value: unknown): string {
+export function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -49,7 +49,7 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-function baseLayout(
+export function baseLayout(
   title: string,
   body: string,
   options?: { confetti?: boolean; headerTitle?: string; headerLogoUrl?: string }
@@ -156,6 +156,18 @@ async function send(to: string, subject: string, html: string): Promise<void> {
   } catch (err) {
     console.error(`[email] Failed to send email to ${to} (subject: "${subject}"):`, err);
   }
+}
+
+/**
+ * Sends one already-rendered email and THROWS on failure (unlike `send`,
+ * which logs and swallows), so the parent digest can count failures in its
+ * send history. A missing SMTP config is also an error here; callers check
+ * isSmtpConfigured() first.
+ */
+export async function sendRenderedEmail(to: string, subject: string, html: string): Promise<void> {
+  const t = getTransporter();
+  if (!t) throw new Error("SMTP is not configured");
+  await t.sendMail({ from: FROM, to, subject, html });
 }
 
 export function isSmtpConfigured(): boolean {

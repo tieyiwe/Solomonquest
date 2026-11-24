@@ -12,7 +12,7 @@ export const NAV: Record<MockChrome, string[]> = {
   admin: [
     "Overview", "Calendar", "Analytics", "Users", "Courses", "Programs", "Terms & Scheduling", "Admissions",
     "Resources", "At-risk students", "Certificates", "Question Banks", "Tuition", "Accounting", "Chat",
-    "Help Center", "Audit Log", "Bulk Import", "Settings",
+    "Parent digest", "Help Center", "Audit Log", "Bulk Import", "Settings",
   ],
   super_admin: [
     "Dashboard", "Analytics", "Schools", "School Requests", "All Users", "Deletion Requests", "Domain Requests",
