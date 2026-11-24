@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { hexToRgb, rgbToHsl, readableOn, hslHex } from "@/lib/schoolTheme";
+import { ProgramPricingSection } from "@/components/admissions/ProgramPricingSection";
 import {
   BookOpen,
   Users,
@@ -804,6 +805,19 @@ export default function SchoolPublicPage() {
             ))}
           </div>
         </section>
+      )}
+
+      {/* Programs & tuition (prices, application fee) */}
+      {school?.id && (
+        <ProgramPricingSection
+          schoolId={String(school.id)}
+          primaryColor={primaryColor}
+          headingColor={headingColor ? String(headingColor) : undefined}
+          headingFontFamily={fontStack(headingFont)}
+          radiusClass={borderRadiusClass}
+          buttonTextColor={textOn(primaryColor)}
+          onApply={handleApply}
+        />
       )}
 
       {/* 5. Courses Section */}

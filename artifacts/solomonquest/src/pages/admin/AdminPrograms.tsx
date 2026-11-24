@@ -50,6 +50,8 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Program } from "@workspace/api-client-react";
 import { LoadingRows } from "@/components/common/States";
+import { CURRENCIES, formatMoney } from "@/lib/admissions";
+import { useQuery } from "@tanstack/react-query";
 
 interface ProgramFormData {
   name: string;
@@ -143,14 +145,25 @@ async function apiFetch(path: string, options: RequestInit = {}) {
 
 interface TuitionPlan {
   id: string;
+  programId?: string | null;
   amountCents: number;
+  currency?: string | null;
   allowFullPayment: boolean;
   allowInstallments: boolean;
   installmentCount: number;
+  pricingNote?: string | null;
 }
 
-function ProgramTuitionTab({ programId }: { programId: string }) {
+/**
+ * The one place a program's price is set: Free, or an amount + currency with
+ * full payment and/or installments, plus an optional short note. Saved as
+ * the program's tuition plan (POST /tuition-plans); "Free" removes the plan.
+ */
+function ProgramTuitionTab({ programId, onSaved }: { programId: string; onSaved?: () => void }) {
+  const [paid, setPaid] = useState(false);
   const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("usd");
+  const [note, setNote] = useState("");
   const [allowFull, setAllowFull] = useState(true);
   const [allowInstallments, setAllowInstallments] = useState(false);
   const [installmentCount, setInstallmentCount] = useState("2");
@@ -162,13 +175,16 @@ function ProgramTuitionTab({ programId }: { programId: string }) {
     apiFetch(`/api/tuition-plans?programId=${programId}`)
       .then((r) => r.json())
       .then((plans: TuitionPlan[]) => {
-        const plan = plans?.[0];
+        const plan = Array.isArray(plans) ? plans[0] : undefined;
         if (plan) {
           setExistingPlanId(plan.id);
-          setAmount((plan.amountCents / 100).toFixed(2));
+          setPaid(plan.amountCents > 0);
+          setAmount(plan.amountCents > 0 ? (plan.amountCents / 100).toFixed(2) : "");
+          setCurrency((plan.currency || "usd").toLowerCase());
+          setNote(plan.pricingNote ?? "");
           setAllowFull(plan.allowFullPayment);
           setAllowInstallments(plan.allowInstallments);
-          setInstallmentCount(String(plan.installmentCount));
+          setInstallmentCount(String(Math.max(2, plan.installmentCount)));
         }
       })
       .catch(() => {})
@@ -176,35 +192,56 @@ function ProgramTuitionTab({ programId }: { programId: string }) {
   }, [programId]);
 
   const handleSave = async () => {
-    if (!amount.trim() || parseFloat(amount) < 0) {
-      toast.error("Enter a valid tuition amount");
-      return;
-    }
-    if (!allowFull && !allowInstallments) {
-      toast.error("Enable at least one payment option");
-      return;
-    }
     setSaving(true);
     try {
+      if (!paid) {
+        // Free = amount 0 on the existing plan, never a delete: deleting a
+        // plan cascades to students' past tuition records.
+        if (existingPlanId) {
+          const res = await apiFetch("/api/tuition-plans", {
+            method: "POST",
+            body: JSON.stringify({ programId, amountCents: 0, currency, pricingNote: null, allowFullPayment: true, allowInstallments: false, installmentCount: 1 }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || "Failed to update price");
+          }
+        }
+        toast.success("Program is free");
+        onSaved?.();
+        return;
+      }
+      const value = parseFloat(amount);
+      if (!amount.trim() || !Number.isFinite(value) || value <= 0) {
+        toast.error("Enter a price above 0, or choose Free");
+        return;
+      }
+      if (!allowFull && !allowInstallments) {
+        toast.error("Enable at least one payment option");
+        return;
+      }
       const res = await apiFetch("/api/tuition-plans", {
         method: "POST",
         body: JSON.stringify({
           programId,
-          amountCents: Math.round(parseFloat(amount) * 100),
+          amountCents: Math.round(value * 100),
+          currency,
+          pricingNote: note.trim() || null,
           allowFullPayment: allowFull,
           allowInstallments,
-          installmentCount: parseInt(installmentCount, 10) || 2,
+          installmentCount: Math.max(2, parseInt(installmentCount, 10) || 2),
         }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to save tuition");
+        throw new Error(err.error || "Failed to save price");
       }
       const data = await res.json();
       setExistingPlanId(data.id);
-      toast.success("Tuition saved");
+      toast.success("Price saved");
+      onSaved?.();
     } catch (err: any) {
-      toast.error(err.message || "Failed to save tuition");
+      toast.error(err.message || "Failed to save price");
     } finally {
       setSaving(false);
     }
@@ -213,46 +250,101 @@ function ProgramTuitionTab({ programId }: { programId: string }) {
   if (loading) return <LoadingRows rows={3} />;
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">
-        Setting tuition here applies to the whole program. This isn't a required condition yet, so applications
-        aren't blocked on payment while this is being tested.
-      </p>
-      <div className="space-y-1.5">
-        <Label htmlFor="adminprograms-tuition-amount-usd">Tuition Amount (USD)</Label>
-        <Input id="adminprograms-tuition-amount-usd" type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+    <div className="space-y-4" data-testid="program-price-form">
+      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Program price">
+        {[
+          { v: false, label: "Free", hint: "No tuition" },
+          { v: true, label: "Paid", hint: "Set a price" },
+        ].map((o) => (
+          <button
+            key={o.label}
+            type="button"
+            role="radio"
+            aria-checked={paid === o.v}
+            onClick={() => setPaid(o.v)}
+            className={`rounded-lg border p-3 text-left transition-colors ${paid === o.v ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/40"}`}
+          >
+            <p className="text-sm font-medium">{o.label}</p>
+            <p className="text-xs text-muted-foreground">{o.hint}</p>
+          </button>
+        ))}
       </div>
-      <div className="flex items-center justify-between rounded-lg border p-3">
-        <div>
-          <p className="text-sm font-medium">Allow Full Payment</p>
-          <p className="text-xs text-muted-foreground">Pay the full tuition in one payment</p>
-        </div>
-        <Switch checked={allowFull} onCheckedChange={setAllowFull} />
-      </div>
-      <div className="flex items-center justify-between rounded-lg border p-3">
-        <div>
-          <p className="text-sm font-medium">Allow Installments</p>
-          <p className="text-xs text-muted-foreground">Split tuition into multiple partial payments</p>
-        </div>
-        <Switch checked={allowInstallments} onCheckedChange={setAllowInstallments} />
-      </div>
-      {allowInstallments && (
-        <div className="space-y-1.5 pl-3 border-l-2">
-          <Label htmlFor="adminprograms-number-of-installments">Number of Installments</Label>
-          <Input id="adminprograms-number-of-installments"
-            type="number"
-            min="2"
-            value={installmentCount}
-            onChange={(e) => setInstallmentCount(e.target.value)}
-            className="max-w-[120px]"
-          />
-        </div>
+
+      {paid && (
+        <>
+          <div className="grid grid-cols-[1fr_110px] gap-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="adminprograms-tuition-amount">Price</Label>
+              <Input id="adminprograms-tuition-amount" type="number" inputMode="decimal" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="adminprograms-tuition-currency">Currency</Label>
+              <select
+                id="adminprograms-tuition-currency"
+                className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>{c.toUpperCase()}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="adminprograms-pricing-note">Pricing note (optional)</Label>
+            <Input id="adminprograms-pricing-note" maxLength={200} placeholder="e.g. Includes books and lab materials" value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Allow full payment</p>
+              <p className="text-xs text-muted-foreground">Pay the whole price at once</p>
+            </div>
+            <Switch checked={allowFull} onCheckedChange={setAllowFull} aria-label="Allow full payment" />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Allow installments</p>
+              <p className="text-xs text-muted-foreground">Split it into monthly payments</p>
+            </div>
+            <Switch checked={allowInstallments} onCheckedChange={setAllowInstallments} aria-label="Allow installments" />
+          </div>
+          {allowInstallments && (
+            <div className="space-y-1.5 pl-3 border-l-2">
+              <Label htmlFor="adminprograms-number-of-installments">Number of installments</Label>
+              <Input id="adminprograms-number-of-installments" type="number" min="2" value={installmentCount} onChange={(e) => setInstallmentCount(e.target.value)} className="max-w-[120px]" />
+            </div>
+          )}
+        </>
       )}
+      <p className="text-xs text-muted-foreground">
+        Shown on your school page and the application form. When an application to this program is approved, the
+        student gets this tuition on their Tuition page.
+      </p>
       <Button onClick={handleSave} disabled={saving} size="sm">
         {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        {existingPlanId ? "Update Tuition" : "Save Tuition"}
+        Save price
       </Button>
     </div>
+  );
+}
+
+/** Price shown in the Programs list; opens the price editor. */
+function ProgramPriceCell({ plan, onClick }: { plan: TuitionPlan | undefined; onClick: () => void }) {
+  const label = plan && plan.amountCents > 0 ? formatMoney(plan.amountCents, plan.currency) : "Free";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex flex-col items-start rounded-md px-2 py-1 -mx-2 text-left hover:bg-muted"
+      aria-label={`Price: ${label}. Edit price`}
+    >
+      <span className={`text-sm font-medium ${plan && plan.amountCents > 0 ? "text-foreground" : "text-success"}`}>{label}</span>
+      {plan && plan.amountCents > 0 && plan.allowInstallments && (
+        <span className="text-[11px] text-muted-foreground">{plan.allowFullPayment ? "or " : ""}{plan.installmentCount} installments</span>
+      )}
+      {plan?.pricingNote && <span className="text-[11px] text-muted-foreground line-clamp-1 max-w-[160px]">{plan.pricingNote}</span>}
+    </button>
   );
 }
 
@@ -261,11 +353,13 @@ function ProgramFormDialog({
   program,
   open,
   onOpenChange,
+  onPriceSaved,
 }: {
   mode: "create" | "edit";
   program?: Program;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  onPriceSaved?: () => void;
 }) {
   const queryClient = useQueryClient();
   const createProgram = useCreateProgram();
@@ -387,8 +481,8 @@ function ProgramFormDialog({
                 <ProgramRosterTab programId={program.id} />
               </div>
               <div className="space-y-2 pt-2 border-t">
-                <Label className="text-sm font-semibold">Tuition</Label>
-                <ProgramTuitionTab programId={program.id} />
+                <Label className="text-sm font-semibold">Price</Label>
+                <ProgramTuitionTab programId={program.id} onSaved={onPriceSaved} />
               </div>
             </>
           )}
@@ -412,6 +506,19 @@ export default function AdminPrograms() {
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editProgram, setEditProgram] = useState<Program | null>(null);
+  const [priceProgram, setPriceProgram] = useState<Program | null>(null);
+
+  // Every program plan for the school, to show each program's price in the list.
+  const { data: plans, refetch: refetchPlans } = useQuery<TuitionPlan[]>({
+    queryKey: ["program-tuition-plans"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/tuition-plans");
+      if (!res.ok) return [];
+      const rows = await res.json();
+      return Array.isArray(rows) ? rows : [];
+    },
+  });
+  const planByProgram = new Map((plans ?? []).filter((p) => p.programId).map((p) => [p.programId as string, p]));
 
   const { data: programs, isLoading } = useListPrograms();
   const { data: courses } = useListCourses();
@@ -510,6 +617,7 @@ export default function AdminPrograms() {
                     <TableHead className="font-semibold">Program</TableHead>
                     <TableHead className="font-semibold">Code & Level</TableHead>
                     <TableHead className="font-semibold">Courses</TableHead>
+                    <TableHead className="font-semibold">Price</TableHead>
                     <TableHead className="font-semibold">Status</TableHead>
                     <TableHead className="font-semibold text-right">Actions</TableHead>
                   </TableRow>
@@ -552,6 +660,9 @@ export default function AdminPrograms() {
                           <BookOpen className="h-3.5 w-3.5" />
                           <span>{courseCountByProgram[program.id] ?? 0}</span>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <ProgramPriceCell plan={planByProgram.get(program.id)} onClick={() => setPriceProgram(program)} />
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -626,8 +737,26 @@ export default function AdminPrograms() {
           onOpenChange={(v) => {
             if (!v) setEditProgram(null);
           }}
+          onPriceSaved={() => refetchPlans()}
         />
       )}
+
+      <Dialog open={!!priceProgram} onOpenChange={(v) => { if (!v) setPriceProgram(null); }}>
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Price · {priceProgram?.name}</DialogTitle>
+          </DialogHeader>
+          {priceProgram && (
+            <ProgramTuitionTab
+              programId={priceProgram.id}
+              onSaved={() => {
+                refetchPlans();
+                setPriceProgram(null);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

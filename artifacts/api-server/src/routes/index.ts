@@ -46,6 +46,7 @@ import progressReportsRouter from "./progress-reports";
 import certificatesRouter from "./certificates";
 import questionBanksRouter from "./question-banks";
 import bulkImportRouter from "./bulk-import";
+import admissionsRouter from "./admissions";
 
 const router: IRouter = Router();
 
@@ -96,5 +97,6 @@ router.use(progressReportsRouter);
 router.use(certificatesRouter);
 router.use(questionBanksRouter);
 router.use(bulkImportRouter);
+router.use(admissionsRouter);
 
 export default router;

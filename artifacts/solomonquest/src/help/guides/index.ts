@@ -6,6 +6,7 @@ import { teacherGuides } from "./teacher";
 import { adminGuides } from "./admin";
 import { parentGuides, staffGuides } from "./parent-staff";
 import { superAdminGuides } from "./superAdmin";
+import { admissionsGuides } from "./admissions";
 
 export const GUIDES: Guide[] = [
   ...visitorGuides,
@@ -16,6 +17,7 @@ export const GUIDES: Guide[] = [
   ...parentGuides,
   ...staffGuides,
   ...superAdminGuides,
+  ...admissionsGuides,
 ];
 
 const BY_SLUG = new Map(GUIDES.map((g) => [g.slug, g]));

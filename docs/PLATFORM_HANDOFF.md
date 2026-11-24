@@ -120,7 +120,8 @@ individually, don't assume a whole file requires auth.
 | `schools.ts`, `school-requests.ts`, `school-resources.ts` | School CRUD, creation-request approval flow, school-level file resources |
 | `super-admin.ts` | Everything platform-level: dashboard stats, schools list/archive/delete, feature flags, usage & cost analytics, platform audit log |
 | `courses.ts`, `programs.ts`, `terms.ts`, `course-resources.ts` | Academic structure |
-| `applications.ts` | Prospective-student applications (auto-enroll on approval) |
+| `applications.ts` | Prospective-student applications (auto-enroll on approval, fee gate, congratulations email + program tuition on approval) |
+| `admissions.ts` | Application fee (off by default; needs Stripe Connect), admission-details email settings/preview/test, per-program overrides, applicant fee checkout + status page data (`admissions-pricing.sql`) |
 | `assignments.ts`, `submissions.ts`, `grading.ts`, `quizzes.ts` | Coursework |
 | `attendance.ts` | Attendance tracking |
 | `chat.ts`, `messages.ts`, `forum.ts`, `video.ts` | Real-time-ish communication, gated by feature flags |

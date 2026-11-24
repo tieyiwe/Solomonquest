@@ -2,12 +2,49 @@ import { useState } from "react";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import {
   useListApplications,
-  useUpdateApplicationStatus,
   getListApplicationsQueryKey,
   useGetMySchool,
 } from "@workspace/api-client-react";
-import type { Application } from "@workspace/api-client-react";
+import type { Application as BaseApplication } from "@workspace/api-client-react";
 import { supabase } from "@/lib/supabase";
+import { api, ApiError, FEE_STATUS_LABEL, formatMoney, type FeeStatus } from "@/lib/admissions";
+
+// Fee + approval-email fields GET /applications adds for admins.
+type Application = BaseApplication & {
+  feeStatus?: FeeStatus;
+  feeAmountCents?: number | null;
+  feeCurrency?: string | null;
+  feePaidAt?: string | null;
+  feeWaivedAt?: string | null;
+  feeWaiverReason?: string | null;
+  congratsEmailStatus?: "sent" | "failed" | null;
+  congratsEmailSentAt?: string | null;
+  congratsEmailError?: string | null;
+  applicantEmail?: string | null;
+};
+
+interface StatusChangeOptions {
+  waiveFee?: boolean;
+  waiverReason?: string;
+}
+
+function FeeBadge({ app }: { app: Application }) {
+  const st = app.feeStatus ?? "not_required";
+  if (st === "not_required") return <span className="text-xs text-muted-foreground">Free</span>;
+  const amount = app.feeAmountCents != null ? formatMoney(app.feeAmountCents, app.feeCurrency) : "";
+  const cls =
+    st === "paid"
+      ? "bg-success/10 text-success border-success/30"
+      : st === "waived"
+      ? "bg-muted text-muted-foreground border-border"
+      : "bg-warning/10 text-warning border-warning/40";
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`} data-testid="fee-badge">
+      {FEE_STATUS_LABEL[st]}
+      {amount && <span className="opacity-80">· {amount}</span>}
+    </span>
+  );
+}
 
 async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -56,6 +93,10 @@ import {
   Globe,
   Lock,
   ArrowLeft,
+  CreditCard,
+  Mail,
+  RefreshCw,
+  Settings2,
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -125,16 +166,50 @@ function ApplicationDetailPanel({
   onClose,
   onStatusChange,
   updating,
+  onChanged,
 }: {
   app: Application | null;
   open: boolean;
   onClose: () => void;
-  onStatusChange: (id: string, status: string, notes?: string) => void;
+  onStatusChange: (id: string, status: string, notes?: string, opts?: StatusChangeOptions) => void;
   updating: boolean;
+  onChanged: (patch: Partial<Application>) => void;
 }) {
   const [notes, setNotes] = useState("");
+  const [waiveOpen, setWaiveOpen] = useState<null | "waive" | "approve">(null);
+  const [waiverReason, setWaiverReason] = useState("");
+  const [busy, setBusy] = useState(false);
 
   if (!app) return null;
+  const feeUnpaid = app.feeStatus === "awaiting_payment";
+
+  const waiveOnly = async () => {
+    setBusy(true);
+    try {
+      await api(`/applications/${app.id}/waive-fee`, { method: "POST", body: JSON.stringify({ reason: waiverReason }) });
+      toast.success("Application fee waived");
+      onChanged({ feeStatus: "waived", feeWaivedAt: new Date().toISOString(), feeWaiverReason: waiverReason || null });
+      setWaiveOpen(null);
+    } catch (err) {
+      toast.error((err as Error).message || "Couldn't waive the fee");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resend = async () => {
+    setBusy(true);
+    try {
+      await api(`/applications/${app.id}/resend-congratulations`, { method: "POST" });
+      toast.success("Congratulations email sent");
+      onChanged({ congratsEmailStatus: "sent", congratsEmailError: null, congratsEmailSentAt: new Date().toISOString() });
+    } catch (err) {
+      toast.error(`The email could not be sent: ${(err as Error).message}`);
+      onChanged({ congratsEmailStatus: "failed", congratsEmailError: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const nextStatus = getNextStatus(app.status);
   const isRejected = app.status?.toLowerCase() === "rejected";
@@ -158,8 +233,9 @@ function ApplicationDetailPanel({
                 {app.applicantName || "Unknown Applicant"}
               </h3>
               <p className="text-sm text-muted-foreground">Application ID: {app.id.slice(0, 8)}...</p>
-              <div className="mt-1">
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 <StatusBadge status={app.status} />
+                <FeeBadge app={app} />
               </div>
             </div>
           </div>
@@ -190,6 +266,63 @@ function ApplicationDetailPanel({
               </div>
             </div>
           </div>
+
+          {/* Application fee */}
+          {app.feeStatus && app.feeStatus !== "not_required" && (
+            <div className={`rounded-lg border p-3 space-y-2 ${feeUnpaid ? "border-warning/50 bg-warning/5" : ""}`} data-testid="fee-panel">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium flex items-center gap-1.5">
+                  <CreditCard className="h-4 w-4 text-muted-foreground" /> Application fee
+                  {app.feeAmountCents != null && <span className="text-muted-foreground font-normal">{formatMoney(app.feeAmountCents, app.feeCurrency)}</span>}
+                </p>
+                <FeeBadge app={app} />
+              </div>
+              {feeUnpaid && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Not paid yet. The applicant can pay from their application page. You can't approve until it's paid, unless you waive it.
+                  </p>
+                  {waiveOpen ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="adminadmissions-waiver-reason" className="text-xs">Reason for waiving (optional, internal)</Label>
+                      <Textarea id="adminadmissions-waiver-reason" rows={2} maxLength={500} value={waiverReason} onChange={(e) => setWaiverReason(e.target.value)} placeholder="e.g. Scholarship applicant" />
+                      <div className="flex flex-wrap gap-2">
+                        {waiveOpen === "approve" ? (
+                          <Button
+                            size="sm"
+                            disabled={updating}
+                            onClick={() => {
+                              onStatusChange(app.id, "approved", notes, { waiveFee: true, waiverReason });
+                              setWaiveOpen(null);
+                            }}
+                          >
+                            Waive fee &amp; approve
+                          </Button>
+                        ) : (
+                          <Button size="sm" disabled={busy} onClick={waiveOnly}>
+                            {busy && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+                            Waive fee
+                          </Button>
+                        )}
+                        <Button size="sm" variant="ghost" onClick={() => setWaiveOpen(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => setWaiveOpen("waive")}>Waive fee</Button>
+                  )}
+                </>
+              )}
+              {app.feeStatus === "waived" && (
+                <p className="text-xs text-muted-foreground">
+                  Waived{app.feeWaivedAt ? ` ${formatDistanceToNow(new Date(app.feeWaivedAt), { addSuffix: true })}` : ""}
+                  {app.feeWaiverReason ? `: ${app.feeWaiverReason}` : "."}
+                </p>
+              )}
+              {app.feeStatus === "paid" && app.feePaidAt && (
+                <p className="text-xs text-muted-foreground">Paid {formatDistanceToNow(new Date(app.feePaidAt), { addSuffix: true })}. Refunds: use your Stripe dashboard.</p>
+              )}
+            </div>
+          )}
 
           {/* Status Pipeline */}
           <div>
@@ -257,11 +390,11 @@ function ApplicationDetailPanel({
               <Button
                 variant="outline"
                 className="w-full border-success/30 text-success hover:bg-success/20"
-                onClick={() => onStatusChange(app.id, "approved", notes)}
+                onClick={() => (feeUnpaid ? setWaiveOpen("approve") : onStatusChange(app.id, "approved", notes))}
                 disabled={updating}
               >
                 <CheckCircle2 className="mr-2 h-4 w-4" />
-                Approve Application
+                {feeUnpaid ? "Approve (fee unpaid)" : "Approve Application"}
               </Button>
               <Button
                 variant="outline"
@@ -276,9 +409,27 @@ function ApplicationDetailPanel({
           )}
 
           {isApproved && (
-            <div className="rounded-lg bg-success/10 border border-success/30 p-4 text-center">
-              <CheckCircle2 className="h-6 w-6 text-success mx-auto mb-1" />
-              <p className="text-sm font-medium text-success">Application Approved</p>
+            <div className="space-y-2">
+              <div className="rounded-lg bg-success/10 border border-success/30 p-4 text-center">
+                <CheckCircle2 className="h-6 w-6 text-success mx-auto mb-1" />
+                <p className="text-sm font-medium text-success">Application Approved</p>
+              </div>
+              <div className={`rounded-lg border p-3 text-sm ${app.congratsEmailStatus === "failed" ? "border-destructive/40 bg-destructive/5" : ""}`} data-testid="congrats-email">
+                <p className="flex items-center gap-1.5 font-medium">
+                  <Mail className="h-4 w-4 text-muted-foreground" /> Congratulations email
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {app.congratsEmailStatus === "sent"
+                    ? `Sent${app.congratsEmailSentAt ? ` ${formatDistanceToNow(new Date(app.congratsEmailSentAt), { addSuffix: true })}` : ""}.`
+                    : app.congratsEmailStatus === "failed"
+                    ? `Could not be sent${app.congratsEmailError ? `: ${app.congratsEmailError}` : "."}`
+                    : "No record of it being sent."}
+                </p>
+                <Button size="sm" variant="outline" className="mt-2" onClick={resend} disabled={busy}>
+                  {busy ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                  Resend congratulations email
+                </Button>
+              </div>
             </div>
           )}
 
@@ -343,25 +494,60 @@ export default function AdminAdmissions() {
   const { data: applications, isLoading } = useListApplications(
     statusFilter !== "all" ? { status: statusFilter } : undefined
   );
-  const updateStatus = useUpdateApplicationStatus();
+  const [updating, setUpdating] = useState(false);
 
-  const handleStatusChange = (id: string, status: string, notes?: string) => {
-    updateStatus.mutate(
-      { id, data: { status } },
-      {
-        onSuccess: () => {
-          toast.success(`Status updated to "${STATUS_CONFIG[status]?.label || status}"`);
-          queryClient.invalidateQueries({ queryKey: getListApplicationsQueryKey() });
-          if (selectedApp?.id === id) {
-            setSelectedApp((prev) => prev ? { ...prev, status } : null);
-          }
-        },
-        onError: (err: any) => toast.error(err.message || "Failed to update status"),
+  // PATCH /applications/:id/status directly (not the generated hook) so the
+  // fee gate's 409 code and the approval email result come through.
+  const handleStatusChange = async (id: string, status: string, notes?: string, opts?: StatusChangeOptions) => {
+    setUpdating(true);
+    try {
+      const result = await api<Application & { congratsEmail?: { status: "sent" | "failed"; error?: string } | null }>(
+        `/applications/${id}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status, ...(notes ? { notes } : {}), ...(opts?.waiveFee ? { waiveFee: true, waiverReason: opts.waiverReason } : {}) }),
+        }
+      );
+      if (status === "approved" && result.congratsEmail?.status === "failed") {
+        toast.warning("Approved, but the email could not be sent", {
+          description: "Open the application to resend the congratulations email.",
+        });
+      } else if (status === "approved") {
+        toast.success("Approved. The congratulations email is on its way.");
+      } else {
+        toast.success(`Status updated to "${STATUS_CONFIG[status]?.label || status}"`);
       }
-    );
+      queryClient.invalidateQueries({ queryKey: getListApplicationsQueryKey() });
+      if (selectedApp?.id === id) {
+        setSelectedApp((prev) =>
+          prev
+            ? {
+                ...prev,
+                status,
+                feeStatus: (result.feeStatus as FeeStatus | undefined) ?? prev.feeStatus,
+                congratsEmailStatus: result.congratsEmail?.status ?? result.congratsEmailStatus ?? prev.congratsEmailStatus,
+                congratsEmailError: result.congratsEmail?.error ?? result.congratsEmailError ?? null,
+                congratsEmailSentAt: result.congratsEmailSentAt ?? prev.congratsEmailSentAt,
+                feeWaivedAt: result.feeWaivedAt ?? prev.feeWaivedAt,
+                feeWaiverReason: result.feeWaiverReason ?? prev.feeWaiverReason,
+              }
+            : null
+        );
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "fee_unpaid") {
+        toast.error("The application fee hasn't been paid", { description: "Open the application to waive the fee, or wait for payment." });
+        const app = (applications as Application[] | undefined)?.find((a) => a.id === id);
+        if (app) setSelectedApp(app);
+      } else {
+        toast.error((err as Error).message || "Failed to update status");
+      }
+    } finally {
+      setUpdating(false);
+    }
   };
 
-  const apps = applications ?? [];
+  const apps = (applications ?? []) as Application[];
 
   const counts = {
     all: apps.length,
@@ -392,6 +578,13 @@ export default function AdminAdmissions() {
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">
+            <div className="flex flex-wrap justify-end gap-2">
+            <Button asChild variant="outline">
+              <Link href="/dashboard/admin/admissions/settings">
+                <Settings2 className="h-4 w-4 mr-2" />
+                Admission settings
+              </Link>
+            </Button>
             <Button
               onClick={togglePublish}
               disabled={publishing}
@@ -407,6 +600,7 @@ export default function AdminAdmissions() {
               )}
               {isOpen ? "Close Applications" : "Publish Now"}
             </Button>
+            </div>
             <span className={`text-xs font-medium ${isOpen ? "text-success" : "text-muted-foreground"}`}>
               {isOpen ? "Applications are LIVE" : "Applications are closed"}
             </span>
@@ -494,6 +688,7 @@ export default function AdminAdmissions() {
                     <TableHead className="font-semibold">Applicant</TableHead>
                     <TableHead className="font-semibold">Program</TableHead>
                     <TableHead className="font-semibold">Status</TableHead>
+                    <TableHead className="font-semibold">Fee</TableHead>
                     <TableHead className="font-semibold">Quick Actions</TableHead>
                     <TableHead className="font-semibold text-right">Details</TableHead>
                   </TableRow>
@@ -523,6 +718,9 @@ export default function AdminAdmissions() {
                         <TableCell>
                           <StatusBadge status={app.status} />
                         </TableCell>
+                        <TableCell>
+                          <FeeBadge app={app} />
+                        </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
                             {nextStatus && app.status !== "approved" && app.status !== "rejected" && (
@@ -531,9 +729,9 @@ export default function AdminAdmissions() {
                                 variant="outline"
                                 className="h-7 text-xs"
                                 onClick={() => handleStatusChange(app.id, nextStatus)}
-                                disabled={updateStatus.isPending}
+                                disabled={updating}
                               >
-                                {updateStatus.isPending ? (
+                                {updating ? (
                                   <Loader2 className="h-3 w-3 animate-spin" />
                                 ) : (
                                   <ChevronRight className="h-3 w-3 mr-1" />
@@ -547,7 +745,7 @@ export default function AdminAdmissions() {
                                 variant="ghost"
                                 className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/20"
                                 onClick={() => handleStatusChange(app.id, "rejected")}
-                                disabled={updateStatus.isPending}
+                                disabled={updating}
                               >
                                 <XCircle className="h-3 w-3 mr-1" />
                                 Reject
@@ -582,7 +780,11 @@ export default function AdminAdmissions() {
         open={!!selectedApp}
         onClose={() => setSelectedApp(null)}
         onStatusChange={handleStatusChange}
-        updating={updateStatus.isPending}
+        updating={updating}
+        onChanged={(patch) => {
+          setSelectedApp((prev) => (prev ? { ...prev, ...patch } : prev));
+          queryClient.invalidateQueries({ queryKey: getListApplicationsQueryKey() });
+        }}
       />
     </AdminLayout>
   );

@@ -87,6 +87,8 @@ interface Summary {
   expensesCents: number;
   netCents: number;
   expensesByCategory: { category: string; amountCents: number }[];
+  /** Tuition vs "Application fees" (older servers don't send it). */
+  revenueByCategory?: { category: string; amountCents: number }[];
   monthly: { month: string; revenueCents: number; expensesCents: number; netCents: number }[];
 }
 
@@ -311,6 +313,16 @@ export default function AdminAccounting() {
                         <TrendingUp className="h-4 w-4 text-success" /> Revenue
                       </div>
                       <div className="text-2xl font-bold text-success tabular-nums">{money(summary.revenueCents)}</div>
+                      {summary.revenueByCategory && summary.revenueByCategory.some((c) => c.amountCents > 0) && (
+                        <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground" data-testid="revenue-by-category">
+                          {summary.revenueByCategory.map((c) => (
+                            <li key={c.category} className="flex justify-between gap-2">
+                              <span>{c.category}</span>
+                              <span className="tabular-nums">{money(c.amountCents)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </CardContent>
                   </Card>
                   <Card>
