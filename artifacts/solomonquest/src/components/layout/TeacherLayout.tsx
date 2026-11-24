@@ -209,7 +209,7 @@ export function TeacherLayout({ children }: TeacherLayoutProps) {
           <LogOut className="mr-2.5 h-4 w-4" />
           Sign Out
         </Button>
-        <p className="text-center text-[10px] text-sidebar-foreground/40 tracking-widest uppercase mt-2">Powered by TIBLOGICS</p>
+        <p className="text-center text-[8px] text-sidebar-foreground/40 tracking-[0.2em] uppercase mt-2">Powered by TIBLOGICS</p>
       </div>
     </div>
   );

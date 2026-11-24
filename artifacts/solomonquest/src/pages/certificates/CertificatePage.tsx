@@ -45,6 +45,8 @@ export default function CertificatePage() {
       ? "/dashboard/admin/certificates"
       : user?.role === "parent"
       ? "/dashboard/parent"
+      : user?.role === "teacher"
+      ? "/dashboard/teacher"
       : "/dashboard/student/certificates";
 
   const copyLink = () => {

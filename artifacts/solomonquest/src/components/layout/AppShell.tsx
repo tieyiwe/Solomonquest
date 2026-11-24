@@ -26,7 +26,7 @@ export default function AppShell({ children, title, sidebar }: AppShellProps) {
         <Link href="/">
           <a className="flex flex-col leading-tight mr-auto">
             <span className="text-base font-bold text-primary">SolomonQuest</span>
-            <span className="text-[9px] text-muted-foreground tracking-widest uppercase">Powered by TIBLOGICS</span>
+            <span className="text-[7.5px] text-muted-foreground tracking-[0.2em] uppercase">Powered by TIBLOGICS</span>
           </a>
         </Link>
 

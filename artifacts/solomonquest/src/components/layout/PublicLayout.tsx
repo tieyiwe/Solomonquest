@@ -29,7 +29,7 @@ export function PublicLayout({ children, showFeatured = false }: { children: Rea
             <span className="h-9 w-9 rounded-full bg-brand text-gold ring-1 ring-gold/40 flex items-center justify-center font-serif font-semibold text-lg shrink-0 shadow-sm" aria-hidden="true">S</span>
             <span className="flex flex-col leading-none min-w-0">
               <span className="font-serif text-xl sm:text-[1.4rem] font-semibold text-foreground tracking-tight truncate">SolomonQuest</span>
-              <span className="hidden sm:block mt-1 text-[9px] text-muted-foreground tracking-[0.3em] uppercase">Powered by TIBLOGICS</span>
+              <span className="hidden sm:block mt-1 text-[7.5px] text-muted-foreground tracking-[0.25em] uppercase">Powered by TIBLOGICS</span>
             </span>
           </Link>
           {/* On the home page, phones get these actions in the bottom bar instead. */}
@@ -103,7 +103,7 @@ export function PublicLayout({ children, showFeatured = false }: { children: Rea
         <div className="border-t border-white/10">
           <div className="container mx-auto max-w-6xl px-5 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[hsl(40_20%_88%/0.55)]">
             <span>&copy; {new Date().getFullYear()} SolomonQuest LMS. Crafted for education.</span>
-            <span className="tracking-[0.3em] uppercase">Powered by TIBLOGICS</span>
+            <span className="text-[9px] tracking-[0.25em] uppercase">Powered by TIBLOGICS</span>
           </div>
         </div>
       </footer>
