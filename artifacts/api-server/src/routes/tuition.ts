@@ -3,6 +3,8 @@ import { supabaseAdmin } from "../lib/supabase";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/auth";
 import { getStripe, isStripeConfigured } from "../lib/stripe";
 import { requireSchoolFeature } from "../lib/featureFlags";
+import { buildInstallmentRows } from "../lib/programTuition";
+import { isSupportedCurrency } from "../lib/admissions";
 
 const router: IRouter = Router();
 
@@ -21,6 +23,7 @@ function mapPlan(p: Record<string, unknown>) {
     allowFullPayment: p.allow_full_payment,
     allowInstallments: p.allow_installments,
     installmentCount: p.installment_count,
+    pricingNote: p.pricing_note ?? null,
     createdAt: p.created_at,
   };
 }
@@ -49,13 +52,15 @@ router.post("/tuition-plans", requireAuth, requireSchoolFeature("tuition"), asyn
     return;
   }
 
-  const { courseId, programId, amountCents, allowFullPayment, allowInstallments, installmentCount } = req.body as {
+  const { courseId, programId, amountCents, allowFullPayment, allowInstallments, installmentCount, currency, pricingNote } = req.body as {
     courseId?: string;
     programId?: string;
     amountCents?: number;
     allowFullPayment?: boolean;
     allowInstallments?: boolean;
     installmentCount?: number;
+    currency?: string;
+    pricingNote?: string | null;
   };
 
   if ((!courseId && !programId) || (courseId && programId)) {
@@ -68,6 +73,18 @@ router.post("/tuition-plans", requireAuth, requireSchoolFeature("tuition"), asyn
   }
   if (!allowFullPayment && !allowInstallments) {
     res.status(400).json({ error: "At least one payment option (full or installments) must be enabled" });
+    return;
+  }
+  if (!Number.isInteger(amountCents) || amountCents > 100_000_000_00) {
+    res.status(400).json({ error: "amountCents must be a whole number of cents" });
+    return;
+  }
+  if (currency !== undefined && !isSupportedCurrency(currency)) {
+    res.status(400).json({ error: "Unsupported currency" });
+    return;
+  }
+  if (pricingNote !== undefined && pricingNote !== null && (typeof pricingNote !== "string" || pricingNote.length > 200)) {
+    res.status(400).json({ error: "Pricing note must be 200 characters or fewer" });
     return;
   }
 
@@ -96,7 +113,7 @@ router.post("/tuition-plans", requireAuth, requireSchoolFeature("tuition"), asyn
     .eq("school_id", req.schoolId ?? "")
     .maybeSingle();
 
-  const row = {
+  const row: Record<string, unknown> = {
     school_id: req.schoolId,
     course_id: courseId ?? null,
     program_id: programId ?? null,
@@ -107,6 +124,10 @@ router.post("/tuition-plans", requireAuth, requireSchoolFeature("tuition"), asyn
     created_by: req.userId,
     updated_at: new Date().toISOString(),
   };
+  // Only sent when the caller set them, so older clients (course tuition
+  // dialog) keep working on a database without the pricing_note column.
+  if (currency !== undefined) row.currency = currency.toLowerCase();
+  if (pricingNote !== undefined) row.pricing_note = pricingNote?.trim() ? pricingNote.trim() : null;
 
   const { data, error } = existing
     ? await supabaseAdmin
@@ -266,32 +287,9 @@ router.post("/tuition-payments", requireAuth, requireSchoolFeature("tuition"), a
     return;
   }
 
-  // Split the total evenly across installments (remainder goes on the last
-  // one so cents always add up), due monthly starting today.
-  //
-  // Dates are built in UTC: `new Date(y, m, d)` is LOCAL midnight, and
-  // `.toISOString()` then converts to UTC — on any server ahead of UTC
-  // that lands on the previous calendar day, so every due_date was one day
-  // early. The day-of-month is also clamped so "Jan 31 + 1 month" is Feb 28,
-  // not Mar 3 (JS Date overflow), keeping installments exactly one calendar
-  // month apart.
-  const base = Math.floor(plan.amount_cents / installmentCount);
-  const remainder = plan.amount_cents - base * installmentCount;
-  const now = new Date();
-  const installmentRows = Array.from({ length: installmentCount }, (_, i) => {
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth() + i;
-    const lastDayOfTargetMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-    const day = Math.min(now.getUTCDate(), lastDayOfTargetMonth);
-    const dueDate = new Date(Date.UTC(year, month, day));
-    return {
-      payment_id: payment.id,
-      installment_number: i + 1,
-      amount_cents: base + (i === installmentCount - 1 ? remainder : 0),
-      due_date: dueDate.toISOString().slice(0, 10),
-      status: "pending",
-    };
-  });
+  // Even split, remainder on the last one, due monthly from today (UTC,
+  // day-of-month clamped) -- see buildInstallmentRows.
+  const installmentRows = buildInstallmentRows(payment.id as string, plan.amount_cents as number, installmentCount);
 
   const { data: installments, error: installmentsError } = await supabaseAdmin
     .from("tuition_installments")

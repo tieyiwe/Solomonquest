@@ -34,6 +34,16 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import {
+  api,
+  fetchPublicAdmissions,
+  formatMoney,
+  installmentHint,
+  priceLabel,
+  type FeeInfo,
+  type PublicProgram,
+} from "@/lib/admissions";
+import { CreditCard, Layers } from "lucide-react";
 
 interface ApplicationFormField {
   id: string;
@@ -368,6 +378,7 @@ export default function SchoolApply() {
   const [formResponses, setFormResponses] = useState<Record<string, string | boolean>>({});
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
 
   const { data: school, isLoading: isSchoolLoading } = useGetSchoolBySlug(slug, {
     query: { enabled: !!slug },
@@ -408,6 +419,36 @@ export default function SchoolApply() {
 
   const schoolCourses = (courses ?? []).filter((c) => c.schoolId === school?.id);
 
+  // Programs with their prices + the application fee (public endpoint, so
+  // it works before the applicant belongs to the school).
+  const { data: admissions } = useQuery({
+    queryKey: ["public-admissions", school?.id],
+    queryFn: () => fetchPublicAdmissions(school!.id),
+    enabled: !!school?.id,
+  });
+  const programs: PublicProgram[] = admissions?.programs ?? [];
+  const selectedProgram = programs.find((p) => p.id === selectedProgramId) ?? null;
+  // Courses that all belong to one program count as applying to it (the
+  // server does the same), so its price and fee show here too.
+  const impliedProgram = (() => {
+    if (selectedProgram) return selectedProgram;
+    const ids = new Set(
+      schoolCourses.filter((c) => selectedCourseIds.includes(c.id)).map((c) => c.programId ?? null)
+    );
+    const only = ids.size === 1 ? Array.from(ids)[0] : null;
+    return only ? programs.find((p) => p.id === only) ?? null : null;
+  })();
+  const fee: FeeInfo | null = impliedProgram ? impliedProgram.applicationFee : admissions?.applicationFee ?? null;
+  const feeDue = !!fee?.required;
+
+  const chooseProgram = (programId: string | null) => {
+    setSelectedProgramId(programId);
+    if (programId) {
+      // Picking a program selects its courses (still adjustable below).
+      setSelectedCourseIds(schoolCourses.filter((c) => c.programId === programId).map((c) => c.id));
+    }
+  };
+
   const toggleCourse = (courseId: string) => {
     setSelectedCourseIds((prev) =>
       prev.includes(courseId) ? prev.filter((id) => id !== courseId) : [...prev, courseId]
@@ -418,7 +459,7 @@ export default function SchoolApply() {
     setFormResponses((prev) => ({ ...prev, [fieldId]: value }));
   };
 
-  const canProceedStep1 = selectedCourseIds.length > 0;
+  const canProceedStep1 = selectedCourseIds.length > 0 || !!selectedProgramId;
 
   const canProceedStep2 = () => {
     if (!formConfig?.fields) return true;
@@ -441,6 +482,7 @@ export default function SchoolApply() {
     try {
       const payload = {
         schoolId: school.id,
+        programId: selectedProgramId ?? undefined,
         courseIds: selectedCourseIds,
         // POST /applications reads formResponses as [{ fieldId, value }]
         // and silently drops anything that isn't an array.
@@ -462,6 +504,23 @@ export default function SchoolApply() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || err.message || "Failed to submit application");
+      }
+
+      const created = (await res.json().catch(() => ({}))) as { id?: string; requiresPayment?: boolean };
+      if (created.requiresPayment && created.id) {
+        // Saved as "awaiting payment"; pay on the school's Stripe account.
+        // If checkout can't start, the status page has a Pay now button.
+        try {
+          const { url } = await api<{ url: string | null }>(`/applications/${created.id}/fee-checkout`, { method: "POST" });
+          if (url) {
+            window.location.href = url;
+            return;
+          }
+        } catch (err: any) {
+          toast.error(err?.message || "Couldn't open payment. You can pay from your application page.");
+        }
+        setLocation(`/applications/${created.id}`);
+        return;
       }
 
       toast.success(`Application submitted to ${school.name}!`);
@@ -559,6 +618,64 @@ export default function SchoolApply() {
 
         {step === 1 && (
           <div className="space-y-6">
+            {programs.length > 0 && (
+              <div className="space-y-3" data-testid="program-picker">
+                <div>
+                  <h2 className="text-xl font-bold text-foreground mb-1">Choose a Program</h2>
+                  <p className="text-muted-foreground text-sm">
+                    Pick the program you're applying to. Its courses are selected for you.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {programs.map((p) => {
+                    const active = selectedProgramId === p.id;
+                    const hint = installmentHint(p.price);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => chooseProgram(active ? null : p.id)}
+                        aria-pressed={active}
+                        className={cn(
+                          "text-left rounded-xl border-2 p-4 transition-all",
+                          active ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-foreground flex items-start gap-1.5">
+                              <Layers className="h-4 w-4 text-primary shrink-0" />
+                              <span className="break-words">{p.name}</span>
+                            </p>
+                            {p.level && <p className="text-xs text-muted-foreground mt-0.5">{p.level}</p>}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className={cn("font-bold", p.price && p.price.amountCents > 0 ? "text-foreground" : "text-success")}>
+                              {priceLabel(p.price)}
+                            </p>
+                            {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+                          </div>
+                        </div>
+                        {p.price?.pricingNote && p.price.amountCents > 0 && (
+                          <p className="text-xs text-muted-foreground mt-2">{p.price.pricingNote}</p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {feeDue && fee && (
+              <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4" data-testid="fee-notice">
+                <CreditCard className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                <p className="text-sm text-foreground">
+                  This school charges an application fee of <strong>{formatMoney(fee.amountCents, fee.currency)}</strong>,
+                  paid online when you submit.
+                </p>
+              </div>
+            )}
+
             <div>
               <h2 className="text-xl font-bold text-foreground mb-1">Select Courses</h2>
               <p className="text-muted-foreground text-sm">
@@ -806,7 +923,54 @@ export default function SchoolApply() {
               </CardContent>
             </Card>
 
-            {session && selectedCourseIds.length > 0 && (
+            {impliedProgram && (
+              <Card data-testid="review-program">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-primary" />
+                    Program
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-foreground">{impliedProgram.name}</p>
+                    {impliedProgram.price?.pricingNote && impliedProgram.price.amountCents > 0 && (
+                      <p className="text-xs text-muted-foreground mt-0.5">{impliedProgram.price.pricingNote}</p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold">Tuition: {priceLabel(impliedProgram.price)}</p>
+                    {installmentHint(impliedProgram.price) && (
+                      <p className="text-xs text-muted-foreground">{installmentHint(impliedProgram.price)}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-0.5">Payable after you're accepted</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {feeDue && fee && (
+              <Card className="border-warning/40" data-testid="review-fee">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <CreditCard className="h-4 w-4 text-warning" />
+                    Application fee
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 space-y-1">
+                  <div className="flex justify-between text-sm font-semibold">
+                    <span>Due now</span>
+                    <span>{formatMoney(fee.amountCents, fee.currency)}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    After you submit, you'll pay securely with Stripe on {school.name}'s account. Your application is
+                    saved first, so you can also pay later from your application page.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {session && selectedCourseIds.length > 0 && !impliedProgram && (
               <TuitionSummary courseIds={selectedCourseIds} accessToken={session.access_token} />
             )}
 
@@ -885,6 +1049,11 @@ export default function SchoolApply() {
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Submitting...
+                  </>
+                ) : feeDue && fee ? (
+                  <>
+                    Submit &amp; pay {formatMoney(fee.amountCents, fee.currency)}
+                    <CreditCard className="ml-2 h-4 w-4" />
                   </>
                 ) : (
                   <>

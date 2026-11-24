@@ -21,6 +21,8 @@ const AdminAccounting = lazy(() => import("@/pages/admin/AdminAccounting"));
 const AdminPrograms = lazy(() => import("@/pages/admin/AdminPrograms"));
 const AdminTerms = lazy(() => import("@/pages/admin/AdminTerms"));
 const AdminAdmissions = lazy(() => import("@/pages/admin/AdminAdmissions"));
+const AdminAdmissionSettings = lazy(() => import("@/pages/admin/AdminAdmissionSettings"));
+const ApplicationStatus = lazy(() => import("@/pages/school/ApplicationStatus"));
 const AdminSettings = lazy(() => import("@/pages/admin/AdminSettings"));
 const AdminAnalytics = lazy(() => import("@/pages/admin/AdminAnalytics"));
 const AdminResources = lazy(() => import("@/pages/admin/AdminResources"));
@@ -135,7 +137,7 @@ const RESERVED_ROOT_SEGMENTS = new Set([
   "schools", "dashboard", "admin", "super_admin", "teacher", "student", "parent",
   "chat", "forum", "invite", "messages", "calendar", "settings", "notifications",
   "profile", "transcript", "transcripts", "help", "assets", "static", "reports",
-  "verify", "certificates",
+  "verify", "certificates", "applications",
 ]);
 
 function RootSchoolRoute({ apply = false }: { apply?: boolean }) {
@@ -195,6 +197,13 @@ export function Router() {
         </Route>
         <Route path="/dashboard/admin/admissions">
           <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminAdmissions /></ProtectedRoute>
+        </Route>
+        <Route path="/dashboard/admin/admissions/settings">
+          <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminAdmissionSettings /></ProtectedRoute>
+        </Route>
+        {/* An applicant's own application: status + "Pay now" for an application fee (Stripe returns here). */}
+        <Route path="/applications/:id">
+          <ProtectedRoute><ApplicationStatus /></ProtectedRoute>
         </Route>
         <Route path="/dashboard/admin/resources">
           <ProtectedRoute allowedRoles={["admin", "super_admin"]}><AdminResources /></ProtectedRoute>

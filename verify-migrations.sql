@@ -258,7 +258,19 @@ select * from (values
     and exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='school_digest_settings' and column_name='audience_course_ids')
     and exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='digest_runs' and column_name='emails_failed'))
+      where table_schema='public' and table_name='digest_runs' and column_name='emails_failed')),
+
+  ('admissions-pricing.sql: school/program admission settings + application fee columns + pricing_note',
+    exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='school_admission_settings')
+    and exists (select 1 from information_schema.tables
+      where table_schema='public' and table_name='program_admission_settings')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='student_applications' and column_name='fee_status')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='student_applications' and column_name='congrats_email_status')
+    and exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='tuition_plans' and column_name='pricing_note'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

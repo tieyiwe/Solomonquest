@@ -4,6 +4,7 @@ import type Stripe from "stripe";
 import { supabaseAdmin } from "../lib/supabase";
 import { getStripe, getStripeWebhookSecret, isStripeConfigured } from "../lib/stripe";
 import { logger } from "../lib/logger";
+import { handleApplicationFeeSession } from "../lib/admissionApproval";
 
 const router: IRouter = Router();
 
@@ -36,6 +37,19 @@ router.post(
     }
 
     try {
+      // Application fees (routes/admissions.ts). Validated against our own
+      // rows -- account, amount, currency, paid status, replay -- in
+      // lib/admissions.ts evaluateApplicationFeeSession. Async payment
+      // methods finish with async_payment_succeeded instead of completed.
+      if (
+        (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") &&
+        (event.data.object as Stripe.Checkout.Session).metadata?.type === "application_fee"
+      ) {
+        await handleApplicationFeeSession(event.account, event.data.object as Stripe.Checkout.Session);
+        res.json({ received: true });
+        return;
+      }
+
       if (event.type === "checkout.session.completed") {
         const session = event.data.object as Stripe.Checkout.Session;
         const installmentId = session.metadata?.tuition_installment_id;

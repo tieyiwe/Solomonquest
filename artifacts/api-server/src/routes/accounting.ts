@@ -221,7 +221,20 @@ router.get("/accounting/summary", requireAuth, async (req: AuthenticatedRequest,
     return;
   }
 
-  const revenueCents = (paidInstallmentsRes.data ?? []).reduce((sum, r) => sum + ((r as Record<string, unknown>).amount_cents as number), 0);
+  // Paid application fees (admissions-pricing.sql), by the day they were
+  // paid. A database without that migration simply has none.
+  const feesRes = await supabaseAdmin
+    .from("student_applications")
+    .select("fee_amount_cents, fee_paid_at")
+    .eq("school_id", schoolId)
+    .eq("fee_status", "paid")
+    .gte("fee_paid_at", `${from}T00:00:00.000Z`)
+    .lt("fee_paid_at", toExclusive.toISOString().slice(0, 10) + "T00:00:00.000Z");
+  const paidFees = feesRes.error ? [] : ((feesRes.data ?? []) as { fee_amount_cents: number | null; fee_paid_at: string }[]);
+  const applicationFeesCents = paidFees.reduce((sum, f) => sum + (f.fee_amount_cents ?? 0), 0);
+
+  const tuitionRevenueCents = (paidInstallmentsRes.data ?? []).reduce((sum, r) => sum + ((r as Record<string, unknown>).amount_cents as number), 0);
+  const revenueCents = tuitionRevenueCents + applicationFeesCents;
   const expensesCents = (expensesRes.data ?? []).reduce((sum, r) => sum + (r.amount_cents as number), 0);
 
   const expensesByCategory = new Map<string, number>();
@@ -239,6 +252,12 @@ router.get("/accounting/summary", requireAuth, async (req: AuthenticatedRequest,
     entry.revenueCents += (r as Record<string, unknown>).amount_cents as number;
     monthly.set(key, entry);
   }
+  for (const f of paidFees) {
+    const key = f.fee_paid_at.slice(0, 7);
+    const entry = monthly.get(key) ?? { revenueCents: 0, expensesCents: 0 };
+    entry.revenueCents += f.fee_amount_cents ?? 0;
+    monthly.set(key, entry);
+  }
   for (const e of expensesRes.data ?? []) {
     const key = (e.expense_date as string).slice(0, 7);
     const entry = monthly.get(key) ?? { revenueCents: 0, expensesCents: 0 };
@@ -252,6 +271,12 @@ router.get("/accounting/summary", requireAuth, async (req: AuthenticatedRequest,
     revenueCents,
     expensesCents,
     netCents: revenueCents - expensesCents,
+    tuitionRevenueCents,
+    applicationFeesCents,
+    revenueByCategory: [
+      { category: "Tuition", amountCents: tuitionRevenueCents },
+      { category: "Application fees", amountCents: applicationFeesCents },
+    ],
     expensesByCategory: Array.from(expensesByCategory.entries()).map(([category, amountCents]) => ({ category, amountCents })),
     monthly: Array.from(monthly.entries())
       .map(([month, v]) => ({ month, ...v, netCents: v.revenueCents - v.expensesCents }))

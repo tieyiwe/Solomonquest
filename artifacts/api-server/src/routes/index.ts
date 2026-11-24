@@ -47,6 +47,7 @@ import certificatesRouter from "./certificates";
 import questionBanksRouter from "./question-banks";
 import bulkImportRouter from "./bulk-import";
 import parentDigestRouter from "./parent-digest";
+import admissionsRouter from "./admissions";
 
 const router: IRouter = Router();
 
@@ -98,5 +99,6 @@ router.use(certificatesRouter);
 router.use(questionBanksRouter);
 router.use(bulkImportRouter);
 router.use(parentDigestRouter);
+router.use(admissionsRouter);
 
 export default router;

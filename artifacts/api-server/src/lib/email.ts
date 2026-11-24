@@ -640,3 +640,17 @@ export async function sendGenericNotificationEmail({
 
   await send(to, title, baseLayout(title, body));
 }
+
+// baseLayout and escapeHtml (exported above) are also used by templates kept
+// in their own files, e.g. lib/admissionEmail.ts.
+
+/**
+ * Like `send`, but reports failure instead of swallowing it, for emails whose
+ * delivery the UI tracks (the admission congratulations email shows
+ * "could not be sent" with a Resend button).
+ */
+export async function sendEmailOrThrow(to: string, subject: string, html: string, text?: string): Promise<void> {
+  const t = getTransporter();
+  if (!t) throw new Error("Email is not set up on this platform (SMTP is not configured)");
+  await t.sendMail({ from: FROM, to, subject, html, ...(text ? { text } : {}) });
+}
