@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MockEl, MockScreen, MockState, MockTone } from "../types";
-import { CHROME_LABEL, NAV } from "../mock";
+import { CHROME_LABEL, NAV, STAFF_EXTRA_NAV } from "../mock";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   award: Award, bell: Bell, calendar: Calendar, camera: Camera, check: Check, dice: Dices, dollar: DollarSign,
@@ -360,11 +360,13 @@ export interface MockScreenProps {
   reduced: boolean;
   /** Narrow layout: show the slide-in navigation drawer (when a step points at a nav item). */
   drawerOpen: boolean;
+  /** Staff see the student sidebar plus Terms & Scheduling. */
+  staffNav?: boolean;
 }
 
-export function MockScreenView({ screen, state, narrow, typing, reduced, drawerOpen }: MockScreenProps) {
+export function MockScreenView({ screen, state, narrow, typing, reduced, drawerOpen, staffNav = false }: MockScreenProps) {
   const ctx: Ctx = { state, typing, reduced };
-  const nav = NAV[screen.chrome];
+  const nav = staffNav && screen.chrome === "student" ? [...NAV.student, ...STAFF_EXTRA_NAV] : NAV[screen.chrome];
   const hasSidebar = nav.length > 0;
   const overlays = collectOverlays([...(screen.actions ?? []), ...screen.body]).map((o) => merge(o, state));
   const isPublic = screen.chrome === "public";

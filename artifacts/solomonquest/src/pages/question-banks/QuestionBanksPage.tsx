@@ -78,7 +78,7 @@ function TagEditor({ tags, onChange, disabled }: { tags: string[]; onChange: (t:
 // ─── One bank question (edits auto-save, debounced) ─────────────────────────
 
 function BankQuestionItem({
-  bankId, q, index, total, canEdit, onDeleted, onSaved,
+  bankId, q, index, total, canEdit, onDeleted, onSaved, onMove,
 }: {
   bankId: string;
   q: BankQuestion;
@@ -87,6 +87,7 @@ function BankQuestionItem({
   canEdit: boolean;
   onDeleted: () => void;
   onSaved: (q: BankQuestion) => void;
+  onMove: (dir: "up" | "down") => void;
 }) {
   const [editor, setEditor] = useState<Question>(() => toEditor(q));
   const [tags, setTags] = useState<string[]>(q.tags);
@@ -142,7 +143,7 @@ function BankQuestionItem({
         total={total}
         onUpdate={(next) => { setEditor(next); save(next, tags); }}
         onDelete={remove}
-        onMove={() => {}}
+        onMove={onMove}
       />
       <div className="px-1">
         <TagEditor tags={tags} onChange={(t) => { setTags(t); save(editor, t); }} />
@@ -368,6 +369,35 @@ function BankDetailPanel({
   const patchLocal = (fn: (qs: BankQuestion[]) => BankQuestion[]) =>
     qc.setQueryData<BankDetail>(["qbank", bankId], (old) => (old ? { ...old, questions: fn(old.questions) } : old));
 
+  // Up/down arrows: swap with the neighbouring *visible* question (so it also
+  // works while a tag filter is on), update the cache at once, then save the
+  // whole bank order. Rolls back if the save fails.
+  const moving = useRef(false);
+  const moveQuestion = async (qid: string, dir: "up" | "down") => {
+    if (moving.current) return;
+    const current = qc.getQueryData<BankDetail>(["qbank", bankId]);
+    if (!current) return;
+    const shown = current.questions.filter((q) => tag === ALL || q.tags.includes(tag));
+    const vi = shown.findIndex((q) => q.id === qid);
+    const neighbour = shown[dir === "up" ? vi - 1 : vi + 1];
+    if (vi < 0 || !neighbour) return;
+    const prev = current.questions;
+    const next = prev.slice();
+    const a = next.findIndex((q) => q.id === qid);
+    const b = next.findIndex((q) => q.id === neighbour.id);
+    [next[a], next[b]] = [next[b], next[a]];
+    moving.current = true;
+    patchLocal(() => next);
+    try {
+      await apiJson(`/api/question-banks/${bankId}/questions/order`, { method: "PUT", json: { questionIds: next.map((q) => q.id) } });
+    } catch (e) {
+      patchLocal(() => prev);
+      toast.error((e as Error).message || "Couldn't save the new order");
+    } finally {
+      moving.current = false;
+    }
+  };
+
   const visible = useMemo(() => (bank?.questions ?? []).filter((q) => tag === ALL || q.tags.includes(tag)), [bank, tag]);
   const allTags = useMemo(() => Array.from(new Set((bank?.questions ?? []).flatMap((q) => q.tags))).sort(), [bank]);
 
@@ -468,6 +498,7 @@ function BankDetailPanel({
               total={visible.length}
               canEdit={bank.canEdit}
               onSaved={(saved) => patchLocal((qs) => qs.map((x) => (x.id === saved.id ? saved : x)))}
+              onMove={(dir) => moveQuestion(q.id, dir)}
               onDeleted={() => { patchLocal((qs) => qs.filter((x) => x.id !== q.id)); qc.invalidateQueries({ queryKey: ["qbanks"] }); }}
             />
           ))}

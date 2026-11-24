@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "wouter";
 import { TeacherLayout } from "@/components/layout/TeacherLayout";
 import {
@@ -92,6 +92,8 @@ interface AssignmentFormData {
   assignment_type: "standard" | "video";
   video_url: string;
   require_full_watch: boolean;
+  /** Video length as typed/shown ("m:ss", "h:mm:ss" or seconds); "" = unknown. */
+  video_duration: string;
   rubric: RubricCriterionForm[];
   allow_late_submissions: boolean;
   late_penalty_per_day: string;
@@ -109,6 +111,7 @@ const emptyForm: AssignmentFormData = {
   assignment_type: "standard",
   video_url: "",
   require_full_watch: true,
+  video_duration: "",
   rubric: [],
   allow_late_submissions: true,
   late_penalty_per_day: "0",
@@ -123,6 +126,71 @@ function isoToLocalInput(iso: string | null | undefined): string {
   return isNaN(d.getTime()) ? "" : format(d, "yyyy-MM-dd'T'HH:mm");
 }
 
+const MAX_VIDEO_SECONDS = 12 * 60 * 60;
+
+/** 75.4 → "1:15", 3725 → "1:02:05". */
+function formatVideoDuration(totalSeconds: number): string {
+  const t = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = t % 60;
+  const ss = String(sec).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}
+
+/** "1:15" / "1:02:05" / "75" / "75.4" → seconds; "" → null; anything else → NaN. */
+function parseVideoDuration(text: string): number | null {
+  const v = text.trim();
+  if (!v) return null;
+  if (/^\d+(\.\d+)?$/.test(v)) return Number(v);
+  const parts = v.split(":");
+  if (parts.length < 2 || parts.length > 3 || parts.some((p) => !/^\d+(\.\d+)?$/.test(p))) return NaN;
+  return parts.map(Number).reduce((acc, n) => acc * 60 + n, 0);
+}
+
+/**
+ * Reads the video's real length in a hidden <video preload="metadata">, so
+ * the server can check students' watch progress against it instead of the
+ * length their own browser reports. Hosted pages (YouTube, Vimeo) and files
+ * the browser can't open fail here; the teacher then types the length.
+ */
+function useVideoMetadataDuration(url: string) {
+  const [src, setSrc] = useState("");
+  const [state, setState] = useState<{ status: "idle" | "loading" | "ok" | "error"; seconds: number | null; for: string }>({
+    status: "idle",
+    seconds: null,
+    for: "",
+  });
+  // Wait until the teacher stops typing before loading anything.
+  useEffect(() => {
+    const u = url.trim();
+    const t = setTimeout(() => setSrc(/^https?:\/\/\S+$/i.test(u) ? u : ""), 500);
+    return () => clearTimeout(t);
+  }, [url]);
+  useEffect(() => {
+    setState({ status: src ? "loading" : "idle", seconds: null, for: src });
+  }, [src]);
+  const probe = src ? (
+    <video
+      key={src}
+      src={src}
+      preload="metadata"
+      muted
+      playsInline
+      aria-hidden="true"
+      className="hidden"
+      data-testid="video-duration-probe"
+      onLoadedMetadata={(e) => {
+        const d = e.currentTarget.duration;
+        if (Number.isFinite(d) && d > 0 && d <= MAX_VIDEO_SECONDS) setState({ status: "ok", seconds: d, for: src });
+        else setState({ status: "error", seconds: null, for: src });
+      }}
+      onError={() => setState({ status: "error", seconds: null, for: src })}
+    />
+  ) : null;
+  return { ...state, probe };
+}
+
 function toFormData(a: Assignment & { instructions?: string | null; fileUrl?: string | null }): AssignmentFormData {
   const rubric = (a as any).rubric as { id: string; name: string; maxPoints: number }[] | null;
   return {
@@ -135,6 +203,7 @@ function toFormData(a: Assignment & { instructions?: string | null; fileUrl?: st
     assignment_type: (a as any).assignmentType ?? "standard",
     video_url: (a as any).videoUrl ?? "",
     require_full_watch: (a as any).requireFullWatch ?? true,
+    video_duration: (a as any).videoDurationSeconds ? formatVideoDuration((a as any).videoDurationSeconds) : "",
     rubric: (rubric ?? []).map((c) => ({ id: c.id, name: c.name, maxPoints: String(c.maxPoints) })),
     allow_late_submissions: (a as any).allowLateSubmissions !== false,
     late_penalty_per_day: String((a as any).latePenaltyPerDay ?? 0),
@@ -351,6 +420,11 @@ function AssignmentFormDialog({
       toast.error("Video URL is required for video assignments");
       return;
     }
+    const videoDuration = isVideo ? parseVideoDuration(form.video_duration) : null;
+    if (isVideo && videoDuration !== null && (!Number.isFinite(videoDuration) || videoDuration <= 0 || videoDuration > MAX_VIDEO_SECONDS)) {
+      toast.error("Enter the video length as minutes:seconds (e.g. 12:30), up to 12 hours");
+      return;
+    }
 
     const perDay = Number(form.late_penalty_per_day || 0);
     const maxPenalty = Number(form.late_penalty_max || 100);
@@ -387,6 +461,8 @@ function AssignmentFormDialog({
       assignment_type: form.assignment_type,
       video_url: isVideo ? form.video_url.trim() : undefined,
       require_full_watch: isVideo ? form.require_full_watch : undefined,
+      // The real length, checked by the server on every watch-progress report.
+      videoDurationSeconds: isVideo ? videoDuration : undefined,
       rubric: rubricRows.length > 0 ? rubricRows.map((c) => ({ id: c.id, name: c.name.trim(), maxPoints: Number(c.maxPoints) })) : undefined,
       allow_late_submissions: form.allow_late_submissions,
       late_penalty_per_day: form.allow_late_submissions ? perDay : 0,
@@ -442,6 +518,22 @@ function AssignmentFormDialog({
   const set = (key: keyof AssignmentFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
 
+  const meta = useVideoMetadataDuration(open && form.assignment_type === "video" ? form.video_url : "");
+  // A length read from the file itself always wins over a typed one. A length
+  // filled in automatically for a previous link is cleared if the new link
+  // can't be read, so it never sticks to the wrong video.
+  const [autoFilledFor, setAutoFilledFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (meta.status === "ok" && meta.seconds) {
+      const text = formatVideoDuration(meta.seconds);
+      setForm((f) => (f.video_duration === text ? f : { ...f, video_duration: text }));
+      setAutoFilledFor(meta.for);
+    } else if (meta.status === "error" && autoFilledFor && autoFilledFor !== meta.for) {
+      setForm((f) => ({ ...f, video_duration: "" }));
+      setAutoFilledFor(null);
+    }
+  }, [meta.status, meta.seconds, meta.for]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -486,6 +578,29 @@ function AssignmentFormDialog({
                 <p className="text-xs text-muted-foreground">
                   Use a direct video file URL (e.g. from Supabase Storage). Skip-prevention works best with direct .mp4 links.
                 </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="video_duration">Video length</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="video_duration"
+                    inputMode="numeric"
+                    placeholder="m:ss"
+                    className="w-32"
+                    value={form.video_duration}
+                    onChange={set("video_duration")}
+                    aria-describedby="video_duration_help"
+                  />
+                  {meta.status === "loading" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Reading video length" />}
+                </div>
+                <p id="video_duration_help" className="text-xs text-muted-foreground" aria-live="polite">
+                  {meta.status === "ok"
+                    ? "Read from the video file. Students' progress is checked against this length."
+                    : meta.status === "error"
+                    ? "Couldn't read the length from this link (hosted pages and some files block it). Type it in, e.g. 12:30."
+                    : "Filled in automatically from the video file. Students' progress is checked against this length."}
+                </p>
+                {meta.probe}
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

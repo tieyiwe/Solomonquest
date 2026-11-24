@@ -94,11 +94,37 @@ async function writeAssignment(
   op: (row: Record<string, unknown>) => PromiseLike<{ data: any; error: { message: string } | null }>,
   row: Record<string, unknown>
 ): Promise<{ data: any; error: { message: string } | null }> {
-  const result = await op(row);
+  let result = await op(row);
+  // video-duration.sql not applied yet: save without the duration.
+  if (result.error && /video_duration_seconds/.test(result.error.message) && "video_duration_seconds" in row) {
+    row = Object.fromEntries(Object.entries(row).filter(([k]) => k !== "video_duration_seconds"));
+    result = await op(row);
+  }
   if (result.error && /late_|allow_late/.test(result.error.message)) {
     return op(Object.fromEntries(Object.entries(row).filter(([k]) => !LATE_POLICY_COLUMNS.includes(k))));
   }
   return result;
+}
+
+/** Longest video a "Video Watch" assignment may declare: 12 hours. */
+const MAX_VIDEO_DURATION_SECONDS = 12 * 60 * 60;
+
+/**
+ * Reads the teacher-supplied video length (`videoDurationSeconds`, or
+ * `video_duration_seconds`) from a create/update body.
+ *   undefined → field not sent (leave as is)
+ *   null      → clear it ("" and null both mean "unknown")
+ *   number    → seconds, must be > 0 and <= 12h (stored to the millisecond)
+ */
+function parseVideoDurationInput(body: Record<string, unknown>): { value?: number | null; error?: string } {
+  const raw = body.videoDurationSeconds !== undefined ? body.videoDurationSeconds : body.video_duration_seconds;
+  if (raw === undefined) return {};
+  if (raw === null || raw === "") return { value: null };
+  const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n <= 0 || n > MAX_VIDEO_DURATION_SECONDS) {
+    return { error: "videoDurationSeconds must be a positive number of seconds, at most 12 hours" };
+  }
+  return { value: Math.round(n * 1000) / 1000 };
 }
 
 /**
@@ -329,6 +355,12 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
     return;
   }
 
+  const duration = parseVideoDurationInput(req.body ?? {});
+  if (duration.error) {
+    res.status(400).json({ error: duration.error });
+    return;
+  }
+
   const publishNow = isPublished === true;
 
   const { data: assignment, error } = await writeAssignment((row) => supabaseAdmin
@@ -348,6 +380,7 @@ router.post("/assignments", requireAuth, async (req: AuthenticatedRequest, res):
       assignment_type: assignment_type ?? "standard",
       video_url: video_url ?? null,
       require_full_watch: require_full_watch ?? false,
+      ...(duration.value !== undefined ? { video_duration_seconds: duration.value } : {}),
       rubric,
     });
 
@@ -417,6 +450,12 @@ router.put("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
   if (require_full_watch !== undefined) updates.require_full_watch = require_full_watch;
   if (isPublished !== undefined) updates.is_published = isPublished;
   if (rubricInput !== undefined) updates.rubric = rubric;
+  const duration = parseVideoDurationInput(req.body ?? {});
+  if (duration.error) {
+    res.status(400).json({ error: duration.error });
+    return;
+  }
+  applyVideoDuration(updates, existing, video_url, duration.value);
 
   const wasPublished = existing.is_published === true;
 
@@ -561,6 +600,11 @@ router.post(
       res.status(400).json({ error: lateError });
       return;
     }
+    const duration = parseVideoDurationInput(body);
+    if (duration.error) {
+      res.status(400).json({ error: duration.error });
+      return;
+    }
 
     const { data, error } = await writeAssignment((row) => supabaseAdmin
       .from("assignments")
@@ -579,6 +623,7 @@ router.post(
         assignment_type: assignmentType,
         video_url: videoUrl ?? null,
         require_full_watch: requireFullWatch,
+        ...(duration.value !== undefined ? { video_duration_seconds: duration.value } : {}),
       });
 
     if (error) {
@@ -619,6 +664,33 @@ router.get("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, re
   res.json(isStudentViewer(req.userRole) && req.userId ? (await withStudentView([one], req.userId))[0] : one);
 });
 
+interface WatchAssignmentRow {
+  id: string;
+  course_id: string;
+  assignment_type: string | null;
+  require_full_watch: boolean | null;
+  points_possible: number | null;
+  video_duration_seconds?: number | string | null;
+}
+
+/** The assignment fields watch-progress needs. Retries without
+ *  video_duration_seconds if video-duration.sql hasn't been applied yet. */
+async function loadWatchAssignment(id: string): Promise<WatchAssignmentRow | null> {
+  const base = "id, course_id, assignment_type, require_full_watch, points_possible";
+  const first = await supabaseAdmin.from("assignments").select(`${base}, video_duration_seconds`).eq("id", id).maybeSingle();
+  if (first.error && /video_duration_seconds/.test(first.error.message)) {
+    const retry = await supabaseAdmin.from("assignments").select(base).eq("id", id).maybeSingle();
+    return (retry.data as WatchAssignmentRow | null) ?? null;
+  }
+  return (first.data as WatchAssignmentRow | null) ?? null;
+}
+
+/** The teacher-saved video length, or null when none is stored. */
+function assignmentVideoDuration(a: WatchAssignmentRow): number | null {
+  const n = Number(a.video_duration_seconds ?? NaN);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 // Threshold at which server-verified watch progress counts as "fully
 // watched." Not 100 — a student who watches to 99.x% (browser rounding,
 // player stopping a frame short of the end event, etc.) shouldn't be
@@ -636,15 +708,19 @@ router.get("/assignments/:id/watch-progress", requireAuth, async (req: Authentic
     res.status(403).json({ error: "Only students have watch progress" });
     return;
   }
-  const { data } = await supabaseAdmin
-    .from("video_watch_progress")
-    .select("max_watched_seconds, duration_seconds, watched_percent, completed")
-    .eq("assignment_id", assignmentId)
-    .eq("student_id", req.userId)
-    .maybeSingle();
+  const [{ data }, assignment] = await Promise.all([
+    supabaseAdmin
+      .from("video_watch_progress")
+      .select("max_watched_seconds, duration_seconds, watched_percent, completed")
+      .eq("assignment_id", assignmentId)
+      .eq("student_id", req.userId)
+      .maybeSingle(),
+    loadWatchAssignment(assignmentId),
+  ]);
+  const trueDuration = assignment ? assignmentVideoDuration(assignment) : null;
   res.json({
     maxWatchedSeconds: Number(data?.max_watched_seconds ?? 0),
-    durationSeconds: data?.duration_seconds != null ? Number(data.duration_seconds) : null,
+    durationSeconds: trueDuration ?? (data?.duration_seconds != null ? Number(data.duration_seconds) : null),
     watchedPercent: Number(data?.watched_percent ?? 0),
     completed: data?.completed === true,
   });
@@ -675,19 +751,19 @@ router.post("/assignments/:id/watch-progress", requireAuth, async (req: Authenti
     res.status(400).json({ error: "watchedSeconds must be a non-negative number" });
     return;
   }
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    res.status(400).json({ error: "durationSeconds must be a positive number" });
+
+  const assignment = await loadWatchAssignment(assignmentId);
+  if (!assignment) {
+    res.status(404).json({ error: "Assignment not found" });
     return;
   }
 
-  const { data: assignment, error: assignmentError } = await supabaseAdmin
-    .from("assignments")
-    .select("id, course_id, assignment_type, require_full_watch, points_possible")
-    .eq("id", assignmentId)
-    .single();
-
-  if (assignmentError || !assignment) {
-    res.status(404).json({ error: "Assignment not found" });
+  // The teacher-saved length (video-duration.sql) is the truth whenever it
+  // is set; the student's durationSeconds is then ignored entirely. Only
+  // assignments without one still need (and lock) the client's value.
+  const assignmentDuration = assignmentVideoDuration(assignment);
+  if (assignmentDuration === null && (!Number.isFinite(durationSeconds) || durationSeconds <= 0)) {
+    res.status(400).json({ error: "durationSeconds must be a positive number" });
     return;
   }
 
@@ -724,8 +800,9 @@ router.post("/assignments/:id/watch-progress", requireAuth, async (req: Authenti
   // The client reports its own position, so without limits a student could
   // POST { watchedSeconds: duration } once and be marked complete. Two
   // server-side limits make the record reflect real playback time:
-  //  1. Duration is fixed by the first report; later reports can't shrink
-  //     the video to make a small position count as "complete".
+  //  1. Duration comes from the assignment when the teacher saved one.
+  //     Otherwise it is fixed by the first report; later reports can't
+  //     shrink the video to make a small position count as "complete".
   //  2. The recorded position can only advance about as fast as real time
   //     passes between reports (the player reports every ~12s while
   //     playing). Each report may add at most the wall-clock time since the
@@ -735,7 +812,7 @@ router.post("/assignments/:id/watch-progress", requireAuth, async (req: Authenti
   // its true position on the next report and catches up legitimately.
   const prevMax = Number(existingProgress?.max_watched_seconds ?? 0) || 0;
   const lockedDuration = Number(existingProgress?.duration_seconds ?? 0);
-  const effectiveDuration = lockedDuration > 0 ? lockedDuration : durationSeconds;
+  const effectiveDuration = assignmentDuration ?? (lockedDuration > 0 ? lockedDuration : durationSeconds);
   const lastReportAt = existingProgress?.updated_at ? Date.parse(existingProgress.updated_at as string) : NaN;
   const elapsedSinceLast = Number.isFinite(lastReportAt)
     ? Math.min(Math.max(0, (Date.now() - lastReportAt) / 1000), 60)
@@ -869,6 +946,12 @@ router.patch("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, 
   if (assignmentType !== undefined) updates.assignment_type = assignmentType;
   if (videoUrl !== undefined) updates.video_url = videoUrl;
   if (requireFullWatch !== undefined) updates.require_full_watch = requireFullWatch;
+  const duration = parseVideoDurationInput(body);
+  if (duration.error) {
+    res.status(400).json({ error: duration.error });
+    return;
+  }
+  applyVideoDuration(updates, existing, videoUrl, duration.value);
 
   const wasPublished = existing.is_published === true;
 
@@ -890,6 +973,26 @@ router.patch("/assignments/:id", requireAuth, async (req: AuthenticatedRequest, 
 
   res.json(await enrichAssignment(data));
 });
+
+/**
+ * Puts the video length into an update. A new length is saved as sent; when
+ * the video URL changes without one, the old length no longer describes the
+ * video, so it is cleared (watch-progress then falls back to locking the
+ * first length the student's player reports, as before).
+ */
+function applyVideoDuration(
+  updates: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  newVideoUrl: unknown,
+  duration: number | null | undefined
+) {
+  if (duration !== undefined) {
+    updates.video_duration_seconds = duration;
+    return;
+  }
+  const urlChanged = newVideoUrl !== undefined && (newVideoUrl ?? null) !== (existing.video_url ?? null);
+  if (urlChanged && existing.video_duration_seconds != null) updates.video_duration_seconds = null;
+}
 
 async function notifyStudentsOfPublish(courseId: string, referenceId: string, title: string, type: string) {
   const { data: enrollments } = await supabaseAdmin
@@ -930,6 +1033,7 @@ function enrichAssignmentFields(a: Record<string, unknown>, courseTitle: string 
     assignmentType: (a.assignment_type as string) ?? "standard",
     videoUrl: (a.video_url as string | null) ?? null,
     requireFullWatch: (a.require_full_watch as boolean) ?? false,
+    videoDurationSeconds: a.video_duration_seconds != null ? Number(a.video_duration_seconds) : null,
     rubric: (a.rubric as RubricCriterion[] | null) ?? null,
     ...latePolicyFields(a),
   };

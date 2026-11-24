@@ -238,7 +238,15 @@ select * from (values
     and exists (select 1 from information_schema.columns
       where table_schema='public' and table_name='schools' and column_name='tagline')
     and exists (select 1 from information_schema.columns
-      where table_schema='public' and table_name='schools' and column_name='logo_url'))
+      where table_schema='public' and table_name='schools' and column_name='logo_url')),
+
+  ('question-bank-order.sql: question_bank_questions.position',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='question_bank_questions' and column_name='position')),
+
+  ('video-duration.sql: assignments.video_duration_seconds',
+    exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='assignments' and column_name='video_duration_seconds'))
 
 ) as checks(migration, ok)
 order by ok asc, migration;

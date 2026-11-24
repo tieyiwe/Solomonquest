@@ -414,7 +414,7 @@ function GuideView({ slug, viewer, from, audience }: { slug: string; viewer: Aud
             Your device asks for reduced motion, so the demo won't move by itself. Use Next and Back to step through.
           </p>
         )}
-        {showText ? <TextSteps steps={g.steps} /> : <GuidePlayer guide={g} reduced={reduced} />}
+        {showText ? <TextSteps steps={g.steps} /> : <GuidePlayer guide={g} reduced={reduced} staffNav={audience === "staff" || (audience !== "student" && viewer === "staff")} />}
       </section>
 
       {g.troubleshoot && g.troubleshoot.length > 0 && (

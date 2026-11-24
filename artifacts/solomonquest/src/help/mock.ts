@@ -7,8 +7,8 @@
 import type { MockChrome, MockEl, MockScreen, MockTone } from "./types";
 
 export const NAV: Record<MockChrome, string[]> = {
-  student: ["Overview", "Calendar", "Assignments", "Quizzes", "Forum", "Transcript", "Progress report", "Chat", "Tuition", "Certificates"],
-  teacher: ["Overview", "Calendar", "Assignments", "Gradebook", "Attendance", "Resources", "Analytics", "At-risk students", "Reminders", "Question Banks", "Chat"],
+  student: ["Overview", "Calendar", "Assignments", "Quizzes", "Forum", "Transcript", "Progress report", "Chat", "Tuition", "Certificates", "Help Center"],
+  teacher: ["Overview", "Calendar", "Assignments", "Gradebook", "Attendance", "Resources", "Analytics", "At-risk students", "Reminders", "Question Banks", "Chat", "Help Center"],
   admin: [
     "Overview", "Calendar", "Analytics", "Users", "Courses", "Programs", "Terms & Scheduling", "Admissions",
     "Resources", "At-risk students", "Certificates", "Question Banks", "Tuition", "Accounting", "Chat",
@@ -21,6 +21,9 @@ export const NAV: Record<MockChrome, string[]> = {
   parent: [],
   public: [],
 };
+
+/** Staff use the student layout with one extra item at the end (StudentLayout). */
+export const STAFF_EXTRA_NAV = ["Terms & Scheduling"];
 
 export const CHROME_LABEL: Record<MockChrome, string> = {
   student: "Student Portal",
