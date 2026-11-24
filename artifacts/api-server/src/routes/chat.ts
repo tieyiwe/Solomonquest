@@ -78,6 +78,8 @@ router.get(
       .from("chat_channel_members")
       .select(
         `
+        last_read_at,
+        joined_at,
         chat_channels (
           id,
           name,
@@ -95,7 +97,7 @@ router.get(
       return;
     }
 
-    const channels = (memberships ?? [])
+    const baseChannels = (memberships ?? [])
       .map((m: Record<string, unknown>) => {
         const channel = m.chat_channels as Record<string, unknown> | null;
         if (!channel) return null;
@@ -106,11 +108,78 @@ router.get(
           courseId: channel.course_id,
           createdAt: channel.created_at,
           isArchived: channel.is_archived ?? false,
-          unreadCount: 0,
+          lastReadAt: (m.last_read_at as string | null) ?? null,
+          // Unread counting starts from the last read mark, or from when the
+          // member joined if they've never opened the conversation.
+          _unreadSince: ((m.last_read_at ?? m.joined_at) as string | null) ?? null,
         };
       })
       .filter((c): c is NonNullable<typeof c> => c !== null)
       .filter((c) => includeArchived || !c.isArchived);
+
+    // Unread count, last message preview and member count for the channel
+    // list. Every query is scoped to channels this user is a member of (the
+    // membership rows above), so nothing outside their conversations leaks.
+    const channelIds = baseChannels.map((c) => c.id as string);
+    const memberCountByChannel = new Map<string, number>();
+    if (channelIds.length > 0) {
+      const { data: memberRows } = await supabaseAdmin
+        .from("chat_channel_members")
+        .select("channel_id")
+        .in("channel_id", channelIds);
+      for (const r of (memberRows ?? []) as Array<{ channel_id: string }>) {
+        memberCountByChannel.set(r.channel_id, (memberCountByChannel.get(r.channel_id) ?? 0) + 1);
+      }
+    }
+
+    const summaries = await Promise.all(
+      baseChannels.map(async (c) => {
+        const channelId = c.id as string;
+        const [lastRes, unreadRes] = await Promise.all([
+          supabaseAdmin
+            .from("chat_messages")
+            .select("id, content, created_at, sender_id, attachment_name, profiles:sender_id ( first_name, last_name )")
+            .eq("channel_id", channelId)
+            .is("thread_parent_id", null)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          (() => {
+            let q = supabaseAdmin
+              .from("chat_messages")
+              .select("id", { count: "exact", head: true })
+              .eq("channel_id", channelId)
+              .is("thread_parent_id", null)
+              .neq("sender_id", req.userId ?? "");
+            if (c._unreadSince) q = q.gt("created_at", c._unreadSince);
+            return q;
+          })(),
+        ]);
+        const last = lastRes.data as Record<string, unknown> | null;
+        const profile = (last?.profiles ?? null) as Record<string, unknown> | null;
+        const content = (last?.content as string | undefined) ?? "";
+        return {
+          unreadCount: unreadRes.count ?? 0,
+          lastMessage: last
+            ? {
+                id: last.id,
+                content: content.length > 140 ? `${content.slice(0, 140)}…` : content,
+                createdAt: last.created_at,
+                senderId: last.sender_id,
+                senderName: [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || null,
+                attachmentName: last.attachment_name ?? null,
+              }
+            : null,
+        };
+      })
+    );
+
+    const channels = baseChannels.map(({ _unreadSince, ...c }, i) => ({
+      ...c,
+      unreadCount: summaries[i].unreadCount,
+      lastMessage: summaries[i].lastMessage,
+      memberCount: memberCountByChannel.get(c.id as string) ?? null,
+    }));
 
     // For direct (1:1) channels, surface the other participant's presence
     // and read-receipt state so the DM header can show "Online"/"Last seen"
@@ -466,7 +535,11 @@ router.get(
       )
       .eq("channel_id", channelId)
       .is("thread_parent_id", null)
-      .order("created_at", { ascending: true })
+      // Newest first so `limit` keeps the most recent page (ascending + limit
+      // returned the channel's oldest messages, so busy channels never showed
+      // their latest ones). Reversed back to oldest-first below, so the
+      // response order is unchanged.
+      .order("created_at", { ascending: false })
       .limit(limit);
 
     if (before) {
@@ -475,6 +548,7 @@ router.get(
         .from("chat_messages")
         .select("created_at")
         .eq("id", before)
+        .eq("channel_id", channelId)
         .maybeSingle();
 
       if (cursorMsg) {
@@ -482,12 +556,13 @@ router.get(
       }
     }
 
-    const { data: messages, error } = await query;
+    const { data: newestFirst, error } = await query;
 
     if (error) {
       res.status(500).json({ error: error.message });
       return;
     }
+    const messages = (newestFirst ?? []).slice().reverse();
 
     // Fetch reply counts for each top-level message
     const messageIds = (messages ?? []).map(
